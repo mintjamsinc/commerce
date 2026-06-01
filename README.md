@@ -1,15 +1,15 @@
 # MintJams Commerce (commerce)
 
 A headless-commerce **orchestration layer** built on
-[MintJams CMS (cms0)](https://github.com/mintjamsinc/cms0).
-It connects an external commerce
+[cms0](https://github.com/mintjamsinc/cms0)
+(JCR 2.0 + an EIP integration engine + a BPMN workflow engine). It connects an external commerce
 platform (currently Shopify) to MintJams CMS: webhooks are received and
 verified, normalized into the JCR repository, and driven through BPMN
 workflows that raise human tasks and fire notifications when an operator
 needs to step in.
 
-- **Integration assets** — Groovy webhook endpoint, EIP routes,
-  BPMN processes, task-helper scripts, and YAML configuration. Sources
+- **Integration assets** — Groovy webhook endpoint, EIP integration routes,
+  BPMN workflow processes, task-helper scripts, and YAML configuration. Sources
   under [`content/`](content/) and [`etc/`](etc/).
 - **Commerce app** — a "Commerce" virtual-desktop app for the Webtop that
   centralizes connection and notification settings (admin-only). Source under
@@ -60,13 +60,13 @@ alert by tracking *who* owns the follow-up.
 Shopify (product updated / order paid)
    │  Webhook (HMAC-SHA256 verified)
    ▼
-Groovy endpoint ──→ Apache Camel (EIP route) ──→ JCR (store + normalize)
-                                                   │  signal "process this"
-                                                   ▼
-                                            Camunda (BPMN workflow)
-                                                   │  threshold set? stock low?
-                                                   ▼
-                                        Human task ──→ Slack / Discord notice
+Groovy endpoint ──→ EIP route ──→ JCR (store + normalize)
+                                    │  signal "process this"
+                                    ▼
+                              BPMN workflow
+                                    │  threshold set? stock low?
+                                    ▼
+                          Human task ──→ Slack / Discord notice
 ```
 
 Two task types make up the flow:
@@ -97,7 +97,7 @@ closed enumeration.
 
 | Property | Axis | Owner |
 |---|---|---|
-| `commerce:status` | Integration processing lifecycle (`received`, `threshold_pending`, `review_pending`, `monitored`, `error`, `deleted`) | This pipeline (Camel + BPMN) |
+| `commerce:status` | Integration processing lifecycle (`received`, `threshold_pending`, `review_pending`, `monitored`, `error`, `deleted`) | This pipeline (EIP + BPMN) |
 | `commerce:source_status` | Source-system business status, mirrored verbatim from Shopify | Shopify |
 
 The runtime JCR paths these properties live on (orders, products, error
@@ -142,8 +142,8 @@ content/    JCR content deployed into the repository
 etc/        Server-side integration assets
             commerce/config/      shopify.yml, notifications.yml  (managed by the Commerce app)
             commerce/scripts/shopify/                            Groovy task/route helpers
-            eip/routes/commerce/shopify/                         Apache Camel EIP routes
-            bpm/processes/commerce/shopify/                      Camunda BPMN workflow
+            eip/routes/commerce/shopify/                         EIP integration routes
+            bpm/processes/commerce/shopify/                      BPMN workflow processes
 webtop/     Commerce Webtop app source (TypeScript + Rollup)
 docs/       Reference docs: status model, JCR runtime structure, operator manual
 ```
