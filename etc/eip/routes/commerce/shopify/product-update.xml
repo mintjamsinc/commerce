@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<camel>
+
+    <routeConfiguration id="shopify-product-update-error-handler">
+        <onException>
+            <exception>java.lang.Exception</exception>
+            <handled>
+                <constant>true</constant>
+            </handled>
+            <redeliveryPolicy maximumRedeliveries="3" redeliveryDelay="5000"/>
+
+            <!-- Log error details -->
+            <log message="Shopify product update error [${exchangeId}]: ${exception.message} [file: ${header.productPath}]"
+                 loggingLevel="ERROR"/>
+
+            <!-- Set error metadata as headers for JCR properties -->
+            <setHeader name="commerce_status">
+                <constant>error</constant>
+            </setHeader>
+            <setHeader name="commerce_errorMessage">
+                <simple>${exception.message}</simple>
+            </setHeader>
+            <setHeader name="commerce_stackTrace">
+                <simple>${exception.stacktrace}</simple>
+            </setHeader>
+            <toD uri="transform:truncateString?targets=commerce_stackTrace&amp;maxLength=2048"/>
+
+            <!-- Write error metadata to JCR node properties -->
+            <toD uri="cms:setProperties?path=${header.productPath}&amp;includes=commerce_~"/>
+        </onException>
+    </routeConfiguration>
+
+    <route id="shopify-product-update" routeConfigurationId="shopify-product-update-error-handler">
+        <from uri="direct:shopify-product-update"/>
+
+        <!-- Include headers for history tracking -->
+        <setHeader name="mi:history.header.includes">
+            <constant>commerce_~</constant>
+        </setHeader>
+
+        <!-- Run as service user for all CMS operations -->
+        <setHeader name="runAs">
+            <constant>shopify-service-user</constant>
+        </setHeader>
+
+        <!-- Save original body before idempotency check (cms:exists overwrites body) -->
+        <setHeader name="shopify_payload">
+            <simple>${body}</simple>
+        </setHeader>
+
+        <!-- Idempotency check: skip if this webhook was already processed -->
+        <toD uri="cms:exists?query=/jcr:root/content/commerce/history/webhooks/${header.shopify_webhook_id}&amp;@header.webhookAlreadyProcessed=exists"/>
+
+        <choice>
+            <when>
+                <simple>${header.webhookAlreadyProcessed} == true</simple>
+                <log message="Duplicate webhook ${header.shopify_webhook_id} - skipping"
+                     loggingLevel="INFO"/>
+            </when>
+            <otherwise>
+                <!-- Restore original body -->
+                <setBody>
+                    <simple>${header.shopify_payload}</simple>
+                </setBody>
+
+                <!-- Set business key for history tracking (e.g. product ID) -->
+                <setHeader name="mi:history.businessKey">
+                    <jsonpath>$.id</jsonpath>
+                </setHeader>
+
+                <!-- Generate file path: /content/commerce/products/product_{id}.json -->
+                <setHeader name="productID">
+                    <jsonpath>$.id</jsonpath>
+                </setHeader>
+                <setHeader name="productPath">
+                    <simple>/content/commerce/products/product_${header.productID}.json</simple>
+                </setHeader>
+
+                <!-- Save raw JSON to JCR -->
+                <toD uri="cms:store?mimeType=application/json&amp;path=${header.productPath}"/>
+
+                <!-- Map product metadata as JCR properties -->
+                <setHeader name="commerce_product_id">
+                    <jsonpath>$.id</jsonpath>
+                </setHeader>
+                <setHeader name="commerce_title">
+                    <jsonpath>$.title</jsonpath>
+                </setHeader>
+                <setHeader name="commerce_handle">
+                    <jsonpath>$.handle</jsonpath>
+                </setHeader>
+                <!-- commerce_source_status mirrors Shopify's business status
+                     (active / archived / draft). It is the product's own state in
+                     the source system, NOT our processing state. -->
+                <setHeader name="commerce_source_status">
+                    <jsonpath>$.status</jsonpath>
+                </setHeader>
+                <!-- commerce_status is the integration processing lifecycle status.
+                     Ingestion succeeded, so it is "received"; the BPMN workflow then
+                     advances it (threshold_pending / review_pending / monitored).
+                     See docs/commerce-status.md. -->
+                <setHeader name="commerce_status">
+                    <constant>received</constant>
+                </setHeader>
+                <setHeader name="commerce_vendor">
+                    <jsonpath>$.vendor</jsonpath>
+                </setHeader>
+                <setHeader name="commerce_product_type">
+                    <jsonpath>$.product_type</jsonpath>
+                </setHeader>
+                <setHeader name="commerce_tags">
+                    <jsonpath>$.tags</jsonpath>
+                </setHeader>
+                <setHeader name="commerce_updated_at">
+                    <jsonpath>$.updated_at</jsonpath>
+                </setHeader>
+                <!-- Clear deletion flag on create/update -->
+                <setHeader name="commerce_deletedAt">
+                    <simple>${null}</simple>
+                </setHeader>
+                <!-- Clear any previous error metadata -->
+                <setHeader name="commerce_errorMessage">
+                    <simple>${null}</simple>
+                </setHeader>
+                <setHeader name="commerce_stackTrace">
+                    <simple>${null}</simple>
+                </setHeader>
+
+                <!-- Normalize property types (e.g. updated_at should be date) -->
+                <toD uri="transform:toDate?targets=commerce_updated_at"/>
+
+                <!-- Write metadata to JCR node properties -->
+                <toD uri="cms:setProperties?path=${header.productPath}&amp;includes=commerce_~"/>
+
+                <log message="Product ${header.commerce_product_id} saved to ${header.productPath}"
+                     loggingLevel="INFO"/>
+
+                <!-- Admin API enrichment is optional. Resolve the toggle from
+                     shopify.yml (adminApi.enabled) into a boolean header. -->
+                <toD uri="cms:/etc/commerce/scripts/shopify/checkAdminApiEnabled.groovy?outputs=adminApiEnabled"/>
+                <choice>
+                    <when>
+                        <simple>${header.adminApiEnabled} == true</simple>
+                        <!-- Fetch Shopify access token from JCR -->
+                        <toD uri="cms:/etc/commerce/scripts/shopify/getAccessToken.groovy?outputs=shopifyAccessToken"/>
+
+                        <!-- Fetch metafields from Shopify GraphQL API -->
+                        <toD uri="cms:/etc/commerce/scripts/shopify/getMetafields.groovy?inputs=shopifyAccessToken,productID&amp;outputs=metafields"/>
+
+                        <!-- Write metafields to JCR node properties -->
+                        <toD uri="cms:setProperties?path=${header.productPath}&amp;includes=metafields"/>
+
+                        <log message="Metafields saved for product ${header.commerce_product_id}"
+                             loggingLevel="INFO"/>
+                    </when>
+                    <otherwise>
+                        <log message="Admin API disabled - skipping metafields enrichment for product ${header.commerce_product_id}"
+                             loggingLevel="INFO"/>
+                    </otherwise>
+                </choice>
+
+                <!-- Record webhook as processed (idempotency marker) -->
+                <setBody>
+                    <simple>${date:now:yyyy-MM-dd'T'HH:mm:ss.SSSZ}</simple>
+                </setBody>
+                <toD uri="cms:store?path=/content/commerce/history/webhooks/${date:now:yyyy}/${date:now:MM}/${header.shopify_webhook_id}&amp;mimeType=text/plain"/>
+
+                <!-- Guard against duplicate workflow instances for the same product.
+                     Shopify can emit several products/update webhooks in quick succession;
+                     without this check each one would spawn a parallel product-update-flow
+                     for the same product. We query for an already-running instance keyed by
+                     the product ID (businessKey) and only start a new one when none is active.
+                     The still-running instance will operate on the latest stored product JSON. -->
+                <toD uri="bpm:queryProcessInstances?processDefinitionKey=product-update-flow&amp;businessKey=${header.productID}&amp;active=true&amp;@header.runningProcessCount=count"/>
+                <choice>
+                    <when>
+                        <simple>${header.runningProcessCount} &gt; 0</simple>
+                        <log message="product-update-flow already running for product ${header.productID} (active=${header.runningProcessCount}) - skipping new instance"
+                             loggingLevel="INFO"/>
+                    </when>
+                    <otherwise>
+                        <!-- Start product update workflow for further processing (e.g. sync to PIM) -->
+                        <toD uri="bpm:startProcess?processDefinitionKey=product-update-flow&amp;businessKey=${header.productID}&amp;includes=productID,productPath"/>
+                    </otherwise>
+                </choice>
+            </otherwise>
+        </choice>
+    </route>
+
+</camel>

@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inventory Threshold Setup</title>
+<style>
+/* Theme tokens are resolved via the CSS `light-dark()` function, which picks a
+ * value based on the *used* `color-scheme`. By default we honour the OS
+ * preference; when the host Tasks app tells us its current theme via
+ * postMessage we set `data-theme` on <html> and force `color-scheme`. */
+:root {
+	color-scheme: light dark;
+	--bg:            light-dark(#f7f8fa, #0f172a);
+	--surface:       light-dark(#ffffff, #1e293b);
+	--surface-soft:  light-dark(#f3f4f6, #233044);
+	--border:        light-dark(#e5e7eb, #334155);
+	--border-strong: light-dark(#d1d5db, #475569);
+	--text:          light-dark(#1f2937, #f1f5f9);
+	--text-soft:     light-dark(#4b5563, #cbd5e1);
+	--text-muted:    light-dark(#6b7280, #94a3b8);
+	--primary:       light-dark(#2563eb, #3b82f6);
+	--primary-hover: light-dark(#1d4ed8, #60a5fa);
+	--primary-fg:    #ffffff;
+	--success:       light-dark(#059669, #34d399);
+	--success-soft:  light-dark(rgba(5, 150, 105, 0.1), rgba(52, 211, 153, 0.12));
+	--danger:        light-dark(#dc2626, #f87171);
+	--row-hover:     light-dark(#f9fafb, #233044);
+	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+	--radius: 0.5rem;
+	--radius-sm: 0.375rem;
+}
+
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"]  { color-scheme: dark; }
+
+* {
+	scrollbar-width: thin;
+	color: inherit;
+	font-family: inherit;
+	box-sizing: border-box;
+}
+
+html {
+	font-family: ui-sans-serif, -apple-system, system-ui, Segoe UI, Helvetica, Arial, sans-serif;
+	font-size: 14px;
+	position: absolute;
+	inset: 0;
+}
+
+body { margin: 0; height: 100%; background: var(--bg); color: var(--text); line-height: 1.5; }
+
+#app { min-height: 100%; display: flex; flex-direction: column; }
+[v-cloak] { display: none !important; }
+
+.state-pane {
+	flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+	gap: 0.75rem; color: var(--text-muted); padding: 2rem; text-align: center;
+}
+.state-pane.error-pane { color: var(--danger); }
+.state-icon { width: 2.5rem; height: 2.5rem; opacity: 0.5; }
+.spinner {
+	width: 1.5rem; height: 1.5rem; border: 2px solid var(--border-strong);
+	border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.product { flex: 1; padding: 1.5rem; max-width: 60rem; width: 100%; margin: 0 auto; }
+
+/* ----------------------------------------------------------------
+ * Product header (image → description) — shared with inventory-level-review
+ * ---------------------------------------------------------------- */
+.product-header {
+	display: grid;
+	grid-template-columns: minmax(180px, 260px) 1fr;
+	gap: 1.5rem;
+	align-items: start;
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 1.25rem;
+	box-shadow: var(--shadow-sm);
+	margin-bottom: 1.5rem;
+}
+
+@media (max-width: 640px) {
+	.product-header {
+		grid-template-columns: 1fr;
+	}
+}
+
+.product-image {
+	aspect-ratio: 1 / 1;
+	background: var(--surface-soft);
+	border-radius: var(--radius-sm);
+	overflow: hidden;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border: 1px solid var(--border);
+}
+
+.product-image img {
+	width: 100%;
+	height: 100%;
+	object-fit: contain;
+	display: block;
+}
+
+.image-fallback {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 0.5rem;
+	color: var(--text-muted);
+	font-size: 12px;
+}
+
+.image-fallback svg {
+	width: 2.5rem;
+	height: 2.5rem;
+	opacity: 0.4;
+}
+
+.product-meta { min-width: 0; }
+
+.product-meta h1 {
+	margin: 0 0 0.25rem;
+	font-size: 1.5rem;
+	font-weight: 700;
+	line-height: 1.25;
+	color: var(--text);
+	word-wrap: break-word;
+}
+
+.product-tagline {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	color: var(--text-muted);
+	font-size: 13px;
+	margin-bottom: 1rem;
+	gap: 0.5rem;
+}
+
+.product-tagline > span:not(:last-child)::after {
+	content: "·";
+	margin-left: 0.5rem;
+	color: var(--text-muted);
+}
+
+.product-description {
+	color: var(--text-soft);
+	line-height: 1.6;
+	font-size: 14px;
+	overflow-wrap: break-word;
+}
+
+.product-description.empty {
+	color: var(--text-muted);
+	font-style: italic;
+}
+
+.product-description p { margin: 0 0 0.75rem; }
+.product-description :last-child { margin-bottom: 0; }
+.product-description a { color: var(--primary); }
+.product-description img { max-width: 100%; height: auto; }
+.product-description ul,
+.product-description ol { margin: 0 0 0.75rem; padding-left: 1.5rem; }
+
+.intro {
+	background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+	padding: 1.25rem; box-shadow: var(--shadow-sm); margin-bottom: 1.5rem;
+}
+.intro h1 { margin: 0 0 0.35rem; font-size: 1.35rem; font-weight: 700; }
+.intro p { margin: 0; color: var(--text-soft); }
+
+.bulk {
+	display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+	margin-top: 1rem; color: var(--text-soft); font-size: 13px;
+}
+
+.variants-section {
+	background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+	box-shadow: var(--shadow-sm); overflow: hidden;
+}
+.section-title { margin: 0; padding: 1rem 1.25rem; font-size: 1rem; font-weight: 700; border-bottom: 1px solid var(--border); }
+
+.table-wrap { overflow-x: auto; }
+.variants-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.variants-table th, .variants-table td {
+	padding: 0.625rem 1.25rem; text-align: left; vertical-align: middle; border-bottom: 1px solid var(--border);
+}
+.variants-table th {
+	font-weight: 600; color: var(--text-muted); background: var(--surface-soft);
+	font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.variants-table tbody tr:last-child td { border-bottom: none; }
+.variants-table tbody tr:hover { background: var(--row-hover); }
+.align-right { text-align: right; font-variant-numeric: tabular-nums; }
+.variant-title { font-weight: 600; }
+.sku { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: var(--text-muted); }
+
+input.threshold-input {
+	width: 7rem; padding: 0.375rem 0.5rem; text-align: right;
+	border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+	background: var(--surface); color: var(--text); font: inherit; font-size: 13px;
+}
+input.threshold-input:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; border-color: var(--primary); }
+
+/* ----------------------------------------------------------------
+ * Memo section — shared with inventory-level-review
+ * ---------------------------------------------------------------- */
+.memo-section {
+	margin-top: 1.5rem;
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	box-shadow: var(--shadow-sm);
+	overflow: hidden;
+}
+
+.memo-body {
+	padding: 1rem 1.25rem 1.25rem;
+	display: flex;
+	flex-direction: column;
+	gap: 0.875rem;
+}
+
+.memo-card {
+	background: var(--surface-soft);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	padding: 0.875rem 1rem;
+}
+
+.memo-header {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 0.5rem;
+	margin-bottom: 0.5rem;
+	font-size: 12px;
+}
+
+.memo-author {
+	font-weight: 600;
+	color: var(--text);
+}
+
+.memo-time {
+	color: var(--text-muted);
+}
+
+.memo-content {
+	color: var(--text-soft);
+	white-space: pre-wrap;
+	line-height: 1.5;
+	font-size: 13px;
+	overflow-wrap: break-word;
+}
+
+.memo-empty {
+	color: var(--text-muted);
+	font-style: italic;
+	font-size: 13px;
+}
+
+.memo-edit-trigger {
+	align-self: flex-start;
+}
+
+.memo-editor {
+	display: flex;
+	flex-direction: column;
+	gap: 0.625rem;
+}
+
+.memo-textarea {
+	width: 100%;
+	min-height: 6rem;
+	padding: 0.625rem 0.75rem;
+	border: 1px solid var(--border-strong);
+	border-radius: var(--radius-sm);
+	background: var(--surface);
+	color: var(--text);
+	font-family: inherit;
+	font-size: 13px;
+	line-height: 1.5;
+	resize: vertical;
+	box-sizing: border-box;
+}
+
+.memo-textarea:focus-visible {
+	outline: 2px solid var(--primary);
+	outline-offset: 2px;
+	border-color: var(--primary);
+}
+
+.memo-editor-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.5rem;
+}
+
+.actions {
+	position: sticky; bottom: 0; z-index: 5; display: flex; align-items: center; justify-content: flex-end;
+	gap: 0.75rem; padding: 0.875rem 1.5rem; background: var(--surface);
+	border-top: 1px solid var(--border); box-shadow: 0 -1px 3px rgba(0,0,0,0.04);
+}
+.action-notice { display: inline-flex; align-items: center; gap: 0.5rem; color: var(--text-soft); font-size: 13px; }
+.action-notice.completed { color: var(--success); font-weight: 600; }
+.action-notice svg, .btn svg { width: 1rem; height: 1rem; flex-shrink: 0; }
+
+.btn {
+	appearance: none; display: inline-flex; align-items: center; gap: 0.5rem;
+	padding: 0.5rem 1rem; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600;
+	cursor: pointer; border: 1px solid transparent; background: transparent; color: var(--text);
+	transition: background-color 0.15s, border-color 0.15s;
+}
+.btn:disabled { cursor: not-allowed; opacity: 0.55; }
+.btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.btn-primary { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
+.btn-primary:not(:disabled):hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+.btn-secondary { background: var(--surface); color: var(--text); border-color: var(--border-strong); }
+.btn-secondary:not(:disabled):hover { background: var(--surface-soft); }
+
+.toast {
+	position: fixed; bottom: 5rem; left: 50%; transform: translateX(-50%);
+	background: var(--danger); color: #fff; padding: 0.625rem 1rem; border-radius: var(--radius-sm);
+	box-shadow: 0 4px 12px rgba(0,0,0,0.2); font-size: 13px; z-index: 100; max-width: 80%; text-align: center;
+}
+</style>
+</head>
+<body>
+<main id="app" v-cloak @mounted="onMounted" @unmount="onUnmount">
+
+	<div v-if="view === 'loading'" class="state-pane">
+		<div class="spinner"></div>
+		<p>Loading product…</p>
+	</div>
+
+	<div v-else-if="view === 'error'" class="state-pane error-pane">
+		<svg class="state-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1.5a.75.75 0 0 1 .67.418l6.5 13a.75.75 0 0 1-.67 1.082h-13a.75.75 0 0 1-.67-1.082l6.5-13A.75.75 0 0 1 8 1.5zm0 4.75a.75.75 0 0 0-.75.75v3a.75.75 0 0 0 1.5 0v-3A.75.75 0 0 0 8 6.25zm0 6.25a.875.875 0 1 0 0-1.75.875.875 0 0 0 0 1.75z"/></svg>
+		<p>{{ errorMessage }}</p>
+	</div>
+
+	<div v-else-if="view === 'standalone'" class="state-pane">
+		<svg class="state-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM7.25 5a.75.75 0 0 1 1.5 0v3.5a.75.75 0 0 1-1.5 0V5zM8 11.25a.875.875 0 1 1 0-1.75.875.875 0 0 1 0 1.75z"/></svg>
+		<p>This form must be opened from the Tasks application.</p>
+	</div>
+
+	<template v-else>
+		<article class="product">
+			<header class="product-header">
+				<div class="product-image">
+					<img v-if="imageSrc && !imageFailed"
+						:src="imageSrc"
+						:alt="productTitle"
+						@error="imageFailed = true">
+					<div v-else class="image-fallback">
+						<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M2.5 2A1.5 1.5 0 0 0 1 3.5v9A1.5 1.5 0 0 0 2.5 14h11a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 13.5 2h-11zM5 5a1.25 1.25 0 1 1 0 2.5A1.25 1.25 0 0 1 5 5zM2.5 12.5l3-3 1.75 1.75L10 8.25l3.5 4.25h-11z"/></svg>
+						<span>No image</span>
+					</div>
+				</div>
+				<div class="product-meta">
+					<h1>{{ productTitle }}</h1>
+					<div class="product-tagline">
+						<span v-if="vendor">{{ vendor }}</span>
+						<span v-if="productType">{{ productType }}</span>
+					</div>
+					<div class="product-description"
+						:class="{ empty: !descriptionHTML }"
+						v-html="descriptionHTML || 'No description.'"></div>
+				</div>
+			</header>
+
+			<section class="intro">
+				<h1>Set inventory alert thresholds</h1>
+				<p>No alert threshold is configured yet for <strong>{{ productTitle }}</strong>. Enter the
+				minimum stock level for each variant. When a variant's available quantity drops below its
+				threshold, a manual inventory review task is raised automatically.</p>
+				<div class="bulk">
+					<label for="bulkValue">Apply to all variants:</label>
+					<input id="bulkValue" class="threshold-input" type="number" min="0" step="1"
+						:disabled="!canEdit"
+						v-model="bulkValue" placeholder="e.g. 5">
+					<button class="btn btn-secondary" type="button" @click="applyToAll" :disabled="!canEdit">Apply</button>
+				</div>
+			</section>
+
+			<section class="variants-section">
+				<h2 class="section-title">Variants</h2>
+				<div class="table-wrap">
+					<table class="variants-table">
+						<thead>
+							<tr>
+								<th>Variant</th>
+								<th>SKU</th>
+								<th class="align-right">Available</th>
+								<th class="align-right">Threshold</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr v-if="rows.length === 0">
+								<td colspan="4" style="text-align:center;color:var(--text-muted);padding:1.5rem;">No variants.</td>
+							</tr>
+							<tr v-for="row in rows" :key="row.id || row.title">
+								<td><span class="variant-title">{{ row.title }}</span></td>
+								<td><span class="sku">{{ row.sku || '—' }}</span></td>
+								<td class="align-right">{{ row.qtyText }}</td>
+								<td class="align-right">
+									<input class="threshold-input" type="number" min="0" step="1"
+										:disabled="!canEdit"
+										v-model="row.thresholdInput"
+										placeholder="not set">
+								</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			</section>
+
+			<section class="memo-section">
+				<h2 class="section-title">Memo</h2>
+				<div class="memo-body">
+					<div v-if="memo" class="memo-card">
+						<div class="memo-header">
+							<span class="memo-author">{{ memo.name || memo.id || 'Unknown' }}</span>
+							<span class="memo-time" v-if="memoTimestampText">{{ memoTimestampText }}</span>
+						</div>
+						<div class="memo-content">{{ memo.content }}</div>
+					</div>
+					<div v-else class="memo-empty">No memo yet.</div>
+
+					<div v-if="canEditMemo && memoMode === 'view'" class="memo-edit-trigger">
+						<button class="btn btn-secondary" type="button" @click="enterMemoEdit">
+							<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25a1.75 1.75 0 0 1 .445-.755l8.61-8.612zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086zM11.189 6.25 9.75 4.81l-6.286 6.287a.25.25 0 0 0-.064.108l-.558 1.953 1.953-.558a.25.25 0 0 0 .108-.064l6.286-6.286z"/></svg>
+							<span>{{ memo ? 'Edit memo' : 'Add memo' }}</span>
+						</button>
+					</div>
+
+					<div v-else-if="canEditMemo && memoMode === 'edit'" class="memo-editor">
+						<textarea v-model="memoDraft"
+							class="memo-textarea"
+							rows="4"
+							placeholder="Write a memo for the next reviewer..."
+							:disabled="memoSaving"></textarea>
+						<div class="memo-editor-actions">
+							<button class="btn btn-secondary" type="button"
+								:disabled="memoSaving"
+								@click="cancelMemoEdit">Cancel</button>
+							<button class="btn btn-primary" type="button"
+								:disabled="memoSaving || !memoDraftHasContent"
+								@click="saveMemo">
+								<span>Update</span>
+							</button>
+						</div>
+					</div>
+				</div>
+			</section>
+		</article>
+
+		<footer class="actions">
+			<span v-if="taskCompleted" class="action-notice completed">
+				<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7 7a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.25 10.69l6.47-6.47a.75.75 0 0 1 1.06 0z"/></svg>
+				<span>Thresholds saved. This task is complete.</span>
+			</span>
+			<span v-else-if="!taskAssignee" class="action-notice">
+				<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 14.5a5 5 0 0 1 10 0 .5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5z"/></svg>
+				<span>Claim this task to configure thresholds.</span>
+			</span>
+			<span v-else-if="!isAssignedToMe" class="action-notice">
+				<span>This task is assigned to {{ assigneeDisplay || taskAssignee }}. View only.</span>
+			</span>
+			<button v-else class="btn btn-primary" type="button" :disabled="actionPending || !hasAnyThreshold" @click="onSave">
+				<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M2 3.5A1.5 1.5 0 0 1 3.5 2h7.879a1.5 1.5 0 0 1 1.06.44l1.122 1.12A1.5 1.5 0 0 1 14 4.622V12.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12.5v-9zM4 3v3.5a.5.5 0 0 0 .5.5h5a.5.5 0 0 0 .5-.5V3H4zm5 0v3H8V3h1z"/></svg>
+				<span>Save thresholds &amp; complete</span>
+			</button>
+		</footer>
+
+		<div v-if="toastMessage" class="toast" role="alert" aria-live="polite">{{ toastMessage }}</div>
+	</template>
+</main>
+
+<!-- ichigo.js (ESM, latest) -->
+<script type="module">
+import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ichigo.esm.min.js';
+
+	// ---- JSON-RPC bridge with the Tasks parent app ----
+	const pending = new Map();
+	let nextID = 1;
+
+	function rpcCall(method, params) {
+		return new Promise((resolve, reject) => {
+			const id = String(nextID++);
+			pending.set(id, { resolve, reject });
+			try {
+				window.parent.postMessage({ __tasksRpc: 'call', id, method, params: params || {} }, '*');
+			} catch (err) {
+				pending.delete(id);
+				reject(err);
+			}
+		});
+	}
+
+	// ---- Pure helpers ----
+	function getProp(node, name) {
+		if (!node || !Array.isArray(node.properties)) return undefined;
+		const p = node.properties.find(x => x && x.name === name);
+		if (!p) return undefined;
+		const v = p.propertyValue;
+		if (!v) return undefined;
+		if ('value' in v) return v.value;
+		if ('values' in v) return v.values;
+		return undefined;
+	}
+	function getStringProp(node, name) {
+		const v = getProp(node, name);
+		return v == null ? '' : String(v);
+	}
+	function parseThresholds(thresholdJsonStr) {
+		if (!thresholdJsonStr) return {};
+		try {
+			const obj = JSON.parse(thresholdJsonStr);
+			const out = {};
+			if (Array.isArray(obj && obj.variants)) {
+				for (const v of obj.variants) {
+					if (v && v.id != null && v.inventory_alert_threshold != null) {
+						out[String(v.id)] = Number(v.inventory_alert_threshold);
+					}
+				}
+			}
+			return out;
+		} catch (_) { return {}; }
+	}
+	function formatNumber(n) {
+		if (n == null || n === '') return '—';
+		const num = Number(n);
+		return Number.isFinite(num) ? num.toLocaleString() : String(n);
+	}
+
+	// Strip scripts, event handlers, and javascript: URLs from product
+	// description HTML before injecting it into the DOM.
+	function sanitizeHTML(html) {
+		const tpl = document.createElement('template');
+		tpl.innerHTML = String(html || '');
+		const banned = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'LINK', 'META']);
+		const walker = document.createTreeWalker(tpl.content, NodeFilter.SHOW_ELEMENT);
+		const toRemove = [];
+		let node;
+		while ((node = walker.nextNode())) {
+			if (banned.has(node.tagName)) {
+				toRemove.push(node);
+				continue;
+			}
+			for (const attr of Array.from(node.attributes)) {
+				const an = attr.name.toLowerCase();
+				if (an.startsWith('on')) {
+					node.removeAttribute(attr.name);
+				} else if ((an === 'href' || an === 'src') && /^\s*javascript:/i.test(attr.value)) {
+					node.removeAttribute(attr.name);
+				}
+			}
+		}
+		for (const el of toRemove) el.remove();
+		return tpl.innerHTML;
+	}
+
+	const App = {
+		data() {
+			return {
+				view: 'loading',
+				errorMessage: '',
+				toastMessage: '',
+				actionPending: false,
+				bulkValue: '',
+				imageFailed: false,
+
+				currentUserID: '',
+				currentUserDisplay: '',
+				task: null,
+				assigneeDisplay: '',
+
+				productLoaded: false,
+				product: null,
+				node: null,
+				productPath: '',
+				rows: [],
+
+				// Internal memo (stored as JSON on the product node's `internal_memo`)
+				memo: null,                     // { id, name, at, content } or null
+				memoMode: 'view',               // 'view' | 'edit'
+				memoDraft: '',
+				memoSaving: false,
+
+				_messageListener: null,
+				_standaloneTimer: null,
+				_toastTimer: null,
+				_assigneeDisplayCache: {},
+			};
+		},
+
+		computed: {
+			productTitle() {
+				return (this.product && this.product.title) || getStringProp(this.node, 'title') || '(untitled)';
+			},
+			vendor() {
+				return (this.product && this.product.vendor) || getStringProp(this.node, 'vendor');
+			},
+			productType() {
+				return (this.product && this.product.product_type) || getStringProp(this.node, 'product_type');
+			},
+			descriptionHTML() {
+				const html = (this.product && this.product.body_html) || '';
+				return html ? sanitizeHTML(html) : '';
+			},
+			imageSrc() {
+				const p = this.product;
+				if (!p) return '';
+				if (p.image && p.image.src) return p.image.src;
+				if (Array.isArray(p.images) && p.images.length > 0 && p.images[0] && p.images[0].src) {
+					return p.images[0].src;
+				}
+				return '';
+			},
+			taskAssignee() { return (this.task && this.task.assignee) || ''; },
+			taskCompleted() { return !!(this.task && this.task.completed); },
+			isAssignedToMe() { return !!this.taskAssignee && this.taskAssignee === this.currentUserID; },
+			canEdit() { return this.isAssignedToMe && !this.taskCompleted; },
+			hasAnyThreshold() {
+				return this.rows.some(r => r.thresholdInput !== '' && r.thresholdInput != null && Number(r.thresholdInput) >= 0);
+			},
+			// Memo can only be authored by the current assignee, mirroring
+			// inventory-level-review. View mode is available to anyone.
+			canEditMemo() {
+				return this.isAssignedToMe && !this.taskCompleted;
+			},
+			memoTimestampText() {
+				if (!this.memo || !this.memo.at) return '';
+				const d = new Date(this.memo.at);
+				if (Number.isNaN(d.getTime())) return this.memo.at;
+				return d.toLocaleString([], {
+					year: 'numeric',
+					month: 'numeric',
+					day: 'numeric',
+					hour: 'numeric',
+					minute: '2-digit',
+				});
+			},
+			memoDraftHasContent() {
+				return !!(this.memoDraft && this.memoDraft.trim());
+			},
+		},
+
+		methods: {
+			onMounted() {
+				this._messageListener = (ev) => this.onMessage(ev);
+				window.addEventListener('message', this._messageListener);
+				this._standaloneTimer = setTimeout(() => {
+					if (this.view === 'loading') this.view = 'standalone';
+				}, 3000);
+				this.notifyReady();
+			},
+			onUnmount() {
+				if (this._messageListener) { window.removeEventListener('message', this._messageListener); this._messageListener = null; }
+				if (this._standaloneTimer) { clearTimeout(this._standaloneTimer); this._standaloneTimer = null; }
+				if (this._toastTimer) { clearTimeout(this._toastTimer); this._toastTimer = null; }
+			},
+			notifyReady() {
+				try { window.parent.postMessage({ __tasksRpc: 'ready' }, '*'); } catch (_) {}
+			},
+
+			onMessage(ev) {
+				const data = ev.data;
+				if (!data || typeof data !== 'object') return;
+				if (data.__tasksRpc === 'result') {
+					const id = String(data.id);
+					const p = pending.get(id);
+					if (!p) return;
+					pending.delete(id);
+					if (data.ok) p.resolve(data.data); else p.reject(new Error(data.error || 'RPC error'));
+					return;
+				}
+				if (data.__tasksRpc === 'event' && data.type === 'context') {
+					if (this._standaloneTimer) { clearTimeout(this._standaloneTimer); this._standaloneTimer = null; }
+					const payload = data.payload || {};
+					if (payload.theme !== undefined) this.applyTheme(payload.theme);
+					this.handleContext(payload);
+					return;
+				}
+				if (data.__tasksRpc === 'event' && data.type === 'theme-changed') {
+					this.applyTheme(data.theme);
+					return;
+				}
+			},
+
+			applyTheme(theme) {
+				const root = document.documentElement;
+				if (theme === 'light' || theme === 'dark') root.dataset.theme = theme;
+				else delete root.dataset.theme;
+			},
+
+			showToast(message) {
+				this.toastMessage = message || '';
+				if (this._toastTimer) clearTimeout(this._toastTimer);
+				this._toastTimer = setTimeout(() => { this.toastMessage = ''; }, 4000);
+			},
+			showError(message) {
+				this.errorMessage = message || 'An unexpected error occurred.';
+				this.view = 'error';
+			},
+
+			async handleContext(ctx) {
+				if (!ctx || ctx.mode !== 'task' || !ctx.task) {
+					if (!this.productLoaded) this.showError('This form must be opened from a Task.');
+					return;
+				}
+				this.task = Object.assign({}, ctx.task);
+				this.currentUserID = (ctx.currentUser && ctx.currentUser.id) || '';
+				this.currentUserDisplay = (ctx.currentUser && ctx.currentUser.displayName) || this.currentUserID;
+				this.refreshAssigneeDisplay();
+
+				if (this.productLoaded) return;
+				this.productLoaded = true;
+				try {
+					await this.loadProduct();
+					this.view = 'content';
+				} catch (err) {
+					this.productLoaded = false;
+					this.showError(err && err.message ? err.message : String(err));
+				}
+			},
+
+			async loadProduct() {
+				const taskInfo = await rpcCall('getTaskWithVariables');
+				const variables = (taskInfo && Array.isArray(taskInfo.variables)) ? taskInfo.variables : [];
+				const variableMap = {};
+				for (const v of variables) { if (v && v.name) variableMap[v.name] = v.value; }
+
+				const productPath = String(variableMap.productPath || '');
+				if (!productPath) throw new Error('Process variable "productPath" is not set on this task.');
+
+				const [node, productJSONText] = await Promise.all([
+					rpcCall('getNode', { path: productPath }),
+					rpcCall('readNodeText', { path: productPath }),
+				]);
+				if (!node) throw new Error('Product not found: ' + productPath);
+
+				let product;
+				try { product = JSON.parse(productJSONText); }
+				catch (err) { throw new Error('Failed to parse product JSON: ' + (err && err.message ? err.message : String(err))); }
+
+				this.node = node;
+				this.product = product;
+				this.productPath = productPath;
+				this.imageFailed = false;
+				this.loadMemoFromNode();
+
+				// Seed each row with any pre-existing threshold (e.g. partial config).
+				const existing = parseThresholds(getStringProp(node, 'inventory_level_config'));
+				const list = (product && Array.isArray(product.variants)) ? product.variants : [];
+				this.rows = list.map(v => {
+					const id = v && v.id != null ? String(v.id) : '';
+					const qty = v && v.inventory_quantity != null ? Number(v.inventory_quantity) : null;
+					const pre = id && Object.prototype.hasOwnProperty.call(existing, id) ? existing[id] : '';
+					return {
+						id,
+						title: (v && (v.title || v.option1)) || '(default)',
+						sku: (v && v.sku) || '',
+						qty,
+						qtyText: formatNumber(qty),
+						thresholdInput: pre === '' ? '' : String(pre),
+					};
+				});
+
+				if (product && product.title) document.title = 'Set thresholds — ' + product.title;
+			},
+
+			applyToAll() {
+				if (!this.canEdit) return;
+				const v = this.bulkValue;
+				if (v === '' || v == null || !Number.isFinite(Number(v))) {
+					this.showToast('Enter a numeric value to apply to all variants.');
+					return;
+				}
+				for (const row of this.rows) row.thresholdInput = String(Number(v));
+			},
+
+			async refreshAssigneeDisplay() {
+				const assignee = this.taskAssignee;
+				if (!assignee || assignee === this.currentUserID) { this.assigneeDisplay = ''; return; }
+				const cached = this._assigneeDisplayCache[assignee];
+				if (cached) { this.assigneeDisplay = cached; return; }
+				try {
+					const user = await rpcCall('getUser', { username: assignee });
+					const display = (user && user.displayName) || assignee;
+					this._assigneeDisplayCache[assignee] = display;
+					if (this.taskAssignee === assignee) this.assigneeDisplay = display;
+				} catch (_) {
+					if (this.taskAssignee === assignee) this.assigneeDisplay = assignee;
+				}
+			},
+
+			// ----------------------------------------------------------
+			// Internal memo (stored as JSON on the product node's
+			// `internal_memo` string property) — mirrors inventory-level-review
+			// ----------------------------------------------------------
+			loadMemoFromNode() {
+				const raw = getStringProp(this.node, 'internal_memo');
+				if (!raw) { this.memo = null; return; }
+				try {
+					const obj = JSON.parse(raw);
+					if (obj && typeof obj === 'object') {
+						this.memo = {
+							id: obj.id || '',
+							name: obj.name || '',
+							at: obj.at || '',
+							content: obj.content || '',
+						};
+						return;
+					}
+				} catch (_) {
+					// Treat unparseable content as no memo so the editor can overwrite cleanly.
+				}
+				this.memo = null;
+			},
+
+			enterMemoEdit() {
+				if (!this.canEditMemo) return;
+				this.memoDraft = (this.memo && this.memo.content) || '';
+				this.memoMode = 'edit';
+			},
+
+			cancelMemoEdit() {
+				if (this.memoSaving) return;
+				this.memoMode = 'view';
+				this.memoDraft = '';
+			},
+
+			async saveMemo() {
+				if (this.memoSaving || !this.canEditMemo) return;
+				const content = (this.memoDraft || '').trim();
+				if (!content) return;
+				if (!this.productPath) {
+					this.showToast('Cannot save memo: product path is unknown.');
+					return;
+				}
+				this.memoSaving = true;
+				try {
+					const payload = {
+						id: this.currentUserID || '',
+						name: this.currentUserDisplay || this.currentUserID || '',
+						at: new Date().toISOString(),
+						content: content,
+					};
+					await rpcCall('setNodeProperty', {
+						path: this.productPath,
+						name: 'internal_memo',
+						value: JSON.stringify(payload),
+					});
+					// Re-read the node so a future edit starts from the persisted
+					// state and the displayed timestamp matches what's saved.
+					const refreshed = await rpcCall('getNode', { path: this.productPath });
+					if (refreshed) this.node = refreshed;
+					this.loadMemoFromNode();
+					this.memoMode = 'view';
+					this.memoDraft = '';
+				} catch (err) {
+					this.showToast(err && err.message ? err.message : String(err));
+				} finally {
+					this.memoSaving = false;
+				}
+			},
+
+			async onSave() {
+				if (this.actionPending || !this.canEdit) return;
+				if (!this.hasAnyThreshold) { this.showToast('Set at least one threshold before saving.'); return; }
+				if (!this.productPath) { this.showToast('Cannot save: product path is unknown.'); return; }
+
+				// Build the threshold config: only include variants with a valid number.
+				const variants = [];
+				for (const row of this.rows) {
+					const raw = row.thresholdInput;
+					if (raw === '' || raw == null) continue;
+					const n = Number(raw);
+					if (!Number.isFinite(n) || n < 0) continue;
+					variants.push({ id: row.id, inventory_alert_threshold: Math.round(n) });
+				}
+				if (variants.length === 0) { this.showToast('Set at least one valid threshold.'); return; }
+
+				this.actionPending = true;
+				try {
+					await rpcCall('setNodeProperty', {
+						path: this.productPath,
+						name: 'inventory_level_config',
+						value: JSON.stringify({ variants }),
+					});
+					await rpcCall('completeTask', { variables: [] });
+					this.task = Object.assign({}, this.task, { completed: true });
+				} catch (err) {
+					this.showToast(err && err.message ? err.message : String(err));
+				} finally {
+					this.actionPending = false;
+				}
+			},
+		},
+	};
+
+VDOM.createApp(App).mount('#app');
+</script>
+</body>
+</html>

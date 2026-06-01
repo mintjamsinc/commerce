@@ -1,0 +1,22 @@
+# Notification destinations for the inventory alert workflow
+# Deploy to: /etc/commerce/config/notifications.yml
+#
+# This file is kept SEPARATE from shopify.yml (Shopify credentials) so that
+# notification settings can be managed independently by the Commerce app
+# (Webtop > Commerce > Notifications) without touching API secrets.
+#
+# Each manual task in product-update-flow.bpmn fires a "create" task listener
+# (etc/commerce/scripts/shopify/notifyTaskCreated.groovy) that posts a summary
+# to every enabled channel below.
+
+# Slack incoming webhook
+# https://api.slack.com/messaging/webhooks
+slack:
+  enabled: false
+  webhookUrl: "REPLACE_WITH_SLACK_WEBHOOK_URL"
+
+# Discord incoming webhook
+# https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks
+discord:
+  enabled: false
+  webhookUrl: "REPLACE_WITH_DISCORD_WEBHOOK_URL"

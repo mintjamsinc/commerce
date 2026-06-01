@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no">
+	<title>Commerce</title>
+
+	<!-- Bootstrap Icons (bundled with webtop) -->
+	<link rel="stylesheet" href="../../assets/vendor/bootstrap-icons/bootstrap-icons.min.css?v=__BUILD_VERSION__">
+
+	<!-- App CSS + shared Webtop design system -->
+	<link href="./assets/css/style.css?v=__BUILD_VERSION__" rel="stylesheet" />
+	<link href="../../assets/css/webtop-app.css?v=__BUILD_VERSION__" rel="stylesheet" />
+</head>
+
+<body>
+	<div id="app" v-cloak class="d-flex flex-column" @mounted="onMounted" @unmount="onUnmount">
+
+		<!-- Top toolbar -->
+		<nav class="nav-bar window-drag-region">
+			<div class="toolbar-group">
+				<button class="btn-icon" @click="saveAll" :disabled="!canSave" title="Save all">
+					<i class="bi bi-floppy"></i>
+				</button>
+			</div>
+
+			<!-- Section switcher (filled toggle, like the cms0 section toggles) -->
+			<div class="toolbar-group">
+				<button class="btn-icon section-toggle" :class="{active: section === 'shop'}"
+					@click="selectSection('shop')" title="Shop">
+					<i class="bi bi-shop"></i>
+				</button>
+				<button class="btn-icon section-toggle" :class="{active: section === 'notifications'}"
+					@click="selectSection('notifications')" title="Notifications">
+					<i class="bi bi-bell"></i>
+				</button>
+			</div>
+
+			<span class="nav-spacer"></span>
+
+			<!-- Window controls -->
+			<div class="window-controls">
+				<button class="btn-icon" @click="onMinimizeWindow" title="Minimize">
+					<i class="bi bi-dash-lg"></i>
+				</button>
+				<button class="btn-icon" @click="onToggleMaximizeWindow" title="Maximize">
+					<i class="bi bi-square"></i>
+				</button>
+				<button class="btn-icon window-control-close" @click="onCloseWindow" title="Close">
+					<i class="bi bi-x-lg"></i>
+				</button>
+			</div>
+		</nav>
+
+		<!-- Content -->
+		<div class="content-body">
+			<div class="content-main island">
+
+				<!-- Loading -->
+				<div v-if="view === 'loading'" class="commerce-state">
+					<div class="spinner"></div>
+					<span>Loading settings&hellip;</span>
+				</div>
+
+				<!-- Error -->
+				<div v-else-if="view === 'error'" class="commerce-state">
+					<i class="bi bi-exclamation-triangle-fill text-warning"></i>
+					<span>{{ errorMessage }}</span>
+				</div>
+
+				<!-- Ready -->
+				<div v-else class="commerce-pane">
+
+					<!-- ========== Shop ========== -->
+					<template v-if="section === 'shop'">
+						<div>
+							<h2 class="commerce-h2 mb-2">Shop</h2>
+							<div class="commerce-lede">Shopify connection used by the webhook and inventory workflow.</div>
+						</div>
+
+						<!-- Webhook: always required, independent of the Admin API. -->
+						<div class="property-group">
+							<div class="property-group-title">Webhook</div>
+							<div class="property-row">
+								<label class="property-label">Webhook shared secret</label>
+								<div class="input-group">
+									<input :type="reveal.webhookSecret ? 'text' : 'password'"
+										autocomplete="off" v-model="shop.webhookSecret">
+									<div class="input-group-actions">
+										<button class="input-group-btn" @click="reveal.webhookSecret = !reveal.webhookSecret"
+											:title="reveal.webhookSecret ? 'Hide' : 'Show'">
+											<i class="bi" :class="reveal.webhookSecret ? 'bi-eye' : 'bi-eye-slash'"></i>
+										</button>
+									</div>
+								</div>
+							</div>
+							<div class="property-hint">Verifies incoming Shopify webhooks (HMAC). Required independently of the
+								Admin API.</div>
+						</div>
+
+						<!-- Admin API: optional enrichment, gated by a toggle. -->
+						<div class="property-group">
+							<div class="property-group-title">Admin API</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="shop.adminApi.enabled">
+								Use the Admin API
+							</label>
+							<div class="property-hint">When enabled, product webhooks are enriched with metafields fetched
+								from the Shopify Admin API. When disabled, no Admin API calls are made.</div>
+
+							<div class="property-row">
+								<label class="property-label">Shop domain<span v-if="shop.adminApi.enabled"
+										class="required-mark" title="Required">*</span></label>
+								<input type="text" class="wt w-100" v-model="shop.adminApi.shopDomain"
+									:disabled="!shop.adminApi.enabled"
+									:class="{ 'is-invalid': shop.adminApi.enabled && !shop.adminApi.shopDomain }"
+									placeholder="example.myshopify.com">
+							</div>
+							<div class="property-row">
+								<label class="property-label">API version<span v-if="shop.adminApi.enabled"
+										class="required-mark" title="Required">*</span></label>
+								<input type="text" class="wt w-100" v-model="shop.adminApi.apiVersion"
+									:disabled="!shop.adminApi.enabled"
+									:class="{ 'is-invalid': shop.adminApi.enabled && !shop.adminApi.apiVersion }"
+									placeholder="2026-01">
+							</div>
+							<div class="property-row">
+								<label class="property-label">Client ID<span v-if="shop.adminApi.enabled"
+										class="required-mark" title="Required">*</span></label>
+								<div class="input-group">
+									<input :type="reveal.clientID ? 'text' : 'password'"
+										autocomplete="off" v-model="shop.adminApi.clientID"
+										:disabled="!shop.adminApi.enabled"
+										:class="{ 'is-invalid': shop.adminApi.enabled && !shop.adminApi.clientID }">
+									<div class="input-group-actions">
+										<button class="input-group-btn" @click="reveal.clientID = !reveal.clientID"
+											:disabled="!shop.adminApi.enabled"
+											:title="reveal.clientID ? 'Hide' : 'Show'">
+											<i class="bi" :class="reveal.clientID ? 'bi-eye' : 'bi-eye-slash'"></i>
+										</button>
+									</div>
+								</div>
+							</div>
+							<div class="property-row">
+								<label class="property-label">Client secret<span v-if="shop.adminApi.enabled"
+										class="required-mark" title="Required">*</span></label>
+								<div class="input-group">
+									<input :type="reveal.clientSecret ? 'text' : 'password'"
+										autocomplete="off" v-model="shop.adminApi.clientSecret"
+										:disabled="!shop.adminApi.enabled"
+										:class="{ 'is-invalid': shop.adminApi.enabled && !shop.adminApi.clientSecret }">
+									<div class="input-group-actions">
+										<button class="input-group-btn" @click="reveal.clientSecret = !reveal.clientSecret"
+											:disabled="!shop.adminApi.enabled"
+											:title="reveal.clientSecret ? 'Hide' : 'Show'">
+											<i class="bi" :class="reveal.clientSecret ? 'bi-eye' : 'bi-eye-slash'"></i>
+										</button>
+									</div>
+								</div>
+							</div>
+						</div>
+					</template>
+
+					<!-- ========== Notifications ========== -->
+					<template v-if="section === 'notifications'">
+						<div>
+							<h2 class="commerce-h2 mb-2">Notifications</h2>
+							<div class="commerce-lede">Destinations notified when a manual inventory task is raised.
+								Stored separately from the Shopify credentials.</div>
+						</div>
+
+						<div class="property-group">
+							<div class="property-group-title">Slack</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="notif.slack.enabled">
+								Enable Slack notifications
+							</label>
+							<div class="property-row">
+								<label class="property-label">Incoming webhook URL</label>
+								<input type="text" class="wt w-100" v-model="notif.slack.webhookUrl"
+									:disabled="!notif.slack.enabled"
+									placeholder="https://hooks.slack.com/services/...">
+							</div>
+						</div>
+
+						<div class="property-group">
+							<div class="property-group-title">Discord</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="notif.discord.enabled">
+								Enable Discord notifications
+							</label>
+							<div class="property-row">
+								<label class="property-label">Incoming webhook URL</label>
+								<input type="text" class="wt w-100" v-model="notif.discord.webhookUrl"
+									:disabled="!notif.discord.enabled"
+									placeholder="https://discord.com/api/webhooks/...">
+							</div>
+						</div>
+					</template>
+
+				</div>
+			</div>
+		</div>
+
+		<!-- Status bar -->
+		<div class="status-bar window-drag-region">
+			<span class="nav-spacer"></span>
+			<div class="status-group">
+				<span v-if="saving" class="status-item"><i class="bi bi-arrow-repeat me-1"></i>Saving&hellip;</span>
+				<span v-else-if="adminApiInvalid" class="status-item status-err"><i class="bi bi-exclamation-circle me-1"></i>Admin API needs shop domain, API version, client ID &amp; secret</span>
+				<span v-else-if="hasChanges" class="status-item">Unsaved changes</span>
+				<span v-else-if="statusKind === 'ok'" class="status-item status-ok"><i class="bi bi-check-lg me-1"></i>{{ status }}</span>
+				<span v-else-if="statusKind === 'err'" class="status-item status-err">{{ status }}</span>
+				<span v-else class="status-item">Ready</span>
+			</div>
+		</div>
+
+		<!-- Toast -->
+		<div v-if="toast" class="commerce-toast" :class="{ error: toastError }" role="alert">{{ toast }}</div>
+
+		<!-- Close Confirmation Dialog -->
+		<div v-if="closeConfirmDialog.visible" class="dialog-overlay">
+			<div class="dialog-frame" style="max-width: 32rem;">
+				<div class="island p-2">
+					<div class="dialog-header">
+						<h3><i class="bi bi-exclamation-triangle-fill me-2"></i>Unsaved Changes</h3>
+					</div>
+					<div class="dialog-body">
+						<p class="mt-0">You have unsaved changes.</p>
+						<p>Do you want to save your changes before closing?</p>
+					</div>
+					<div class="dialog-footer flex-wrap">
+						<button class="wt" @click="onCloseConfirmDialogAction('cancel')">Cancel</button>
+						<button class="wt wt-danger" @click="onCloseConfirmDialogAction('discard')">
+							<i class="bi bi-trash me-1"></i>Don't Save
+						</button>
+						<button class="wt wt-primary" :disabled="adminApiInvalid"
+							@click="onCloseConfirmDialogAction('save')">
+							<i class="bi bi-floppy me-1"></i>Save
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+
+	</div>
+
+	<script type="module" src="./app.js?v=__BUILD_VERSION__"></script>
+</body>
+
+</html>

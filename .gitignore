@@ -1,0 +1,16 @@
+# IDE settings (IntelliJ, VSCode)
+.idea/
+.vscode/
+*.iml
+# End of IDE settings
+
+# Node.js dependencies and build output (webtop standalone build)
+node_modules/
+dist/
+*.tsbuildinfo
+.rpt2_cache/
+
+# Markdown files (except README.md and documents/)
+*.md
+!README.md
+!docs/*.md

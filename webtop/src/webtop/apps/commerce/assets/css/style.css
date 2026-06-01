@@ -1,0 +1,248 @@
+/* Commerce app — app-specific styles.
+ *
+ * Layout, buttons, inputs, dialogs and theme tokens come from the shared
+ * webtop-app.css (loaded alongside this file). These rules only add the few
+ * pieces this app needs and intentionally avoid redefining design-system
+ * tokens so the app stays consistent with the rest of Webtop in both themes. */
+
+/* App-specific tokens only — kept minimal, like cms0 preferences. Theme tokens
+ * live in the shared webtop-app.css. */
+:root {
+	--navbar-height: 2.5rem;
+	--statusbar-height: 1.75rem;
+}
+
+[v-cloak] {
+	display: none;
+}
+
+/* The shared #app is a full-screen absolute box; make it a column flex so the
+ * nav bar, content body and status bar stack and the island fills the middle. */
+#app {
+	height: 100%;
+}
+
+.commerce-pane {
+	display: flex;
+	flex-direction: column;
+	gap: 2rem;
+	max-width: 44rem;
+	margin: 0;
+}
+
+.commerce-h2 {
+	margin: 0;
+	font-size: 18px;
+}
+
+.commerce-lede {
+	color: var(--text-soft-color);
+}
+
+/* Secret fields reuse the shared .input-group grouping (input + inline eye
+ * toggle) for consistency with cms0 content-browser. As persistent form fields
+ * they should read as normal inputs and only highlight on focus — not always
+ * look focused like the content-browser path bar — so soften the default border
+ * and restore the focus ring via :focus-within. */
+.input-group {
+	border-color: var(--input-border-color);
+	box-shadow: none;
+}
+
+.input-group:focus-within {
+	border-color: var(--input-focus-border-color);
+	box-shadow: 0 0 0 2px var(--input-focus-ring-color);
+}
+
+/* Centered loading / error pane inside the content area. flex:1 lets it fill
+ * the island so the message centers vertically. */
+.commerce-state {
+	flex: 1;
+	min-height: 16rem;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 0.75rem;
+	opacity: 0.75;
+	text-align: center;
+}
+.commerce-state .bi { font-size: 1.75rem; }
+
+/* Transient toast (errors / confirmations). */
+.commerce-toast {
+	position: fixed;
+	bottom: 2.75rem;
+	left: 50%;
+	transform: translateX(-50%);
+	padding: 0.55rem 1rem;
+	border-radius: 0.5rem;
+	background: #1f2937;
+	color: #f8fafc;
+	font-size: 0.8125rem;
+	box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+	z-index: 1000;
+	max-width: 80%;
+}
+.commerce-toast.error { background: #dc2626; color: #fff; }
+
+.status-ok { color: #059669; }
+.status-err { color: #dc2626; }
+
+/* ----------------------------------------------------------------------------
+ * Layout — aligned with the shared Webtop look (eip-modeler / other apps).
+ * The shared webtop-app.css ships base components; these rules bring the
+ * toolbar grouping, status bar and form spacing in line with the rest of
+ * Webtop so the Commerce app looks consistent.
+ * -------------------------------------------------------------------------- */
+
+/* Top toolbar (translucent, bleeds to the window edges). */
+nav.nav-bar {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	margin-top: -1rem;
+	margin-left: -1rem;
+	margin-right: -1rem;
+	padding: 1rem 1.5rem 0.75rem;
+	color: var(--navbar-color) !important;
+	white-space: nowrap;
+	user-select: none;
+	position: relative;
+	z-index: 10;
+}
+
+.nav-spacer {
+	flex: 1;
+	min-width: 1rem;
+}
+
+/* Toolbar groups — pill-shaped clusters, separated by the gap above. */
+.toolbar-group {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.25rem 0.5rem;
+	background-color: var(--window-controls-bg);
+	border: 1px solid var(--window-controls-border-color);
+	border-radius: 9999px;
+}
+
+/* Section switcher (Shop / Notifications) — filled toggle, matching the shared
+ * .toolbar-group .btn-icon.active look used across Webtop (defined locally too
+ * so the toggle works regardless of the shell's webtop-app.css version). */
+.toolbar-group .btn-icon.active {
+	background-color: var(--pane-toggle-active-bg);
+	color: #fff;
+}
+
+/* Content body — single pane. flex:1 + min-height:0 lets the island fill the
+ * height between the nav bar and status bar (otherwise it grows to its content
+ * and pushes the status bar off-screen). */
+.content-body {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	position: relative;
+	gap: 0.25rem;
+}
+
+/* The single island. It scrolls internally so tall content never overflows the
+ * window; the rounded island edges stay fixed. */
+.content-main {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	min-width: 0;
+	min-height: 0;
+	overflow-y: auto;
+}
+
+/* Bottom status bar — compact, right-aligned (matches eip-modeler). */
+.status-bar {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	height: var(--statusbar-height);
+	margin-bottom: -1rem;
+	margin-left: -1rem;
+	margin-right: -1rem;
+	padding: 0 1rem;
+	color: var(--navbar-color);
+	font-size: 11px;
+	white-space: nowrap;
+	user-select: none;
+}
+
+/* Status items grouped like cms0 text-editor so positioning is identical. */
+.status-group {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.25rem;
+}
+
+.status-item {
+	padding: 0 0.5rem;
+}
+
+/* Form spacing inside the islands — looser, consistent with other apps. */
+.property-group {
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
+}
+
+.property-group-title {
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0;
+    color: var(--text-soft-color);
+    padding-bottom: .25rem;
+    border-bottom: 1px solid var(--navbar-border-color);
+}
+
+.property-label {
+	display: block;
+	font-size: 12px;
+	color: var(--text-soft-color);
+	margin-bottom: 0.125rem;
+    padding-left: 0.125rem;
+}
+
+.wt-checkbox-label {
+	display: flex;
+	align-items: center;
+	gap: 0.375rem;
+	cursor: pointer;
+	user-select: none;
+}
+
+/* Helper text under a control or group (e.g. the Admin API explanation). */
+.property-hint {
+	font-size: 11px;
+	line-height: 1.5;
+	color: var(--text-soft-color);
+	margin-top: -0.25rem;
+}
+
+/* Required-field marker, shown only while the Admin API is enabled. */
+.required-mark {
+	color: #dc2626;
+	margin-left: 0.15rem;
+}
+
+/* A required field left empty while the Admin API is enabled. The visible
+ * border for secret fields lives on the .input-group wrapper, so highlight both
+ * the bare input and the wrapping group. */
+.property-row input.is-invalid {
+	border-color: #dc2626;
+}
+.property-row .input-group:has(input.is-invalid) {
+	border-color: #dc2626;
+}
+
+/* A reveal toggle next to a disabled field is itself inert. */
+.input-group-btn:disabled {
+	cursor: not-allowed;
+	opacity: 0.55;
+}

@@ -1,0 +1,28 @@
+{
+	"name": "commerce-webtop",
+	"version": "1.0.0",
+	"type": "module",
+	"private": true,
+	"description": "Standalone build for the Commerce Webtop application. Depends only on the published @mintjamsinc/ichigojs runtime; the app source is self-contained and carries no webtop-internal imports, so it builds independently of cms0.",
+	"scripts": {
+		"build": "cross-env BUILD=development rollup -c",
+		"build:prod": "cross-env BUILD=production rollup -c"
+	},
+	"devDependencies": {
+		"@rollup/plugin-commonjs": "^29.0.2",
+		"@rollup/plugin-node-resolve": "^16.0.3",
+		"@rollup/plugin-terser": "^1.0.0",
+		"cross-env": "^10.1.0",
+		"esbuild": "^0.28.0",
+		"rollup": "^4.60.4",
+		"rollup-plugin-copy": "^3.5.0",
+		"rollup-plugin-typescript2": "^0.37.0",
+		"typescript": "^6.0.3"
+	},
+	"dependencies": {
+		"@mintjamsinc/ichigojs": "^0.1.68"
+	},
+	"allowScripts": {
+		"esbuild@0.28.0": true
+	}
+}

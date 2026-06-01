@@ -1,0 +1,29 @@
+<svg viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="commerce">
+<defs>
+  <clipPath id="clip-commerce"><rect x="0" y="0" width="180" height="180" rx="42" ry="42"></rect></clipPath>
+  <linearGradient id="hl-commerce" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="white" stop-opacity="0.25"></stop>
+    <stop offset="55%" stop-color="white" stop-opacity="0"></stop>
+  </linearGradient>
+</defs>
+<defs><linearGradient id="bg-commerce" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0%" stop-color="#fb7185"></stop>
+<stop offset="100%" stop-color="#be123c"></stop>
+</linearGradient></defs>
+<rect x="0" y="0" width="180" height="180" rx="42" ry="42" fill="url(#bg-commerce)"></rect>
+<g clip-path="url(#clip-commerce)">
+  <!-- bag body -->
+  <path d="M 52 70 H 128 L 134 138 A 6 6 0 0 1 128 144 H 52 A 6 6 0 0 1 46 138 Z" fill="white"></path>
+  <!-- handle -->
+  <path d="M 70 70 V 60 A 20 20 0 0 1 110 60 V 70" fill="none" stroke="white" stroke-width="7" stroke-linecap="round"></path>
+  <!-- price tag -->
+  <g transform="rotate(-18 90 104)">
+    <path d="M 72 92 H 96 L 108 104 L 90 122 L 78 110 Z" fill="#be123c"></path>
+    <circle cx="84" cy="104" r="5" fill="white"></circle>
+  </g>
+</g>
+<g clip-path="url(#clip-commerce)">
+  <rect x="0" y="0" width="180" height="180" fill="url(#hl-commerce)"></rect>
+  <rect x="0.5" y="0.5" width="179" height="179" rx="41.5" ry="41.5" fill="none" stroke="white" stroke-opacity="0.18" stroke-width="1"></rect>
+</g>
+</svg>

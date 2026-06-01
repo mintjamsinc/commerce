@@ -1,0 +1,27 @@
+# Shopify configuration
+# Deploy to: /etc/commerce/config/shopify.yml
+# Managed by the Commerce app (Webtop > Commerce > Shop).
+
+# Webhook shared secret (from Shopify Admin > Notifications > Webhooks).
+# Used to verify incoming Shopify webhooks (HMAC-SHA256). This is REQUIRED to
+# receive webhooks at all and is kept INDEPENDENT of the Admin API credentials
+# below: webhooks are processed even when the Admin API integration is disabled.
+# IMPORTANT: Replace with the actual secret before deployment.
+webhookSecret: "REPLACE_WITH_WEBHOOK_SECRET"
+
+# Admin API integration (optional).
+# When enabled, product webhooks are enriched with metafields fetched from the
+# Shopify Admin API (GraphQL). When disabled, no Admin API calls are made and
+# the connection fields below are ignored.
+#
+# The four connection fields are REQUIRED when `enabled` is true.
+adminApi:
+  enabled: false
+  # Shop domain
+  shopDomain: "example.myshopify.com"
+  # API version
+  apiVersion: "2026-01"
+  # OAuth credentials (from Shopify Partners > App > Client credentials)
+  # IMPORTANT: Replace with actual values before enabling.
+  clientID: "REPLACE_WITH_CLIENT_ID"
+  clientSecret: "REPLACE_WITH_CLIENT_SECRET"
