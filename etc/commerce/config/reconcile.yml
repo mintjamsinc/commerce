@@ -1,0 +1,36 @@
+# CMS <-> Shopify reconciliation (category G, #24)
+# Deploy to: /etc/commerce/config/reconcile.yml
+# Managed by the Commerce app (Webtop > Commerce).
+#
+# A periodic batch compares the CMS mirror with Shopify's current state (product
+# status, variant price, variant inventory), records drift to a report and alerts.
+# Healing is OFF by default (detect + report first); enable it per field once you
+# trust the source-of-truth policy. Requires the Admin API (shopify.yml ->
+# adminApi.enabled). See docs/reconciliation.md.
+
+# Master switch for the reconciliation batch.
+enabled: true
+
+# Products checked per run (the batch advances a round-robin cursor across runs, so
+# the whole catalog is covered over time without a large API burst).
+maxPerRun: 50
+
+# Which side wins for each field ("cms" or "shopify"). This decides the heal
+# direction when auto-heal is enabled:
+#   cms     -> push the CMS value to Shopify (ShopifyWrite)
+#   shopify -> refresh the CMS mirror from Shopify
+sourceOfTruth:
+  status: "cms"        # publish/unpublish is typically driven from the CMS
+  price: "cms"         # price is typically authored/owned in the CMS
+  inventory: "shopify" # stock is typically authoritative in Shopify (POS, etc.)
+
+# Automatic healing, per field. OFF by default: reconciliation only detects +
+# reports + alerts until you opt in. Inventory is never auto-healed (per-location
+# mirror vs aggregate cannot be written back losslessly) — it is always reported.
+autoHeal:
+  status: false
+  price: false
+  inventory: false
+
+# Send a (debounced) notification when drift is detected.
+alert: true

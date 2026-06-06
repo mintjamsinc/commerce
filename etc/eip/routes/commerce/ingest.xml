@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<camel>
+
+    <!--
+      Source-agnostic ingestion core (category A: #1 all-topics, #3 multi-backend,
+      #4 replay). EVERY inbound integration event, from ANY backend, funnels through
+      here:
+
+        backend adapter (e.g. content/public/commerce/endpoints/shopify/webhook.groovy)
+          ─ verifies the backend's signature/auth
+          ─ maps the request to a source-agnostic envelope:
+                body            = raw payload
+                header event_source = backend id   (e.g. "shopify")
+                header event_topic  = topic         (e.g. "orders/paid")
+                header event_id     = unique id     (the webhook id)
+                header received_at  = ISO timestamp
+          ─ sends it to direct:commerce-ingest
+
+      To connect another backend (Rakuten / BASE / a self-hosted store / an ERP),
+      add an adapter endpoint that produces the same envelope and points here — no
+      change to the core or the downstream handlers. See docs/ingestion.md.
+
+      The core: (1) logs the event with its raw payload to the durable event log
+      (replayable + auditable), (2) forwards topics that have a dedicated workflow
+      to their existing routes, or normalizes every other topic generically, then
+      (3) records the terminal status on the event-log entry.
+    -->
+    <routeConfiguration id="commerce-ingest-error-handler">
+        <onException>
+            <exception>java.lang.Exception</exception>
+            <handled>
+                <constant>true</constant>
+            </handled>
+            <redeliveryPolicy maximumRedeliveries="2" redeliveryDelay="2000"/>
+            <log message="commerce-ingest error [${exchangeId}] topic=${header.event_topic} id=${header.event_id}: ${exception.message}"
+                 loggingLevel="ERROR"/>
+
+            <!-- Mark the event failed so it becomes eligible for replay (#4). -->
+            <setHeader name="event_status">
+                <constant>error</constant>
+            </setHeader>
+            <setHeader name="event_error">
+                <simple>${exception.message}</simple>
+            </setHeader>
+            <toD uri="cms:/etc/commerce/scripts/commerce/markEvent.groovy?inputs=event_path,event_status,event_error"/>
+
+            <!-- Record processing health (error). -->
+            <setHeader name="health_group">
+                <constant>ingest</constant>
+            </setHeader>
+            <setHeader name="health_name">
+                <simple>${header.event_topic}</simple>
+            </setHeader>
+            <setHeader name="health_ok">
+                <constant>false</constant>
+            </setHeader>
+            <toD uri="cms:/etc/commerce/scripts/shopify/recordHealth.groovy?inputs=health_*,received_at"/>
+        </onException>
+    </routeConfiguration>
+
+    <route id="commerce-ingest" routeConfigurationId="commerce-ingest-error-handler">
+        <from uri="direct:commerce-ingest"/>
+
+        <!-- Run as the caller-supplied identity: the public webhook adapter passes
+             the service user (commerce-service-user); an operator-triggered replay
+             (events endpoint) passes the logged-in user, so the event-log entries and
+             downstream records are attributed to whoever replayed. Fall back to the
+             service user when no caller identity was supplied. -->
+        <choice>
+            <when>
+                <simple>${header.runAs} == null || ${header.runAs} == ''</simple>
+                <setHeader name="runAs">
+                    <constant>commerce-service-user</constant>
+                </setHeader>
+            </when>
+        </choice>
+
+        <!-- Preserve the raw payload: a cms: script step can replace the exchange
+             body with its return value, so we keep the event JSON in a header and
+             restore it before handing off downstream. -->
+        <setHeader name="ingest_payload">
+            <simple>${body}</simple>
+        </setHeader>
+
+        <!-- 1. Durable event log (raw payload kept for replay + audit). Outputs the
+                event-log path so we can stamp its terminal status later. -->
+        <toD uri="cms:/etc/commerce/scripts/commerce/logEvent.groovy?inputs=event_source,event_topic,event_id,received_at,ingest_payload&amp;outputs=event_path"/>
+
+        <setBody>
+            <simple>${header.ingest_payload}</simple>
+        </setBody>
+
+        <!-- Derive the Shopify adapter headers the bespoke routes read, from the
+             source-agnostic envelope. Keeps those routes untouched and lets replay
+             reconstruct only the envelope. -->
+        <setHeader name="shopify_topic">
+            <simple>${header.event_topic}</simple>
+        </setHeader>
+        <setHeader name="shopify_webhook_id">
+            <simple>${header.event_id}</simple>
+        </setHeader>
+        <setHeader name="shopify_shop_domain">
+            <simple>${header.event_shop_domain}</simple>
+        </setHeader>
+
+        <!-- 2. Dispatch by topic: bespoke handlers, else generic normalization. -->
+        <choice>
+            <when>
+                <simple>${header.event_topic} == 'orders/paid'</simple>
+                <toD uri="direct:shopify-order-paid"/>
+            </when>
+            <when>
+                <simple>${header.event_topic} == 'products/create' || ${header.event_topic} == 'products/update'</simple>
+                <toD uri="direct:shopify-product-update"/>
+            </when>
+            <when>
+                <simple>${header.event_topic} == 'products/delete'</simple>
+                <toD uri="direct:shopify-product-delete"/>
+            </when>
+            <when>
+                <simple>${header.event_topic} == 'refunds/create'</simple>
+                <toD uri="direct:shopify-refund-created"/>
+            </when>
+            <when>
+                <simple>${header.event_topic} == 'inventory_levels/update'</simple>
+                <toD uri="direct:shopify-inventory-level"/>
+            </when>
+            <when>
+                <simple>${header.event_topic} == 'locations/create' || ${header.event_topic} == 'locations/update'</simple>
+                <toD uri="direct:shopify-location"/>
+            </when>
+            <otherwise>
+                <!-- Any other topic (customers/*, fulfillments/*, carts/*,
+                     checkouts/*, …) is normalized into a current-state entity
+                     record (#1). Failures here propagate to the error handler so
+                     the event is marked failed and can be replayed. -->
+                <toD uri="cms:/etc/commerce/scripts/commerce/normalizeEvent.groovy?inputs=event_source,event_topic,event_id,ingest_payload"/>
+
+                <!-- Record processing health (success) for the generic path; the
+                     bespoke routes record their own. -->
+                <setHeader name="health_group">
+                    <constant>ingest</constant>
+                </setHeader>
+                <setHeader name="health_name">
+                    <simple>${header.event_topic}</simple>
+                </setHeader>
+                <setHeader name="health_ok">
+                    <constant>true</constant>
+                </setHeader>
+                <toD uri="cms:/etc/commerce/scripts/shopify/recordHealth.groovy?inputs=health_*,received_at"/>
+            </otherwise>
+        </choice>
+
+        <!-- 3. Stamp the event-log entry processed (the handler ran). Business-level
+                failures inside a bespoke route are surfaced by that route (error
+                folder + health) and can be replayed manually. -->
+        <setHeader name="event_status">
+            <constant>processed</constant>
+        </setHeader>
+        <toD uri="cms:/etc/commerce/scripts/commerce/markEvent.groovy?inputs=event_path,event_status"/>
+    </route>
+
+</camel>

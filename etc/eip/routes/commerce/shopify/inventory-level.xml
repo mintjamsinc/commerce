@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<camel>
+
+    <routeConfiguration id="shopify-inventory-level-error-handler">
+        <onException>
+            <exception>java.lang.Exception</exception>
+            <handled>
+                <constant>true</constant>
+            </handled>
+            <redeliveryPolicy maximumRedeliveries="3" redeliveryDelay="5000"/>
+            <log message="Shopify inventory level error [${exchangeId}]: ${exception.message}"
+                 loggingLevel="ERROR"/>
+
+            <!-- Record processing health (error) -->
+            <setHeader name="health_group">
+                <constant>route</constant>
+            </setHeader>
+            <setHeader name="health_name">
+                <simple>${header.shopify_topic}</simple>
+            </setHeader>
+            <setHeader name="health_ok">
+                <constant>false</constant>
+            </setHeader>
+            <toD uri="cms:/etc/commerce/scripts/shopify/recordHealth.groovy?inputs=health_*,received_at"/>
+        </onException>
+    </routeConfiguration>
+
+    <!--
+      Per-location inventory updates (Shopify inventory_levels/update). The payload
+      carries an inventory_item_id + location_id + available; recordInventoryLevel
+      merges it into the item's per-location level file (newest update wins).
+    -->
+    <route id="shopify-inventory-level" routeConfigurationId="shopify-inventory-level-error-handler">
+        <from uri="direct:shopify-inventory-level"/>
+
+        <!-- Inherit the caller's identity from the ingest core (the service user
+             for webhook traffic, or the operator who replayed the event); fall back
+             to the service user when none was supplied. -->
+        <choice>
+            <when>
+                <simple>${header.runAs} == null || ${header.runAs} == ''</simple>
+                <setHeader name="runAs">
+                    <constant>commerce-service-user</constant>
+                </setHeader>
+            </when>
+        </choice>
+
+        <!-- Preserve the raw payload: a cms: script step can replace the exchange
+             body with its return value, so we keep the webhook JSON in a header to
+             feed the backorder release step that follows. -->
+        <setHeader name="shopify_payload">
+            <simple>${body}</simple>
+        </setHeader>
+
+        <toD uri="cms:/etc/commerce/scripts/shopify/recordInventoryLevel.groovy?inputs=shopifyPayload=@body"/>
+
+        <!-- Release covered backorders (#12): when the arriving stock covers open
+             backorders for this item, raise each as a "Release Backorder" task
+             (FIFO). Defensive - never breaks the inventory route. -->
+        <setBody>
+            <simple>${header.shopify_payload}</simple>
+        </setBody>
+        <toD uri="cms:/etc/commerce/scripts/shopify/releaseBackorders.groovy?inputs=shopifyPayload=@body"/>
+
+        <!-- Refresh the public storefront inventory map (#21) so the storefront's
+             "low stock" / "sold out" badges update within seconds. Defensive. -->
+        <setBody>
+            <simple>${header.shopify_payload}</simple>
+        </setBody>
+        <toD uri="cms:/etc/commerce/scripts/commerce/publishInventory.groovy?inputs=shopifyPayload=@body"/>
+
+        <!-- Record processing health (success) -->
+        <setHeader name="health_group">
+            <constant>route</constant>
+        </setHeader>
+        <setHeader name="health_name">
+            <simple>${header.shopify_topic}</simple>
+        </setHeader>
+        <setHeader name="health_ok">
+            <constant>true</constant>
+        </setHeader>
+        <toD uri="cms:/etc/commerce/scripts/shopify/recordHealth.groovy?inputs=health_*,received_at"/>
+    </route>
+
+</camel>

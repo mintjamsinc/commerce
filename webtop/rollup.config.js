@@ -65,58 +65,69 @@ function versionStampPlugin() {
   };
 }
 
-const name = 'commerce';
+// Build one Commerce Webtop app: src/webtop/apps/<name> -> dist/webtop/apps/<name>,
+// with index.html (version stamped), assets/ (css + icons) and app.yml copied,
+// and CSS under assets/css/ minified in production.
+function makeApp(name) {
+  const plugins = [
+    resolve({ moduleDirectories: ['node_modules'] }),
+    commonjs(),
+    typescript({ tsconfig: './tsconfig.json', useTsconfigDeclarationDir: false, clean: true }),
+  ];
 
-const plugins = [
-  resolve({ moduleDirectories: ['node_modules'] }),
-  commonjs(),
-  typescript({ tsconfig: './tsconfig.json', useTsconfigDeclarationDir: false, clean: true }),
-];
+  if (isProduction) {
+    plugins.push(terser());
+  }
 
-if (isProduction) {
-  plugins.push(terser());
-}
+  // Must run after terser so the literal __BUILD_VERSION__ in the emitted bundle
+  // is replaced with the build version stamp.
+  plugins.push(versionStampPlugin());
 
-// Must run after terser so the literal __BUILD_VERSION__ in the emitted bundle
-// is replaced with the build version stamp.
-plugins.push(versionStampPlugin());
-
-// Copy static assets so the build is self-contained: index.html (version
-// stamped), the assets/ directory (css + icons), and app.yml.
-plugins.push(copy({
-  targets: [
-    { src: `src/webtop/apps/${name}/index.html`, dest: `dist/webtop/apps/${name}`, transform: stampVersion },
-    { src: `src/webtop/apps/${name}/assets`, dest: `dist/webtop/apps/${name}` },
-    { src: `src/webtop/apps/${name}/app.yml`, dest: `dist/webtop/apps/${name}` },
-  ],
-  hook: 'writeBundle',
-}));
-
-// In production, overwrite the just-copied CSS with minified content at the
-// same paths. Must run on closeBundle (not writeBundle): rollup executes
-// writeBundle hooks in parallel, so a recursive asset directory copy can
-// otherwise finish after — and silently clobber — the minified CSS.
-// closeBundle is guaranteed to run after all writeBundle hooks complete.
-if (isProduction) {
+  // Copy static assets so the build is self-contained: index.html (version
+  // stamped), the assets/ directory (css + icons), and app.yml.
   plugins.push(copy({
     targets: [
-      {
-        src: `src/webtop/apps/${name}/assets/css/*.css`,
-        dest: `dist/webtop/apps/${name}/assets/css`,
-        transform: minifyCss,
-      },
+      { src: `src/webtop/apps/${name}/index.html`, dest: `dist/webtop/apps/${name}`, transform: stampVersion },
+      { src: `src/webtop/apps/${name}/assets`, dest: `dist/webtop/apps/${name}` },
+      { src: `src/webtop/apps/${name}/app.yml`, dest: `dist/webtop/apps/${name}` },
     ],
-    hook: 'closeBundle',
+    hook: 'writeBundle',
   }));
+
+  // In production, overwrite the just-copied CSS with minified content at the
+  // same paths. Must run on closeBundle (not writeBundle): rollup executes
+  // writeBundle hooks in parallel, so a recursive asset directory copy can
+  // otherwise finish after — and silently clobber — the minified CSS.
+  // closeBundle is guaranteed to run after all writeBundle hooks complete.
+  if (isProduction) {
+    plugins.push(copy({
+      targets: [
+        {
+          src: `src/webtop/apps/${name}/assets/css/*.css`,
+          dest: `dist/webtop/apps/${name}/assets/css`,
+          transform: minifyCss,
+        },
+      ],
+      hook: 'closeBundle',
+    }));
+  }
+
+  return {
+    input: `src/webtop/apps/${name}/app.ts`,
+    output: {
+      file: `dist/webtop/apps/${name}/app.js`,
+      format: 'esm',
+      sourcemap: isProduction ? true : 'inline',
+      ...(isProduction ? { sourcemapExcludeSources: false } : {}),
+    },
+    plugins,
+  };
 }
 
-export default {
-  input: `src/webtop/apps/${name}/app.ts`,
-  output: {
-    file: `dist/webtop/apps/${name}/app.js`,
-    format: 'esm',
-    sourcemap: isProduction ? true : 'inline',
-    ...(isProduction ? { sourcemapExcludeSources: false } : {}),
-  },
-  plugins,
-};
+export default [
+  makeApp('commerce'),
+  makeApp('commerce-dashboard'),
+  makeApp('commerce-pim'),
+  makeApp('commerce-ops'),
+  makeApp('commerce-publish'),
+];

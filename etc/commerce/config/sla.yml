@@ -1,0 +1,39 @@
+# Task SLA monitor
+# Deploy to: /etc/commerce/config/sla.yml
+# Managed by the Commerce app (Webtop > Commerce > Tasks).
+#
+# A periodic scan (every 15 min) checks the open human tasks of the commerce
+# workflows (order review, refund review, inventory) against the rules below and
+# escalates breaches: an alert through the channels in notifications.yml plus the
+# optional engine-side action under `escalation`. Escalations are debounced per
+# task (cooldownMinutes) so a standing breach is not re-announced every scan.
+#
+# A rule is ON unless enabled is false. Each leaf is a scalar.
+
+# Master switch for SLA escalation (false = scan does nothing).
+enabled: true
+
+# Minimum minutes between repeat escalations of the same task+rule.
+cooldownMinutes: 120
+
+# Task left unassigned (no one has claimed it) for longer than `minutes`.
+unclaimed:
+  enabled: true
+  minutes: 60
+
+# Task still open (claimed or not) for longer than `minutes`.
+open:
+  enabled: true
+  minutes: 1440
+
+# Task past its due date by more than `graceMinutes` (only when a due date is set).
+overdue:
+  enabled: true
+  graceMinutes: 0
+
+# Optional engine-side escalation applied to breached tasks (in addition to the
+# alert). Remove `priority` to leave priority untouched; leave `candidateGroup`
+# blank to not reassign.
+escalation:
+  priority: 75
+  candidateGroup: ""

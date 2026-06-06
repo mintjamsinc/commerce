@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<camel>
+
+    <!-- Swallow batch failures: replenishment must never surface errors. -->
+    <routeConfiguration id="commerce-reorder-error-handler">
+        <onException>
+            <exception>java.lang.Exception</exception>
+            <handled>
+                <constant>true</constant>
+            </handled>
+            <log message="commerce-reorder error: ${exception.message}"
+                 loggingLevel="WARN"/>
+        </onException>
+    </routeConfiguration>
+
+    <!--
+      Periodic reorder-proposal batch. Fires daily (first run after a 5-minute
+      warm-up) and runs proposeReorders.groovy as the service user: it proposes
+      purchase orders for variants that will not cover the lead time + target
+      cover at the current cached velocity, starting a replenishment workflow for
+      each. Idempotent; proposals are deduped per variant.
+    -->
+    <route id="commerce-reorder" routeConfigurationId="commerce-reorder-error-handler">
+        <from uri="timer:commerce-reorder?period=86400000&amp;delay=300000"/>
+
+        <setHeader name="runAs">
+            <constant>commerce-service-user</constant>
+        </setHeader>
+
+        <toD uri="cms:/etc/commerce/scripts/shopify/proposeReorders.groovy"/>
+    </route>
+
+</camel>

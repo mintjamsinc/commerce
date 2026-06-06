@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<camel>
+
+    <!-- Swallow batch failures: analytics must never surface errors. -->
+    <routeConfiguration id="commerce-velocity-error-handler">
+        <onException>
+            <exception>java.lang.Exception</exception>
+            <handled>
+                <constant>true</constant>
+            </handled>
+            <log message="commerce-velocity error: ${exception.message}"
+                 loggingLevel="WARN"/>
+        </onException>
+    </routeConfiguration>
+
+    <!--
+      Periodic sales-velocity & stockout-forecast batch. Fires every 6 hours
+      (first run after a 3-minute warm-up) and runs computeVelocity.groovy as the
+      service user: it recomputes per-variant velocity from the order history,
+      caches it for the inventory rules, and alerts on imminent stockouts. The
+      batch is idempotent; stockout alerts are debounced per variant.
+    -->
+    <route id="commerce-velocity" routeConfigurationId="commerce-velocity-error-handler">
+        <from uri="timer:commerce-velocity?period=21600000&amp;delay=180000"/>
+
+        <setHeader name="runAs">
+            <constant>commerce-service-user</constant>
+        </setHeader>
+
+        <toD uri="cms:/etc/commerce/scripts/shopify/computeVelocity.groovy"/>
+    </route>
+
+</camel>

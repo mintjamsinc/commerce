@@ -1,0 +1,211 @@
+/* Commerce PIM app — app-specific styles.
+ *
+ * Layout, buttons, inputs, dialogs and theme tokens come from the shared
+ * webtop-app.css (loaded alongside this file). These rules only add the two-pane
+ * search/editor layout and the few list/row pieces this app needs, reusing the
+ * design-system tokens so the app stays consistent across themes. */
+
+:root {
+	--navbar-height: 2.5rem;
+	--statusbar-height: 1.75rem;
+}
+
+[v-cloak] { display: none; }
+
+#app { height: 100%; }
+
+/* ---- Toolbar / status bar (aligned with the Commerce app) ----------------- */
+nav.nav-bar {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	margin: -1rem -1rem 0;
+	padding: 1rem 1.5rem 0.75rem;
+	color: var(--navbar-color) !important;
+	white-space: nowrap;
+	user-select: none;
+	position: relative;
+	z-index: 10;
+}
+.nav-spacer { flex: 1; min-width: 1rem; }
+.toolbar-group {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.25rem 0.5rem;
+	background-color: var(--window-controls-bg);
+	border: 1px solid var(--window-controls-border-color);
+	border-radius: 9999px;
+}
+
+.status-bar {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	height: var(--statusbar-height);
+	margin: 0 -1rem -1rem;
+	padding: 0 1rem;
+	color: var(--navbar-color);
+	font-size: 11px;
+	white-space: nowrap;
+	user-select: none;
+}
+.status-group { display: inline-flex; align-items: center; gap: 0.25rem; }
+.status-item { padding: 0 0.5rem; }
+.status-ok { color: #059669; }
+.status-err { color: #dc2626; }
+
+/* ---- Two-pane body -------------------------------------------------------- */
+.content-body {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	position: relative;
+	gap: 0.5rem;
+}
+.content-main {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	min-width: 0;
+	min-height: 0;
+	overflow-y: auto;
+	gap: 1.25rem;
+}
+
+/* Left sidebar: search + results list. */
+.pim-sidebar {
+	display: flex;
+	flex-direction: column;
+	width: 17rem;
+	min-width: 14rem;
+	min-height: 0;
+	gap: 0.5rem;
+}
+.pim-search { display: flex; }
+.pim-search .input-group { flex: 1; min-width: 0; }
+.pim-results { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 0.25rem; }
+.pim-hint { color: var(--text-soft-color); font-size: 12px; padding: 1rem 0.25rem; text-align: center; }
+
+.pim-result {
+	display: flex;
+	flex-direction: column;
+	gap: 0.15rem;
+	width: 100%;
+	text-align: left;
+	background: transparent;
+	border: 1px solid transparent;
+	border-radius: 0.4rem;
+	padding: 0.4rem 0.55rem;
+	cursor: pointer;
+	color: inherit;
+}
+.pim-result:hover { background: var(--item-hover-bg); }
+.pim-result.active { background: var(--item-selected-bg); }
+.pim-result-title { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pim-result-sub { display: flex; align-items: center; gap: 0.4rem; font-size: 11px; color: var(--text-soft-color); }
+.pim-result-handle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Status pill (active / draft / archived). */
+.pim-status {
+	display: inline-block;
+	padding: 0 0.4rem;
+	border-radius: 9999px;
+	font-size: 10px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+	background: var(--window-controls-bg);
+	color: var(--text-soft-color);
+}
+.pim-status.st-active { background: rgba(5, 150, 105, 0.15); color: #059669; }
+.pim-status.st-draft { background: rgba(180, 83, 9, 0.15); color: #b45309; }
+.pim-status.st-archived { background: rgba(107, 114, 128, 0.18); color: #6b7280; }
+
+/* ---- Editor --------------------------------------------------------------- */
+.pim-state {
+	flex: 1;
+	min-height: 16rem;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 0.75rem;
+	opacity: 0.75;
+	text-align: center;
+}
+.pim-state .bi { font-size: 1.9rem; }
+
+.pim-head { display: flex; justify-content: space-between; align-items: flex-start; }
+.pim-title { margin: 0; font-size: 18px; }
+.pim-meta { margin-top: 0.25rem; font-size: 12px; color: var(--text-soft-color); display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+.pim-stamp { margin-top: 0.2rem; font-size: 11px; color: var(--text-soft-color); }
+
+.pim-base { font-size: 12px; color: var(--text-soft-color); }
+.pim-base summary { cursor: pointer; user-select: none; }
+.pim-base-tags { margin: 0.5rem 0; }
+.pim-vtable { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+.pim-vtable th, .pim-vtable td { text-align: left; padding: 0.25rem 0.5rem; border-bottom: 1px solid var(--navbar-border-color); }
+.pim-vtable th { font-weight: 600; }
+
+.property-group { display: flex; flex-direction: column; gap: 0.75rem; }
+.property-group-title {
+	font-weight: 700;
+	text-transform: uppercase;
+	color: var(--text-soft-color);
+	padding-bottom: 0.25rem;
+	border-bottom: 1px solid var(--navbar-border-color);
+	font-size: 12px;
+}
+.pim-section-head { display: flex; align-items: center; justify-content: space-between; }
+.property-label { display: block; font-size: 12px; color: var(--text-soft-color); margin-bottom: 0.125rem; padding-left: 0.125rem; }
+.property-hint { font-size: 11px; line-height: 1.5; color: var(--text-soft-color); }
+
+/* Repeatable rows. */
+.pim-card {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	padding: 0.6rem;
+	border: 1px solid var(--navbar-border-color);
+	border-radius: 0.45rem;
+}
+.pim-row { display: flex; gap: 0.5rem; align-items: flex-end; }
+.pim-col-grow { flex: 1; min-width: 0; }
+.pim-col-locale { width: 6rem; flex: none; }
+.pim-col-key { width: 12rem; flex: none; }
+.pim-col-mf { width: 9rem; flex: none; min-width: 0; }
+.pim-del { flex: none; }
+.pim-mf { flex-wrap: wrap; }
+
+/* Small button variant for the section "add" actions. */
+.wt.wt-sm { padding: 0.25rem 0.5rem; font-size: 12px; min-width: 8rem; }
+
+/* Spinner (reused from the dashboard look). */
+.spinner {
+	width: 1.4rem;
+	height: 1.4rem;
+	border: 2px solid var(--window-controls-border-color);
+	border-top-color: var(--pane-toggle-active-bg, #4338ca);
+	border-radius: 50%;
+	animation: pim-spin 0.8s linear infinite;
+}
+@keyframes pim-spin { to { transform: rotate(360deg); } }
+.spin { animation: pim-spin 0.8s linear infinite; }
+
+/* Transient toast. */
+.commerce-toast {
+	position: fixed;
+	bottom: 2.75rem;
+	left: 50%;
+	transform: translateX(-50%);
+	padding: 0.55rem 1rem;
+	border-radius: 0.5rem;
+	background: #1f2937;
+	color: #f8fafc;
+	font-size: 0.8125rem;
+	box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+	z-index: 1000;
+	max-width: 80%;
+}
+.commerce-toast.error { background: #dc2626; color: #fff; }

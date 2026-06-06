@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<camel>
+
+    <!-- Swallow batch failures: CRM batches must never surface errors. -->
+    <routeConfiguration id="commerce-crm-error-handler">
+        <onException>
+            <exception>java.lang.Exception</exception>
+            <handled>
+                <constant>true</constant>
+            </handled>
+            <log message="commerce-crm error: ${exception.message}"
+                 loggingLevel="WARN"/>
+        </onException>
+    </routeConfiguration>
+
+    <!--
+      Customer segmentation + behaviour-change alerts (category D, #13 / #15). Runs
+      daily (after a 7-minute warm-up) as the service user: rolls up purchase history
+      from orders, classifies each customer, persists the CRM record, and notifies
+      operators on newly VIP / at-risk / dormant customers. On-demand recompute comes
+      through the CRM endpoint via direct:commerce-crm-segment.
+    -->
+    <route id="commerce-crm-segment" routeConfigurationId="commerce-crm-error-handler">
+        <from uri="timer:commerce-crm-segment?period=86400000&amp;delay=420000"/>
+        <setHeader name="runAs">
+            <constant>commerce-service-user</constant>
+        </setHeader>
+        <toD uri="cms:/etc/commerce/scripts/commerce/segmentCustomers.groovy"/>
+    </route>
+
+    <route id="commerce-crm-segment-run" routeConfigurationId="commerce-crm-error-handler">
+        <from uri="direct:commerce-crm-segment"/>
+        <!--
+          On-demand recompute from the CRM endpoint. Honor the caller-supplied runAs
+          (the logged-in operator who triggered it) so the recompute - and the CRM
+          records it writes under /content/commerce - is attributed to that user.
+          Fall back to the service user only when no caller identity was supplied.
+        -->
+        <choice>
+            <when>
+                <simple>${header.runAs} == null || ${header.runAs} == ''</simple>
+                <setHeader name="runAs">
+                    <constant>commerce-service-user</constant>
+                </setHeader>
+            </when>
+        </choice>
+        <toD uri="cms:/etc/commerce/scripts/commerce/segmentCustomers.groovy"/>
+    </route>
+
+    <!--
+      Abandoned cart follow-up (category D, #14). Runs every 30 minutes as the
+      service user: finds idle, un-completed checkouts and follows up (customer
+      reminder emails when enabled; always a debounced operator summary).
+    -->
+    <route id="commerce-crm-abandoned" routeConfigurationId="commerce-crm-error-handler">
+        <from uri="timer:commerce-crm-abandoned?period=1800000&amp;delay=480000"/>
+        <setHeader name="runAs">
+            <constant>commerce-service-user</constant>
+        </setHeader>
+        <toD uri="cms:/etc/commerce/scripts/commerce/abandonedCheckouts.groovy"/>
+    </route>
+
+</camel>

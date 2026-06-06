@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+                  id="Definitions_replenishment" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="replenishment-flow" name="Replenishment Flow" isExecutable="true">
+    <bpmn:startEvent id="StartEvent_start">
+      <bpmn:outgoing>Flow_start_approve</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <!-- 1. Operator reviews the reorder proposal: adjust the quantity and approve
+         or reject. The decision (and approved quantity) is written to the reorder
+         record by the form; the service task below acts on it. -->
+    <bpmn:userTask id="UserTask_approveReorder" name="Approve Reorder" camunda:formKey="cms:/content/commerce/forms/shopify/reorder-approval.html?t={{lastModified}}">
+      <bpmn:extensionElements>
+        <camunda:taskListener event="create" class="org.mintjams.script.bpm.CmsDelegate">
+          <camunda:field name="path">
+            <camunda:string>/etc/commerce/scripts/shopify/notifyReorderTaskCreated.groovy</camunda:string>
+          </camunda:field>
+        </camunda:taskListener>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_start_approve</bpmn:incoming>
+      <bpmn:outgoing>Flow_approve_process</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- 2. Act on the decision: when approved, record + send the purchase order to
+         the supplier; when rejected, mark the proposal rejected. Branches
+         internally on the decision stored on the reorder record (no gateway). -->
+    <bpmn:serviceTask id="ServiceTask_processReorder" name="Process Reorder" camunda:class="org.mintjams.script.bpm.CmsDelegate">
+      <bpmn:extensionElements>
+        <camunda:field name="path">
+          <camunda:string>/etc/commerce/scripts/shopify/purchaseOrder.groovy</camunda:string>
+        </camunda:field>
+        <camunda:field name="inputs">
+          <camunda:string>reorderPath</camunda:string>
+        </camunda:field>
+        <camunda:field name="runAs">
+          <camunda:string>commerce-service-user</camunda:string>
+        </camunda:field>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_approve_process</bpmn:incoming>
+      <bpmn:outgoing>Flow_process_end</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:endEvent id="EndEvent_done">
+      <bpmn:incoming>Flow_process_end</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:sequenceFlow id="Flow_start_approve" sourceRef="StartEvent_start" targetRef="UserTask_approveReorder"/>
+    <bpmn:sequenceFlow id="Flow_approve_process" sourceRef="UserTask_approveReorder" targetRef="ServiceTask_processReorder"/>
+    <bpmn:sequenceFlow id="Flow_process_end" sourceRef="ServiceTask_processReorder" targetRef="EndEvent_done"/>
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="replenishment-flow">
+      <bpmndi:BPMNShape id="Shape_start" bpmnElement="StartEvent_start">
+        <dc:Bounds x="140" y="100" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_approve" bpmnElement="UserTask_approveReorder">
+        <dc:Bounds x="240" y="78" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_process" bpmnElement="ServiceTask_processReorder">
+        <dc:Bounds x="430" y="78" width="120" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_end" bpmnElement="EndEvent_done">
+        <dc:Bounds x="620" y="100" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_start_approve" bpmnElement="Flow_start_approve">
+        <di:waypoint x="176" y="118"/>
+        <di:waypoint x="240" y="118"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_approve_process" bpmnElement="Flow_approve_process">
+        <di:waypoint x="360" y="118"/>
+        <di:waypoint x="430" y="118"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_process_end" bpmnElement="Flow_process_end">
+        <di:waypoint x="550" y="118"/>
+        <di:waypoint x="620" y="118"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

@@ -1,0 +1,23 @@
+# Multi-location inventory & allocation
+# Deploy to: /etc/commerce/config/locations.yml
+# Managed by the Commerce app (Webtop > Commerce > Locations).
+#
+# Per-location stock is ingested from the Shopify inventory_levels/update webhook
+# and stored under /content/commerce/inventory/levels/. This file governs the
+# cross-location ALLOCATION decision support (commerce.Allocation): given a
+# quantity to fulfil, which locations to draw from and how much.
+#
+# This is advisory — it does NOT override Shopify's own fulfillment routing.
+
+# Allocation strategy:
+#   most_stock : draw from the location with the most stock first
+#   priority   : draw from the priority locations first (in order below), then the
+#                rest by most stock
+strategy: "most_stock"
+
+# Ordered, comma-separated Shopify location IDs (used by the "priority" strategy).
+priorityOrder: ""
+
+# Quantity held back at each location (not allocatable), e.g. shop-floor display
+# or safety stock.
+defaultSafetyStock: 0

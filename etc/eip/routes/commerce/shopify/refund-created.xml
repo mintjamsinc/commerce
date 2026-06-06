@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<camel>
+
+    <routeConfiguration id="shopify-refund-created-error-handler">
+        <onException>
+            <exception>java.lang.Exception</exception>
+            <handled>
+                <constant>true</constant>
+            </handled>
+            <redeliveryPolicy maximumRedeliveries="3" redeliveryDelay="5000"/>
+
+            <!-- Log error details -->
+            <log message="Shopify refund created error [${exchangeId}]: ${exception.message} [file: ${header.refundPath}]"
+                 loggingLevel="ERROR"/>
+
+            <!-- Set error metadata as headers for JCR properties -->
+            <setHeader name="commerce:status">
+                <constant>error</constant>
+            </setHeader>
+            <setHeader name="commerce:errorMessage">
+                <simple>${exception.message}</simple>
+            </setHeader>
+            <setHeader name="commerce:stackTrace">
+                <simple>${exception.stacktrace}</simple>
+            </setHeader>
+            <toD uri="transform:truncateString?targets=commerce:stackTrace&amp;maxLength=2048"/>
+
+            <!-- Write error metadata to JCR node properties -->
+            <toD uri="cms:setProperties?path=${header.refundPath}&amp;includes=commerce:*"/>
+            <!-- Move file to error folder -->
+            <toD uri="cms:move?sourcePath=${header.refundPath}&amp;destPath=/content/commerce/refunds/error"/>
+
+            <!-- Record processing health (error) -->
+            <setHeader name="health_group">
+                <constant>route</constant>
+            </setHeader>
+            <setHeader name="health_name">
+                <simple>${header.shopify_topic}</simple>
+            </setHeader>
+            <setHeader name="health_ok">
+                <constant>false</constant>
+            </setHeader>
+            <toD uri="cms:/etc/commerce/scripts/shopify/recordHealth.groovy?inputs=health_*,received_at"/>
+        </onException>
+    </routeConfiguration>
+
+    <route id="shopify-refund-created" routeConfigurationId="shopify-refund-created-error-handler">
+        <from uri="direct:shopify-refund-created"/>
+
+        <!-- Include headers for history tracking -->
+        <setHeader name="mi:history.header.includes">
+            <constant>commerce:*</constant>
+        </setHeader>
+
+        <!-- Inherit the caller's identity from the ingest core (the service user
+             for webhook traffic, or the operator who replayed the event); fall back
+             to the service user when none was supplied. -->
+        <choice>
+            <when>
+                <simple>${header.runAs} == null || ${header.runAs} == ''</simple>
+                <setHeader name="runAs">
+                    <constant>commerce-service-user</constant>
+                </setHeader>
+            </when>
+        </choice>
+
+        <!-- Save original body before idempotency check (cms:exists overwrites body) -->
+        <setHeader name="shopify_payload">
+            <simple>${body}</simple>
+        </setHeader>
+
+        <!-- Idempotency check: skip if this webhook was already processed -->
+        <toD uri="cms:exists?query=/jcr:root/content/commerce/history/webhooks/${header.shopify_webhook_id}&amp;@header.webhookAlreadyProcessed=exists"/>
+
+        <choice>
+            <when>
+                <simple>${header.webhookAlreadyProcessed} == true &amp;&amp; ${header.replay} != 'true'</simple>
+                <log message="Duplicate webhook ${header.shopify_webhook_id} - skipping"
+                     loggingLevel="INFO"/>
+            </when>
+            <otherwise>
+                <!-- Restore original body -->
+                <setBody>
+                    <simple>${header.shopify_payload}</simple>
+                </setBody>
+
+                <!-- Set business key for history tracking (the refund ID) -->
+                <setHeader name="mi:history.businessKey">
+                    <jsonpath>$.id</jsonpath>
+                </setHeader>
+
+                <!-- Identify the refund and the order it belongs to. -->
+                <setHeader name="refund_id">
+                    <jsonpath>$.id</jsonpath>
+                </setHeader>
+                <setHeader name="order_id">
+                    <jsonpath>$.order_id</jsonpath>
+                </setHeader>
+
+                <!-- Generate file path: /content/commerce/refunds/raw/2026/06/refund_{id}.json -->
+                <setHeader name="refundPath">
+                    <simple>/content/commerce/refunds/raw/${date:now:yyyy}/${date:now:MM}/refund_${header.refund_id}.json</simple>
+                </setHeader>
+
+                <!-- Save raw JSON to JCR -->
+                <toD uri="cms:store?mimeType=application/json&amp;path=${header.refundPath}"/>
+
+                <!-- Parse refund metadata and set as JCR properties. Monetary
+                     totals (refund amount, currency, restock flag) are computed
+                     by recordRefund.groovy from the transactions/line items, so
+                     here we only set what is directly available. -->
+                <setHeader name="commerce:refund_id">
+                    <jsonpath>$.id</jsonpath>
+                </setHeader>
+                <setHeader name="commerce:order_id">
+                    <jsonpath>$.order_id</jsonpath>
+                </setHeader>
+                <!-- commerce:status is the integration processing lifecycle status.
+                     See docs/commerce-status.md. -->
+                <setHeader name="commerce:status">
+                    <constant>received</constant>
+                </setHeader>
+                <!-- Clear any previous error metadata -->
+                <setHeader name="commerce:errorMessage">
+                    <simple>${null}</simple>
+                </setHeader>
+                <setHeader name="commerce:stackTrace">
+                    <simple>${null}</simple>
+                </setHeader>
+
+                <!-- Write metadata to JCR node properties -->
+                <toD uri="cms:setProperties?path=${header.refundPath}&amp;includes=commerce:*"/>
+
+                <log message="Refund ${header.refund_id} (order ${header.order_id}) saved to ${header.refundPath}"
+                     loggingLevel="INFO"/>
+
+                <!-- Record webhook as processed (idempotency marker) -->
+                <setBody>
+                    <simple>${date:now:yyyy-MM-dd'T'HH:mm:ss.SSSZ}</simple>
+                </setBody>
+                <toD uri="cms:store?path=/content/commerce/history/webhooks/${date:now:yyyy}/${date:now:MM}/${header.shopify_webhook_id}&amp;mimeType=text/plain"/>
+
+                <!-- Guard against duplicate workflow instances for the same refund,
+                     keyed by the refund ID (businessKey). -->
+                <toD uri="bpm:queryProcessInstances?processDefinitionKey=refund-review-flow&amp;businessKey=${header.refund_id}&amp;active=true&amp;@header.runningProcessCount=count"/>
+                <choice>
+                    <when>
+                        <simple>${header.runningProcessCount} &gt; 0</simple>
+                        <log message="refund-review-flow already running for refund ${header.refund_id} (active=${header.runningProcessCount}) - skipping new instance"
+                             loggingLevel="INFO"/>
+                    </when>
+                    <otherwise>
+                        <!-- Start the refund review workflow: screen the refund and,
+                             when a rule matches, raise a manual "Refund Review" task. -->
+                        <toD uri="bpm:startProcess?processDefinitionKey=refund-review-flow&amp;businessKey=${header.refund_id}&amp;includes=refund_id,refundPath,order_id"/>
+                    </otherwise>
+                </choice>
+
+                <!-- Cancel the order's still-waiting backorders (#12): a refund
+                     unwinds the order, so backorders merely awaiting stock should
+                     not linger. Defensive - never breaks the refund route. -->
+                <toD uri="cms:/etc/commerce/scripts/shopify/cancelBackorders.groovy?inputs=order_id"/>
+            </otherwise>
+        </choice>
+
+        <!-- Record processing health (success): received_at -> completion latency. -->
+        <setHeader name="health_group">
+            <constant>route</constant>
+        </setHeader>
+        <setHeader name="health_name">
+            <simple>${header.shopify_topic}</simple>
+        </setHeader>
+        <setHeader name="health_ok">
+            <constant>true</constant>
+        </setHeader>
+        <toD uri="cms:/etc/commerce/scripts/shopify/recordHealth.groovy?inputs=health_*,received_at"/>
+    </route>
+
+</camel>

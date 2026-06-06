@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<camel>
+
+    <!-- Swallow recording failures: health monitoring must never surface errors. -->
+    <routeConfiguration id="commerce-health-error-handler">
+        <onException>
+            <exception>java.lang.Exception</exception>
+            <handled>
+                <constant>true</constant>
+            </handled>
+            <log message="commerce-health recording error: ${exception.message}"
+                 loggingLevel="WARN"/>
+        </onException>
+    </routeConfiguration>
+
+    <!--
+      Privileged health-recording entry point. The public webhook endpoint runs
+      unauthenticated, so it cannot write metrics itself; it emits a fire-and-forget
+      message here (IntegrationAPI -> direct:commerce-health) carrying health_*
+      headers, and this route records them as the service user.
+    -->
+    <route id="commerce-health" routeConfigurationId="commerce-health-error-handler">
+        <from uri="direct:commerce-health"/>
+
+        <setHeader name="runAs">
+            <constant>commerce-service-user</constant>
+        </setHeader>
+
+        <toD uri="cms:/etc/commerce/scripts/shopify/recordHealth.groovy?inputs=health_*,received_at"/>
+    </route>
+
+</camel>

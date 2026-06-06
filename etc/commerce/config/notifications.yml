@@ -1,13 +1,23 @@
-# Notification destinations for the inventory alert workflow
+# Notification destinations for the commerce workflows
 # Deploy to: /etc/commerce/config/notifications.yml
 #
 # This file is kept SEPARATE from shopify.yml (Shopify credentials) so that
 # notification settings can be managed independently by the Commerce app
 # (Webtop > Commerce > Notifications) without touching API secrets.
 #
-# Each manual task in product-update-flow.bpmn fires a "create" task listener
-# (etc/commerce/scripts/shopify/notifyTaskCreated.groovy) that posts a summary
-# to every enabled channel below.
+# Each manual task in the inventory / order / refund workflows fires a "create"
+# task listener (etc/commerce/scripts/shopify/notify*TaskCreated.groovy) that
+# builds one channel-agnostic message and dispatches it to every ENABLED channel
+# below. Each channel renders that message in its own format:
+#   - Slack / Discord / Teams : markup posts (mrkdwn / markdown / Adaptive Card)
+#   - LINE                    : plain-text push via the Messaging API
+#   - webhook                 : structured JSON for any downstream consumer
+#   - email                   : plain-text email over SMTP
+#
+# A channel is ON unless you set `enabled: false`. Sections you do not need can
+# be deleted entirely. Delivery is best-effort: a failure is logged and never
+# breaks the business process. See the channel adapters under
+# /content/WEB-INF/classes/commerce/ (SlackChannel, DiscordChannel, ...).
 
 # Slack incoming webhook
 # https://api.slack.com/messaging/webhooks
@@ -20,3 +30,42 @@ slack:
 discord:
   enabled: false
   webhookUrl: "REPLACE_WITH_DISCORD_WEBHOOK_URL"
+
+# Microsoft Teams incoming webhook (Workflows / connector URL)
+# Posts an Adaptive Card. https://learn.microsoft.com/microsoftteams/platform/
+teams:
+  enabled: false
+  webhookUrl: "REPLACE_WITH_TEAMS_WEBHOOK_URL"
+
+# LINE via the Messaging API push endpoint
+# accessToken : channel access token (Bearer)
+# to          : destination user / group / room ID resolved by your bot
+# endpoint    : optional override; defaults to the public push endpoint
+# https://developers.line.biz/en/reference/messaging-api/#send-push-message
+line:
+  enabled: false
+  accessToken: "REPLACE_WITH_LINE_CHANNEL_ACCESS_TOKEN"
+  to: "REPLACE_WITH_LINE_RECIPIENT_ID"
+
+# Generic outbound webhook (any HTTP endpoint / iPaaS)
+# Posts structured JSON: { source, title, status, summary, fields, <textField> }.
+# textField : JSON key carrying the full plain-text body (default "text").
+webhook:
+  enabled: false
+  url: "REPLACE_WITH_WEBHOOK_URL"
+  textField: "text"
+
+# Email over SMTP (JDK-only client; no extra mail library required)
+# security : none | starttls (port 587) | ssl (port 465)
+# username/password are optional (omit for an unauthenticated relay).
+# to       : comma-separated recipient list.
+email:
+  enabled: false
+  smtpHost: "REPLACE_WITH_SMTP_HOST"
+  smtpPort: 587
+  security: "starttls"
+  username: "REPLACE_WITH_SMTP_USERNAME"
+  password: "REPLACE_WITH_SMTP_PASSWORD"
+  from: "commerce@example.com"
+  to: "ops@example.com"
+  subjectPrefix: "[Commerce] "

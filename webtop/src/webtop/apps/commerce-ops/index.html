@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no">
+	<title>Commerce Operations</title>
+
+	<!-- Bootstrap Icons (bundled with webtop) -->
+	<link rel="stylesheet" href="../../assets/vendor/bootstrap-icons/bootstrap-icons.min.css?v=__BUILD_VERSION__">
+
+	<!-- App CSS + shared Webtop design system -->
+	<link href="./assets/css/style.css?v=__BUILD_VERSION__" rel="stylesheet" />
+	<link href="../../assets/css/webtop-app.css?v=__BUILD_VERSION__" rel="stylesheet" />
+</head>
+
+<body>
+	<div id="app" v-cloak class="d-flex flex-column" @mounted="onMounted" @unmount="onUnmount">
+
+		<!-- Top toolbar -->
+		<nav class="nav-bar window-drag-region">
+			<div class="toolbar-group">
+				<button class="btn-icon" @click="refresh" :disabled="busy" title="Refresh">
+					<i class="bi bi-arrow-clockwise" :class="{ spin: busy }"></i>
+				</button>
+			</div>
+
+			<!-- Section switcher -->
+			<div class="toolbar-group">
+				<button class="btn-icon section-toggle" :class="{ active: section === 'sync' }"
+					@click="selectSection('sync')" title="Outbound sync">
+					<i class="bi bi-cloud-upload"></i>
+				</button>
+				<button class="btn-icon section-toggle" :class="{ active: section === 'reconcile' }"
+					@click="selectSection('reconcile')" title="Reconciliation">
+					<i class="bi bi-arrow-left-right"></i>
+				</button>
+				<button class="btn-icon section-toggle" :class="{ active: section === 'events' }"
+					@click="selectSection('events')" title="Events &amp; replay">
+					<i class="bi bi-collection"></i>
+				</button>
+			</div>
+
+			<span class="nav-spacer"></span>
+
+			<!-- Window controls -->
+			<div class="window-controls">
+				<button class="btn-icon" @click="onMinimizeWindow" title="Minimize"><i class="bi bi-dash-lg"></i></button>
+				<button class="btn-icon" @click="onToggleMaximizeWindow" title="Maximize"><i class="bi bi-square"></i></button>
+				<button class="btn-icon window-control-close" @click="onCloseWindow" title="Close"><i class="bi bi-x-lg"></i></button>
+			</div>
+		</nav>
+
+		<!-- Content -->
+		<div class="content-body">
+			<main class="content-main island">
+
+				<!-- ================= SYNC ================= -->
+				<template v-if="section === 'sync'">
+					<div class="ops-banner" :class="sync.enabled ? 'ok' : 'warn'">
+						<i class="bi" :class="sync.enabled ? 'bi-check-circle' : 'bi-exclamation-triangle'"></i>
+						<span v-if="sync.enabled">Admin API enabled — {{ sync.shopDomain }} ({{ sync.apiVersion }})</span>
+						<span v-else>Shopify Admin API is disabled. Enable it in Commerce settings to push corrections. You can still validate with Dry run.</span>
+					</div>
+
+					<section class="property-group">
+						<div class="property-group-title">Push a correction to Shopify</div>
+
+						<div class="ops-form">
+							<div class="ops-field">
+								<label class="property-label">Action</label>
+								<select class="wt w-100" v-model="form.action">
+									<option value="inventory">Set inventory</option>
+									<option value="price">Set price</option>
+									<option value="publish">Publish / unpublish</option>
+									<option value="metafields">Push PIM metafields</option>
+								</select>
+							</div>
+
+							<!-- inventory -->
+							<template v-if="form.action === 'inventory'">
+								<div class="ops-field"><label class="property-label">Inventory item ID</label><input class="wt w-100" v-model="form.inventoryItemId" /></div>
+								<div class="ops-field"><label class="property-label">Location ID</label><input class="wt w-100" v-model="form.locationId" /></div>
+								<div class="ops-field"><label class="property-label">Quantity</label><input class="wt w-100" type="number" v-model="form.quantity" /></div>
+								<div class="ops-field"><label class="property-label">Reason</label><input class="wt w-100" v-model="form.reason" placeholder="correction" /></div>
+							</template>
+							<!-- price -->
+							<template v-else-if="form.action === 'price'">
+								<div class="ops-field"><label class="property-label">Product ID</label><input class="wt w-100" v-model="form.productId" /></div>
+								<div class="ops-field"><label class="property-label">Variant ID</label><input class="wt w-100" v-model="form.variantId" /></div>
+								<div class="ops-field"><label class="property-label">Price</label><input class="wt w-100" v-model="form.price" placeholder="19.99" /></div>
+							</template>
+							<!-- publish -->
+							<template v-else-if="form.action === 'publish'">
+								<div class="ops-field"><label class="property-label">Product ID</label><input class="wt w-100" v-model="form.productId" /></div>
+								<div class="ops-field">
+									<label class="wt-checkbox-label"><input type="checkbox" class="wt" v-model="form.published"> Published (unchecked = draft)</label>
+								</div>
+							</template>
+							<!-- metafields -->
+							<template v-else-if="form.action === 'metafields'">
+								<div class="ops-field"><label class="property-label">Product ID</label><input class="wt w-100" v-model="form.productId" /></div>
+								<div class="property-hint">Pushes the product's CMS-authored PIM metafields (edit them in Commerce PIM).</div>
+							</template>
+						</div>
+
+						<div class="ops-actions">
+							<label class="wt-checkbox-label"><input type="checkbox" class="wt" v-model="form.dryRun"> Dry run (validate only)</label>
+							<button class="wt wt-primary" :disabled="!canExecute" @click="executeSync">
+								<i class="bi" :class="form.dryRun ? 'bi-clipboard-check' : 'bi-cloud-upload'"></i>
+								{{ form.dryRun ? 'Validate' : 'Execute' }}
+							</button>
+						</div>
+
+						<div v-if="syncResult" class="ops-result" :class="syncResult.ok ? 'ok' : 'err'">
+							<div class="ops-result-head">
+								<i class="bi" :class="syncResult.ok ? 'bi-check-lg' : 'bi-x-lg'"></i>
+								{{ syncResult.title }}
+							</div>
+							<pre>{{ syncResult.body }}</pre>
+						</div>
+					</section>
+
+					<section class="property-group">
+						<div class="property-group-title">Recent outbound writes (30d)</div>
+						<div v-if="operations.length === 0" class="property-hint">No outbound writes recorded.</div>
+						<table v-else class="ops-table">
+							<thead><tr><th>When</th><th>Action</th><th>Status</th><th>Error</th></tr></thead>
+							<tbody>
+								<tr v-for="(o, i) in operations" :key="i">
+									<td>{{ fmtTime(o.at) }}</td>
+									<td>{{ o.action }}</td>
+									<td><span class="ops-pill" :class="'st-' + o.status">{{ o.status }}</span></td>
+									<td class="ops-err">{{ o.error }}</td>
+								</tr>
+							</tbody>
+						</table>
+					</section>
+				</template>
+
+				<!-- ================= RECONCILE ================= -->
+				<template v-else-if="section === 'reconcile'">
+					<section class="property-group">
+						<div class="property-group-title ops-section-head">
+							<span>Reconciliation (CMS &harr; Shopify drift)</span>
+							<button class="wt wt-primary wt-sm" :disabled="busy" @click="runReconcile">
+								<i class="bi bi-play-fill"></i> Run now
+							</button>
+						</div>
+
+						<div class="ops-kpis">
+							<div class="ops-kpi"><span class="ops-kpi-v">{{ recon.productsWithDrift }}</span><span class="ops-kpi-l">Products w/ drift</span></div>
+							<div class="ops-kpi"><span class="ops-kpi-v">{{ recon.totalDiffs }}</span><span class="ops-kpi-l">Field diffs</span></div>
+							<div class="ops-kpi"><span class="ops-kpi-v">{{ recon.healed }}</span><span class="ops-kpi-l">Auto-healed</span></div>
+							<div class="ops-kpi"><span class="ops-kpi-v">{{ recon.checked }}</span><span class="ops-kpi-l">Checked</span></div>
+						</div>
+						<div class="property-hint">
+							<span v-if="recon.lastRunAt">Last report: {{ fmtTime(recon.lastRunAt) }}.</span>
+							<span v-if="recon.cursor"> Cursor: {{ recon.cursor }}.</span>
+							Healing is opt-in per field (reconcile.yml); inventory drift is reported, never auto-healed.
+						</div>
+					</section>
+
+					<section class="property-group">
+						<div class="property-group-title">Detected drift</div>
+						<div v-if="recon.diffs.length === 0" class="property-hint">No drift in the latest report.</div>
+						<table v-else class="ops-table">
+							<thead><tr><th>Product</th><th>Field</th><th>Variant</th><th>CMS</th><th>Shopify</th><th>Truth</th><th>Heal</th></tr></thead>
+							<tbody>
+								<tr v-for="(d, i) in recon.diffs" :key="i">
+									<td>{{ d.title || ('#' + d.productId) }}</td>
+									<td>{{ d.field }}</td>
+									<td>{{ d.variantId || '—' }}</td>
+									<td class="ops-val">{{ d.cms }}</td>
+									<td class="ops-val">{{ d.shopify }}</td>
+									<td>{{ d.sourceOfTruth }}</td>
+									<td>
+										<span class="ops-pill" :class="healClass(d)">{{ d.healed === 'ok' ? 'healed' : d.heal }}</span>
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					</section>
+				</template>
+
+				<!-- ================= EVENTS ================= -->
+				<template v-else-if="section === 'events'">
+					<section class="property-group">
+						<div class="property-group-title">Event ingestion</div>
+						<div class="ops-kpis">
+							<div class="ops-kpi"><span class="ops-kpi-v">{{ events.summary.total }}</span><span class="ops-kpi-l">Total</span></div>
+							<div class="ops-kpi"><span class="ops-kpi-v">{{ events.summary.received }}</span><span class="ops-kpi-l">Received</span></div>
+							<div class="ops-kpi"><span class="ops-kpi-v">{{ events.summary.processed }}</span><span class="ops-kpi-l">Processed</span></div>
+							<div class="ops-kpi" :class="{ 'is-err': events.summary.error > 0 }"><span class="ops-kpi-v">{{ events.summary.error }}</span><span class="ops-kpi-l">Error</span></div>
+						</div>
+					</section>
+
+					<section class="property-group">
+						<div class="property-group-title ops-section-head">
+							<span>Event log</span>
+							<button class="wt wt-danger wt-sm" :disabled="busy || events.rows.length === 0" @click="replayMatching"
+								title="Replay every event matching the current filter">
+								<i class="bi bi-arrow-repeat"></i> Replay matching
+							</button>
+						</div>
+
+						<div class="ops-filter">
+							<div class="ops-field">
+								<label class="property-label">Status</label>
+								<select class="wt w-100" v-model="evFilter.status">
+									<option value="error">Error</option>
+									<option value="received">Received</option>
+									<option value="processed">Processed</option>
+									<option value="">All</option>
+								</select>
+							</div>
+							<div class="ops-field"><label class="property-label">Source</label><input class="wt w-100" v-model="evFilter.source" placeholder="shopify" /></div>
+							<div class="ops-field"><label class="property-label">Topic</label><input class="wt w-100" v-model="evFilter.topic" placeholder="orders/create" /></div>
+							<div class="ops-field"><label class="property-label">Since (days)</label><input class="wt w-100" type="number" v-model="evFilter.sinceDays" placeholder="—" /></div>
+							<button class="wt wt-sm" :disabled="busy" @click="loadEvents"><i class="bi bi-funnel"></i> Apply</button>
+						</div>
+
+						<div v-if="events.rows.length === 0" class="property-hint">No events match the filter.</div>
+						<table v-else class="ops-table">
+							<thead><tr><th>When</th><th>Source</th><th>Topic</th><th>Event</th><th>Status</th><th>Tries</th><th></th></tr></thead>
+							<tbody>
+								<tr v-for="(e, i) in events.rows" :key="e.path || i">
+									<td>{{ fmtTime(e.received_at) }}</td>
+									<td>{{ e.source }}</td>
+									<td>{{ e.topic }}</td>
+									<td class="ops-mono">{{ e.event_id }}</td>
+									<td><span class="ops-pill" :class="'st-' + e.status">{{ e.status }}</span></td>
+									<td>{{ e.attempts }}</td>
+									<td><button class="btn-icon" :disabled="busy" @click="replayOne(e)" title="Replay this event"><i class="bi bi-arrow-repeat"></i></button></td>
+								</tr>
+							</tbody>
+						</table>
+					</section>
+				</template>
+
+			</main>
+		</div>
+
+		<!-- Status bar -->
+		<div class="status-bar window-drag-region">
+			<span class="nav-spacer"></span>
+			<div class="status-group">
+				<span v-if="busy" class="status-item"><i class="bi bi-arrow-repeat me-1"></i>Working&hellip;</span>
+				<span v-else-if="statusKind === 'ok'" class="status-item status-ok"><i class="bi bi-check-lg me-1"></i>{{ status }}</span>
+				<span v-else-if="statusKind === 'err'" class="status-item status-err">{{ status }}</span>
+				<span v-else class="status-item">Ready</span>
+			</div>
+		</div>
+
+		<!-- Toast -->
+		<div v-if="toast" class="commerce-toast" :class="{ error: toastError }" role="alert">{{ toast }}</div>
+
+		<!-- Confirm dialog -->
+		<div v-if="confirmDialog.visible" class="dialog-overlay">
+			<div class="dialog-frame" style="max-width: 32rem;">
+				<div class="island p-2">
+					<div class="dialog-header"><h3><i class="bi bi-exclamation-triangle-fill me-2"></i>{{ confirmDialog.title }}</h3></div>
+					<div class="dialog-body"><p class="mt-0">{{ confirmDialog.message }}</p></div>
+					<div class="dialog-footer flex-wrap">
+						<button class="wt" @click="onConfirm(false)">Cancel</button>
+						<button class="wt wt-primary" @click="onConfirm(true)">{{ confirmDialog.ok }}</button>
+					</div>
+				</div>
+			</div>
+		</div>
+
+	</div>
+
+	<script type="module" src="./app.js?v=__BUILD_VERSION__"></script>
+</body>
+
+</html>

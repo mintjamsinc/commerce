@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Order Fulfillment</title>
+<style>
+:root {
+	color-scheme: light dark;
+	--bg:            light-dark(#f7f8fa, #0f172a);
+	--surface:       light-dark(#ffffff, #1e293b);
+	--surface-soft:  light-dark(#f3f4f6, #233044);
+	--border:        light-dark(#e5e7eb, #334155);
+	--border-strong: light-dark(#d1d5db, #475569);
+	--text:          light-dark(#1f2937, #f1f5f9);
+	--text-soft:     light-dark(#4b5563, #cbd5e1);
+	--text-muted:    light-dark(#6b7280, #94a3b8);
+	--primary:       light-dark(#2563eb, #3b82f6);
+	--primary-hover: light-dark(#1d4ed8, #60a5fa);
+	--primary-fg:    #ffffff;
+	--success:       light-dark(#059669, #34d399);
+	--success-soft:  light-dark(rgba(5, 150, 105, 0.1), rgba(52, 211, 153, 0.12));
+	--row-hover:     light-dark(#f9fafb, #233044);
+	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+	--radius: 0.5rem;
+	--radius-sm: 0.375rem;
+}
+
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"]  { color-scheme: dark; }
+
+* {
+	scrollbar-width: thin;
+	color: inherit;
+	font-family: inherit;
+	font-size: inherit;
+	font-weight: inherit;
+	letter-spacing: inherit;
+	box-sizing: border-box;
+}
+
+html {
+	font-family: ui-sans-serif, -apple-system, system-ui, Segoe UI, Helvetica, Apple Color Emoji, Arial, sans-serif, Segoe UI Emoji, Segoe UI Symbol;
+	font-size: 14px;
+	position: absolute;
+	inset: 0;
+}
+
+body {
+	margin: 0;
+	padding: 0;
+	height: 100%;
+	background: var(--bg);
+	color: var(--text);
+	font-size: 14px;
+	line-height: 1.5;
+}
+
+#app {
+	min-height: 100%;
+	display: flex;
+	flex-direction: column;
+}
+
+[v-cloak] { display: none !important; }
+
+.state-pane {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 0.75rem;
+	color: var(--text-muted);
+	padding: 2rem;
+	text-align: center;
+}
+
+.state-pane .state-icon { width: 2.5rem; height: 2.5rem; opacity: 0.45; }
+.state-pane.error-pane { color: light-dark(#dc2626, #f87171); }
+.state-pane.error-pane .state-icon { opacity: 1; }
+
+.spinner {
+	width: 1.5rem;
+	height: 1.5rem;
+	border: 2px solid var(--border-strong);
+	border-top-color: var(--primary);
+	border-radius: 50%;
+	animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.order {
+	flex: 1;
+	padding: 1.5rem;
+	max-width: 64rem;
+	width: 100%;
+	margin: 0 auto;
+}
+
+.order-header {
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 1.25rem;
+	box-shadow: var(--shadow-sm);
+}
+
+.order-title-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 0.5rem 1rem;
+}
+
+.order-header h1 {
+	margin: 0;
+	font-size: 1.5rem;
+	font-weight: 700;
+	line-height: 1.25;
+	word-wrap: break-word;
+}
+
+.order-total {
+	font-size: 1.25rem;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+}
+
+.order-tagline {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	color: var(--text-muted);
+	font-size: 13px;
+	margin-top: 0.5rem;
+	gap: 0.5rem;
+}
+
+.order-tagline > span:not(:last-child)::after {
+	content: "·";
+	margin-left: 0.5rem;
+	color: var(--text-muted);
+}
+
+.card {
+	margin-top: 1.5rem;
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	box-shadow: var(--shadow-sm);
+	overflow: hidden;
+}
+
+.section-title {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	margin: 0;
+	padding: 1rem 1.25rem;
+	font-size: 1rem;
+	font-weight: 700;
+	border-bottom: 1px solid var(--border);
+}
+
+.card-body { padding: 1rem 1.25rem 1.25rem; }
+
+.info-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+	gap: 1rem 1.5rem;
+}
+
+.info-block .info-label {
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--text-muted);
+	font-weight: 600;
+	margin-bottom: 0.25rem;
+}
+
+.info-block .info-value {
+	color: var(--text);
+	font-size: 13px;
+	white-space: pre-line;
+	overflow-wrap: break-word;
+}
+
+.info-block .info-value.empty { color: var(--text-muted); font-style: italic; }
+
+.table-wrap { overflow-x: auto; }
+
+.items-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 13px;
+}
+
+.items-table th,
+.items-table td {
+	padding: 0.625rem 1.25rem;
+	text-align: left;
+	vertical-align: middle;
+	border-bottom: 1px solid var(--border);
+}
+
+.items-table th {
+	font-weight: 600;
+	color: var(--text-muted);
+	background: var(--surface-soft);
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.items-table tbody tr:last-child td { border-bottom: none; }
+.items-table tbody tr:hover { background: var(--row-hover); }
+.items-table .align-right { text-align: right; font-variant-numeric: tabular-nums; }
+.items-table td.empty-cell { color: var(--text-muted); font-style: italic; text-align: center; padding: 1.5rem; }
+
+.item-title { font-weight: 600; color: var(--text); }
+.item-variant { color: var(--text-muted); font-size: 12px; }
+
+.sku {
+	font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+	font-size: 12px;
+	color: var(--text-muted);
+}
+
+/* Tracking form */
+.fields {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+	gap: 1rem 1.5rem;
+}
+
+.field { display: flex; flex-direction: column; gap: 0.375rem; }
+
+.field label {
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--text-muted);
+	font-weight: 600;
+}
+
+.field input {
+	width: 100%;
+	padding: 0.5rem 0.75rem;
+	border: 1px solid var(--border-strong);
+	border-radius: var(--radius-sm);
+	background: var(--surface);
+	color: var(--text);
+	font-size: 13px;
+	box-sizing: border-box;
+}
+
+.field input:focus-visible {
+	outline: 2px solid var(--primary);
+	outline-offset: 2px;
+	border-color: var(--primary);
+}
+
+.field .field-value { font-size: 13px; color: var(--text); }
+.field .field-value.empty { color: var(--text-muted); font-style: italic; }
+
+.field-hint {
+	margin: 0.25rem 0 0;
+	font-size: 12px;
+	color: var(--text-muted);
+}
+
+/* Memo */
+.memo-body { padding: 1rem 1.25rem 1.25rem; display: flex; flex-direction: column; gap: 0.875rem; }
+.memo-card { background: var(--surface-soft); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.875rem 1rem; }
+.memo-header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 0.5rem; margin-bottom: 0.5rem; font-size: 12px; }
+.memo-author { font-weight: 600; color: var(--text); }
+.memo-time { color: var(--text-muted); }
+.memo-content { color: var(--text-soft); white-space: pre-wrap; line-height: 1.5; font-size: 13px; overflow-wrap: break-word; }
+.memo-empty { color: var(--text-muted); font-style: italic; font-size: 13px; }
+.memo-edit-trigger { align-self: flex-start; }
+.memo-editor { display: flex; flex-direction: column; gap: 0.625rem; }
+.memo-textarea {
+	width: 100%;
+	min-height: 6rem;
+	padding: 0.625rem 0.75rem;
+	border: 1px solid var(--border-strong);
+	border-radius: var(--radius-sm);
+	background: var(--surface);
+	color: var(--text);
+	font-family: inherit;
+	font-size: 13px;
+	line-height: 1.5;
+	resize: vertical;
+	box-sizing: border-box;
+}
+.memo-textarea:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-color: var(--primary); }
+.memo-editor-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
+
+/* Footer actions */
+.actions {
+	position: sticky;
+	bottom: 0;
+	z-index: 5;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+	padding: 0.875rem 1.5rem;
+	background: var(--surface);
+	border-top: 1px solid var(--border);
+	box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.action-area { display: flex; align-items: center; gap: 0.5rem; }
+
+.btn {
+	appearance: none;
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.5rem 1rem;
+	border-radius: var(--radius-sm);
+	font-size: 13px;
+	font-weight: 600;
+	line-height: 1.25;
+	cursor: pointer;
+	transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+	border: 1px solid transparent;
+	background: transparent;
+	color: var(--text);
+	text-decoration: none;
+	user-select: none;
+	font-family: inherit;
+}
+
+.btn:disabled { cursor: not-allowed; opacity: 0.55; }
+.btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.btn svg { width: 1rem; height: 1rem; flex-shrink: 0; }
+
+.btn-primary { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
+.btn-primary:not(:disabled):hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+.btn-secondary { background: var(--surface); color: var(--text); border-color: var(--border-strong); }
+.btn-secondary:not(:disabled):hover { background: var(--surface-soft); }
+
+.action-notice {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	color: var(--text-soft);
+	font-size: 13px;
+	padding: 0.375rem 0.75rem;
+	border-radius: var(--radius-sm);
+}
+
+.action-notice svg { width: 1rem; height: 1rem; flex-shrink: 0; }
+.action-notice.completed { color: var(--success); font-weight: 600; background: var(--success-soft); }
+
+.toast {
+	position: fixed;
+	bottom: 5rem;
+	left: 50%;
+	transform: translateX(-50%);
+	background: light-dark(#dc2626, #f87171);
+	color: #ffffff;
+	padding: 0.625rem 1rem;
+	border-radius: var(--radius-sm);
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+	font-size: 13px;
+	z-index: 100;
+	max-width: 80%;
+	text-align: center;
+}
+</style>
+</head>
+<body>
+<main id="app" v-cloak @mounted="onMounted" @unmount="onUnmount">
+
+	<div v-if="view === 'loading'" class="state-pane">
+		<div class="spinner"></div>
+		<p>Loading order…</p>
+	</div>
+
+	<div v-else-if="view === 'error'" class="state-pane error-pane">
+		<svg class="state-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1.5a.75.75 0 0 1 .67.418l6.5 13a.75.75 0 0 1-.67 1.082h-13a.75.75 0 0 1-.67-1.082l6.5-13A.75.75 0 0 1 8 1.5zm0 4.75a.75.75 0 0 0-.75.75v3a.75.75 0 0 0 1.5 0v-3A.75.75 0 0 0 8 6.25zm0 6.25a.875.875 0 1 0 0-1.75.875.875 0 0 0 0 1.75z"/></svg>
+		<p>{{ errorMessage }}</p>
+	</div>
+
+	<div v-else-if="view === 'standalone'" class="state-pane">
+		<svg class="state-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM7.25 5a.75.75 0 0 1 1.5 0v3.5a.75.75 0 0 1-1.5 0V5zM8 11.25a.875.875 0 1 1 0-1.75.875.875 0 0 1 0 1.75z"/></svg>
+		<p>This form must be opened from the Tasks application.</p>
+	</div>
+
+	<template v-else>
+		<article class="order">
+			<header class="order-header">
+				<div class="order-title-row">
+					<h1>{{ orderTitle }}</h1>
+					<span class="order-total">{{ totalText }}</span>
+				</div>
+				<div class="order-tagline">
+					<span v-if="createdAtText">{{ createdAtText }}</span>
+					<span v-if="itemCount">{{ itemCount }} {{ itemCount === 1 ? 'item' : 'items' }}</span>
+				</div>
+			</header>
+
+			<!-- Ship to -->
+			<section class="card">
+				<h2 class="section-title">Ship to</h2>
+				<div class="card-body">
+					<div class="info-grid">
+						<div class="info-block">
+							<div class="info-label">Shipping address</div>
+							<div class="info-value" :class="{ empty: !shippingAddressText }">{{ shippingAddressText || 'Not provided' }}</div>
+						</div>
+						<div class="info-block">
+							<div class="info-label">Contact</div>
+							<div class="info-value" :class="{ empty: !customerLine }">{{ customerLine || 'Unknown' }}</div>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<!-- Items to pick -->
+			<section class="card">
+				<h2 class="section-title">Items</h2>
+				<div class="table-wrap">
+					<table class="items-table">
+						<thead>
+							<tr>
+								<th>Item</th>
+								<th>SKU</th>
+								<th class="align-right">Qty</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr v-if="itemRows.length === 0">
+								<td class="empty-cell" colspan="3">No line items.</td>
+							</tr>
+							<tr v-for="(row, i) in itemRows" :key="row.id || i">
+								<td>
+									<span class="item-title">{{ row.title }}</span>
+									<div v-if="row.variant" class="item-variant">{{ row.variant }}</div>
+								</td>
+								<td><span class="sku">{{ row.sku || '—' }}</span></td>
+								<td class="align-right">{{ row.qtyText }}</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			</section>
+
+			<!-- Tracking -->
+			<section class="card">
+				<h2 class="section-title">Tracking</h2>
+				<div class="card-body">
+					<!-- Editable when the current user owns the task -->
+					<div v-if="canEdit" class="fields">
+						<div class="field">
+							<label for="trk-no">Tracking number</label>
+							<input id="trk-no" type="text" v-model="trackingNumber" :disabled="actionPending" placeholder="e.g. 1Z999AA10123456784">
+						</div>
+						<div class="field">
+							<label for="trk-co">Carrier</label>
+							<input id="trk-co" type="text" v-model="trackingCompany" :disabled="actionPending" placeholder="e.g. Yamato, UPS, FedEx">
+						</div>
+						<div class="field">
+							<label for="trk-url">Tracking URL</label>
+							<input id="trk-url" type="text" v-model="trackingUrl" :disabled="actionPending" placeholder="https://…">
+						</div>
+					</div>
+					<p v-if="canEdit" class="field-hint">Tracking is optional. Leave blank to fulfill without tracking details.</p>
+
+					<!-- Read-only when not the assignee / completed -->
+					<div v-else class="fields">
+						<div class="field">
+							<div class="info-label">Tracking number</div>
+							<div class="field-value" :class="{ empty: !trackingNumber }">{{ trackingNumber || '—' }}</div>
+						</div>
+						<div class="field">
+							<div class="info-label">Carrier</div>
+							<div class="field-value" :class="{ empty: !trackingCompany }">{{ trackingCompany || '—' }}</div>
+						</div>
+						<div class="field">
+							<div class="info-label">Tracking URL</div>
+							<div class="field-value" :class="{ empty: !trackingUrl }">{{ trackingUrl || '—' }}</div>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<section class="card">
+				<h2 class="section-title">Memo</h2>
+				<div class="memo-body">
+					<div v-if="memo" class="memo-card">
+						<div class="memo-header">
+							<span class="memo-author">{{ memo.name || memo.id || 'Unknown' }}</span>
+							<span class="memo-time" v-if="memoTimestampText">{{ memoTimestampText }}</span>
+						</div>
+						<div class="memo-content">{{ memo.content }}</div>
+					</div>
+					<div v-else class="memo-empty">No memo yet.</div>
+
+					<div v-if="canEdit && memoMode === 'view'" class="memo-edit-trigger">
+						<button class="btn btn-secondary" type="button" @click="enterMemoEdit">
+							<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25a1.75 1.75 0 0 1 .445-.755l8.61-8.612zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086zM11.189 6.25 9.75 4.81l-6.286 6.287a.25.25 0 0 0-.064.108l-.558 1.953 1.953-.558a.25.25 0 0 0 .108-.064l6.286-6.286z"/></svg>
+							<span>{{ memo ? 'Edit memo' : 'Add memo' }}</span>
+						</button>
+					</div>
+
+					<div v-else-if="canEdit && memoMode === 'edit'" class="memo-editor">
+						<textarea v-model="memoDraft"
+							class="memo-textarea"
+							rows="4"
+							placeholder="Write a memo for the record..."
+							:disabled="memoSaving"></textarea>
+						<div class="memo-editor-actions">
+							<button class="btn btn-secondary" type="button"
+								:disabled="memoSaving"
+								@click="cancelMemoEdit">Cancel</button>
+							<button class="btn btn-primary" type="button"
+								:disabled="memoSaving || !memoDraftHasContent"
+								@click="saveMemo">
+								<span>Update</span>
+							</button>
+						</div>
+					</div>
+				</div>
+			</section>
+		</article>
+
+		<footer class="actions">
+			<div class="action-area">
+				<button v-if="isAssignedToMe || taskCompleted"
+					class="btn btn-secondary" type="button"
+					:disabled="!shopifyURL"
+					:title="shopifyURL || 'Shop domain or order ID is unavailable.'"
+					@click="openShopify">
+					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M9.5 2a.5.5 0 0 0 0 1h2.793L7.146 8.146a.5.5 0 1 0 .708.708L13 3.707V6.5a.5.5 0 0 0 1 0V2.5a.5.5 0 0 0-.5-.5h-4z"/><path d="M3.5 4A1.5 1.5 0 0 0 2 5.5v7A1.5 1.5 0 0 0 3.5 14h7a1.5 1.5 0 0 0 1.5-1.5v-3a.5.5 0 0 0-1 0v3a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1-.5-.5v-7a.5.5 0 0 1 .5-.5h3a.5.5 0 0 0 0-1h-3z"/></svg>
+					View on Shopify
+				</button>
+			</div>
+			<div class="action-area">
+				<span v-if="taskCompleted" class="action-notice completed">
+					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7 7a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.25 10.69l6.47-6.47a.75.75 0 0 1 1.06 0z"/></svg>
+					<span>This order has been fulfilled.</span>
+				</span>
+				<span v-else-if="!taskAssignee" class="action-notice">
+					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 14.5a5 5 0 0 1 10 0 .5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5z"/></svg>
+					<span>Claim this task to record tracking and fulfill the order.</span>
+				</span>
+				<span v-else-if="!isAssignedToMe" class="action-notice">
+					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 14.5a5 5 0 0 1 10 0 .5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5z"/></svg>
+					<span>This task is currently assigned to {{ assigneeDisplay || taskAssignee }}. View only.</span>
+				</span>
+				<button v-else
+					class="btn btn-primary" type="button"
+					:disabled="actionPending"
+					@click="onComplete">
+					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7 7a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.25 10.69l6.47-6.47a.75.75 0 0 1 1.06 0z"/></svg>
+					<span>Mark as fulfilled</span>
+				</button>
+			</div>
+		</footer>
+
+		<div v-if="toastMessage" class="toast" role="alert" aria-live="polite">{{ toastMessage }}</div>
+	</template>
+</main>
+
+<script type="module">
+import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ichigo.esm.min.js';
+
+	const pending = new Map();
+	let nextID = 1;
+
+	function rpcCall(method, params) {
+		return new Promise((resolve, reject) => {
+			const id = String(nextID++);
+			pending.set(id, { resolve, reject });
+			try {
+				window.parent.postMessage({ __tasksRpc: 'call', id, method, params: params || {} }, '*');
+			} catch (err) {
+				pending.delete(id);
+				reject(err);
+			}
+		});
+	}
+
+	function getProp(node, name) {
+		if (!node || !Array.isArray(node.properties)) return undefined;
+		const p = node.properties.find(x => x && x.name === name);
+		if (!p) return undefined;
+		const v = p.propertyValue;
+		if (!v) return undefined;
+		if ('value' in v) return v.value;
+		if ('values' in v) return v.values;
+		return undefined;
+	}
+
+	function getStringProp(node, name) {
+		const v = getProp(node, name);
+		return v == null ? '' : String(v);
+	}
+
+	function extractShopDomain(yamlText) {
+		if (!yamlText) return '';
+		const m = yamlText.match(/^[ \t]*shopDomain[ \t]*:[ \t]*["']?([^"'#\r\n]+?)["']?[ \t]*(?:#.*)?$/m);
+		return m ? m[1].trim() : '';
+	}
+
+	function formatMoney(amount, currency) {
+		if (amount == null || amount === '') return '—';
+		const n = Number(amount);
+		const num = Number.isFinite(n)
+			? n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+			: String(amount);
+		return currency ? num + ' ' + currency : num;
+	}
+
+	function formatNumber(n) {
+		if (n == null || n === '') return '—';
+		const num = Number(n);
+		if (Number.isFinite(num)) return num.toLocaleString();
+		return String(n);
+	}
+
+	function formatDate(value) {
+		if (!value) return '';
+		const d = new Date(value);
+		if (Number.isNaN(d.getTime())) return '';
+		return d.toLocaleString([], { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+	}
+
+	function formatAddress(addr) {
+		if (!addr || typeof addr !== 'object') return '';
+		const lines = [];
+		if (addr.name) lines.push(String(addr.name));
+		if (addr.company) lines.push(String(addr.company));
+		if (addr.address1) lines.push(String(addr.address1));
+		if (addr.address2) lines.push(String(addr.address2));
+		const cityLine = [addr.city, addr.province, addr.zip].filter(Boolean).join(' ');
+		if (cityLine) lines.push(cityLine);
+		if (addr.country) lines.push(String(addr.country));
+		if (addr.phone) lines.push(String(addr.phone));
+		return lines.join('\n');
+	}
+
+	const App = {
+		data() {
+			return {
+				view: 'loading',
+				errorMessage: '',
+				toastMessage: '',
+				actionPending: false,
+
+				currentUserID: '',
+				currentUserDisplay: '',
+				task: null,
+				assigneeDisplay: '',
+
+				orderLoaded: false,
+				order: null,
+				node: null,
+				orderPath: '',
+				orderID: '',
+				shopifyURL: '',
+
+				// Tracking inputs (pre-filled from any existing `fulfillment` property)
+				trackingNumber: '',
+				trackingCompany: '',
+				trackingUrl: '',
+
+				memo: null,
+				memoMode: 'view',
+				memoDraft: '',
+				memoSaving: false,
+
+				_messageListener: null,
+				_standaloneTimer: null,
+				_toastTimer: null,
+				_assigneeDisplayCache: {},
+			};
+		},
+
+		computed: {
+			currency() {
+				return (this.order && this.order.currency) ? String(this.order.currency) : '';
+			},
+			orderTitle() {
+				const o = this.order;
+				if (o) {
+					if (o.name) return String(o.name);
+					if (o.order_number != null) return '#' + o.order_number;
+				}
+				const num = getStringProp(this.node, 'commerce:order_number');
+				if (num) return '#' + num;
+				return this.orderID ? 'Order ' + this.orderID : '(order)';
+			},
+			totalText() {
+				const o = this.order;
+				const amount = o && o.total_price != null ? o.total_price : getStringProp(this.node, 'commerce:total_price');
+				return formatMoney(amount, this.currency);
+			},
+			createdAtText() { return this.order ? formatDate(this.order.created_at) : ''; },
+			customerLine() {
+				const o = this.order;
+				if (!o) return '';
+				const c = o.customer || {};
+				const name = [c.first_name, c.last_name].filter(Boolean).join(' ');
+				const email = o.contact_email || o.email || c.email || '';
+				const parts = [];
+				if (name) parts.push(name);
+				if (email) parts.push(email);
+				return parts.join('\n');
+			},
+			shippingAddressText() { return this.order ? formatAddress(this.order.shipping_address) : ''; },
+			itemRows() {
+				const list = (this.order && Array.isArray(this.order.line_items)) ? this.order.line_items : [];
+				return list.map((li, i) => {
+					const id = li && li.id != null ? String(li.id) : '';
+					const title = (li && li.title) || '(item)';
+					const variant = (li && li.variant_title && li.variant_title !== 'Default Title') ? String(li.variant_title) : '';
+					const sku = (li && li.sku) || '';
+					const qty = li && li.quantity != null ? Number(li.quantity) : null;
+					return { id: id || ('row-' + i), title, variant, sku, qtyText: formatNumber(qty) };
+				});
+			},
+			itemCount() { return this.itemRows.length; },
+			taskAssignee() { return (this.task && this.task.assignee) || ''; },
+			taskCompleted() { return !!(this.task && this.task.completed); },
+			isAssignedToMe() { return !!this.taskAssignee && this.taskAssignee === this.currentUserID; },
+			canEdit() { return this.isAssignedToMe && !this.taskCompleted; },
+			memoTimestampText() {
+				if (!this.memo || !this.memo.at) return '';
+				const d = new Date(this.memo.at);
+				if (Number.isNaN(d.getTime())) return this.memo.at;
+				return d.toLocaleString([], { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+			},
+			memoDraftHasContent() { return !!(this.memoDraft && this.memoDraft.trim()); },
+		},
+
+		methods: {
+			onMounted() {
+				this._messageListener = (ev) => this.onMessage(ev);
+				window.addEventListener('message', this._messageListener);
+				this._standaloneTimer = setTimeout(() => {
+					if (this.view === 'loading') this.view = 'standalone';
+				}, 3000);
+				this.notifyReady();
+			},
+
+			onUnmount() {
+				if (this._messageListener) { window.removeEventListener('message', this._messageListener); this._messageListener = null; }
+				if (this._standaloneTimer) { clearTimeout(this._standaloneTimer); this._standaloneTimer = null; }
+				if (this._toastTimer) { clearTimeout(this._toastTimer); this._toastTimer = null; }
+			},
+
+			notifyReady() {
+				try { window.parent.postMessage({ __tasksRpc: 'ready' }, '*'); } catch (_) {}
+			},
+
+			onMessage(ev) {
+				const data = ev.data;
+				if (!data || typeof data !== 'object') return;
+
+				if (data.__tasksRpc === 'result') {
+					const id = String(data.id);
+					const p = pending.get(id);
+					if (!p) return;
+					pending.delete(id);
+					if (data.ok) p.resolve(data.data);
+					else p.reject(new Error(data.error || 'RPC error'));
+					return;
+				}
+
+				if (data.__tasksRpc === 'event' && data.type === 'context') {
+					if (this._standaloneTimer) { clearTimeout(this._standaloneTimer); this._standaloneTimer = null; }
+					const payload = data.payload || {};
+					if (payload.theme !== undefined) this.applyTheme(payload.theme);
+					this.handleContext(payload);
+					return;
+				}
+
+				if (data.__tasksRpc === 'event' && data.type === 'theme-changed') {
+					this.applyTheme(data.theme);
+					return;
+				}
+			},
+
+			applyTheme(theme) {
+				const root = document.documentElement;
+				if (theme === 'light' || theme === 'dark') root.dataset.theme = theme;
+				else delete root.dataset.theme;
+			},
+
+			showToast(message) {
+				this.toastMessage = message || '';
+				if (this._toastTimer) clearTimeout(this._toastTimer);
+				this._toastTimer = setTimeout(() => { this.toastMessage = ''; }, 4000);
+			},
+
+			showError(message) {
+				this.errorMessage = message || 'An unexpected error occurred.';
+				this.view = 'error';
+			},
+
+			async handleContext(ctx) {
+				if (!ctx || ctx.mode !== 'task' || !ctx.task) {
+					if (!this.orderLoaded) this.showError('This form must be opened from a Task.');
+					return;
+				}
+
+				this.task = Object.assign({}, ctx.task);
+				this.currentUserID = (ctx.currentUser && ctx.currentUser.id) || '';
+				this.currentUserDisplay = (ctx.currentUser && ctx.currentUser.displayName) || this.currentUserID;
+				this.refreshAssigneeDisplay();
+
+				if (this.orderLoaded) return;
+				this.orderLoaded = true;
+				try {
+					await this.loadOrder();
+					this.view = 'content';
+				} catch (err) {
+					this.orderLoaded = false;
+					this.showError(err && err.message ? err.message : String(err));
+				}
+			},
+
+			async loadOrder() {
+				const taskInfo = await rpcCall('getTaskWithVariables');
+				const variables = (taskInfo && Array.isArray(taskInfo.variables)) ? taskInfo.variables : [];
+				const variableMap = {};
+				for (const v of variables) { if (v && v.name) variableMap[v.name] = v.value; }
+
+				const orderPath = String(variableMap.orderPath || '');
+				const orderID = String(variableMap.order_id || '');
+				if (!orderPath) throw new Error('Process variable "orderPath" is not set on this task.');
+
+				const [node, orderJSONText, configText] = await Promise.all([
+					rpcCall('getNode', { path: orderPath }),
+					rpcCall('readNodeText', { path: orderPath }),
+					rpcCall('readNodeText', { path: '/etc/commerce/config/shopify.yml' }).catch(() => ''),
+				]);
+
+				if (!node) throw new Error('Order not found: ' + orderPath);
+
+				let order;
+				try {
+					order = JSON.parse(orderJSONText);
+				} catch (err) {
+					throw new Error('Failed to parse order JSON: ' + (err && err.message ? err.message : String(err)));
+				}
+
+				this.node = node;
+				this.order = order;
+				this.orderPath = orderPath;
+				this.orderID = orderID || (order && order.id != null ? String(order.id) : '');
+				this.loadFulfillmentFromNode();
+				this.loadMemoFromNode();
+
+				const shopDomain = extractShopDomain(configText);
+				this.shopifyURL = (shopDomain && this.orderID)
+					? 'https://' + shopDomain + '/admin/orders/' + encodeURIComponent(this.orderID)
+					: '';
+
+				document.title = 'Order Fulfillment — ' + this.orderTitle;
+			},
+
+			loadFulfillmentFromNode() {
+				const raw = getStringProp(this.node, 'fulfillment');
+				if (!raw) return;
+				try {
+					const f = JSON.parse(raw);
+					if (f && typeof f === 'object') {
+						this.trackingNumber = f.trackingNumber || '';
+						this.trackingCompany = f.trackingCompany || '';
+						this.trackingUrl = f.trackingUrl || '';
+					}
+				} catch (_) { /* ignore unparseable */ }
+			},
+
+			openShopify() {
+				if (!this.shopifyURL) return;
+				window.open(this.shopifyURL, '_blank', 'noopener,noreferrer');
+			},
+
+			async refreshAssigneeDisplay() {
+				const assignee = this.taskAssignee;
+				if (!assignee || assignee === this.currentUserID) { this.assigneeDisplay = ''; return; }
+				const cached = this._assigneeDisplayCache[assignee];
+				if (cached) { this.assigneeDisplay = cached; return; }
+				try {
+					const user = await rpcCall('getUser', { username: assignee });
+					const display = (user && user.displayName) || assignee;
+					this._assigneeDisplayCache[assignee] = display;
+					if (this.taskAssignee === assignee) this.assigneeDisplay = display;
+				} catch (_) {
+					if (this.taskAssignee === assignee) this.assigneeDisplay = assignee;
+				}
+			},
+
+			loadMemoFromNode() {
+				const raw = getStringProp(this.node, 'internal_memo');
+				if (!raw) { this.memo = null; return; }
+				try {
+					const obj = JSON.parse(raw);
+					if (obj && typeof obj === 'object') {
+						this.memo = { id: obj.id || '', name: obj.name || '', at: obj.at || '', content: obj.content || '' };
+						return;
+					}
+				} catch (_) {}
+				this.memo = null;
+			},
+
+			enterMemoEdit() {
+				if (!this.canEdit) return;
+				this.memoDraft = (this.memo && this.memo.content) || '';
+				this.memoMode = 'edit';
+			},
+
+			cancelMemoEdit() {
+				if (this.memoSaving) return;
+				this.memoMode = 'view';
+				this.memoDraft = '';
+			},
+
+			async saveMemo() {
+				if (this.memoSaving || !this.canEdit) return;
+				const content = (this.memoDraft || '').trim();
+				if (!content) return;
+				if (!this.orderPath) { this.showToast('Cannot save memo: order path is unknown.'); return; }
+				this.memoSaving = true;
+				try {
+					const payload = {
+						id: this.currentUserID || '',
+						name: this.currentUserDisplay || this.currentUserID || '',
+						at: new Date().toISOString(),
+						content,
+					};
+					await rpcCall('setNodeProperty', { path: this.orderPath, name: 'internal_memo', value: JSON.stringify(payload) });
+					const refreshed = await rpcCall('getNode', { path: this.orderPath });
+					if (refreshed) this.node = refreshed;
+					this.loadMemoFromNode();
+					this.memoMode = 'view';
+					this.memoDraft = '';
+				} catch (err) {
+					this.showToast(err && err.message ? err.message : String(err));
+				} finally {
+					this.memoSaving = false;
+				}
+			},
+
+			// Persist tracking details to the order node, then complete the task.
+			// Mirrors the inventory threshold form: write the node property first,
+			// then completeTask with no process variables. The Create Fulfillment
+			// service task reads the `fulfillment` property afterwards.
+			async onComplete() {
+				if (this.actionPending) return;
+				if (!this.orderPath) { this.showToast('Cannot fulfill: order path is unknown.'); return; }
+				this.actionPending = true;
+				try {
+					const fulfillment = {
+						trackingNumber: (this.trackingNumber || '').trim(),
+						trackingCompany: (this.trackingCompany || '').trim(),
+						trackingUrl: (this.trackingUrl || '').trim(),
+						at: new Date().toISOString(),
+					};
+					await rpcCall('setNodeProperty', { path: this.orderPath, name: 'fulfillment', value: JSON.stringify(fulfillment) });
+					await rpcCall('completeTask', { variables: [] });
+					this.task = Object.assign({}, this.task, { completed: true });
+				} catch (err) {
+					this.showToast(err && err.message ? err.message : String(err));
+				} finally {
+					this.actionPending = false;
+				}
+			},
+		},
+	};
+
+VDOM.createApp(App).mount('#app');
+</script>
+</body>
+</html>

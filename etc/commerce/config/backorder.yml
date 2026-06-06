@@ -1,0 +1,30 @@
+# Backorder / pre-order management (feature #12)
+# Deploy to: /etc/commerce/config/backorder.yml
+# Managed by the Commerce app (Webtop > Commerce).
+#
+# When a paid order cannot be fulfilled from on-hand stock — or a product is sold
+# ahead of stock as a pre-order — a line-level backorder record is created and
+# tracked through its own lifecycle (backordered -> ready -> released, or
+# cancelled). When stock later arrives, covered backorders are raised as a
+# "Release Backorder" task for an operator. See docs/backorders.md.
+#
+# A shortfall backorder is only raised for STOCK-TRACKED items (those we hold
+# inventory levels for, from the inventory_levels/update webhook). Items we hold
+# no levels for are treated as untracked and never backordered on a shortfall, so
+# a shop that has not wired inventory webhooks is never flooded with false records.
+
+# Master switch (false = no backorders are detected or released).
+enabled: true
+
+# Products tagged with any of these (case-insensitive, matched against the
+# product's Shopify tags) are treated as pre-orders: their lines are backordered
+# even when stock is available, and released when stock arrives. Leave empty to
+# disable pre-order detection (shortfall detection still applies).
+preorderTags:
+  - "preorder"
+  - "pre-order"
+
+# Operator notifications (delivered through the channels in notifications.yml).
+notify:
+  onCreated: true   # one summary per order when items go on backorder
+  onReady: true     # when a backorder has stock and a release task is raised

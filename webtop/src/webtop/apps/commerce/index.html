@@ -25,19 +25,16 @@
 				</button>
 			</div>
 
-			<!-- Section switcher (filled toggle, like the cms0 section toggles) -->
-			<div class="toolbar-group">
-				<button class="btn-icon section-toggle" :class="{active: section === 'shop'}"
-					@click="selectSection('shop')" title="Shop">
-					<i class="bi bi-shop"></i>
-				</button>
-				<button class="btn-icon section-toggle" :class="{active: section === 'notifications'}"
-					@click="selectSection('notifications')" title="Notifications">
-					<i class="bi bi-bell"></i>
-				</button>
-			</div>
 
 			<span class="nav-spacer"></span>
+
+			<!-- Pane toggles -->
+			<div class="pane-toggles">
+				<button class="btn-icon pane-toggle-btn" :class="{active: sidebarVisible}"
+					@click="toggleSidebar" title="Toggle Sidebar">
+					<i class="bi bi-layout-sidebar-inset"></i>
+				</button>
+			</div>
 
 			<!-- Window controls -->
 			<div class="window-controls">
@@ -55,6 +52,31 @@
 
 		<!-- Content -->
 		<div class="content-body">
+
+			<!-- Sidebar navigation (grouped, collapsible sections — Island-less) -->
+			<aside v-if="view === 'ready' && sidebarVisible" class="settings-nav"
+				:style="{ width: sidebarWidth + 'px' }">
+				<template v-for="g in navGroups" :key="g.label">
+					<div class="settings-nav-group" @click="toggleNavGroup(g.label)" title="Collapse / expand">
+						<i class="bi settings-nav-chevron"
+							:class="navGroupExpanded[g.label] ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
+						<span class="settings-nav-group-label">{{ g.label }}</span>
+					</div>
+					<div v-show="navGroupExpanded[g.label]" class="settings-nav-group-items">
+						<div v-for="s in g.items" :key="s.key" class="settings-nav-item"
+							:class="{ active: section === s.key }" @click="selectSection(s.key)">
+							<i class="bi" :class="s.icon"></i>
+							<span class="settings-nav-label">{{ s.label }}</span>
+							<span v-if="isDirty(s.key)" class="settings-nav-dot" title="Unsaved changes"></span>
+						</div>
+					</div>
+				</template>
+			</aside>
+
+			<!-- Sidebar resize handle (drag to adjust the nav width) -->
+			<div v-if="view === 'ready' && sidebarVisible" class="settings-nav-resize-handle"
+				@mousedown="onSidebarResizeStart"></div>
+
 			<div class="content-main island">
 
 				<!-- Loading -->
@@ -166,10 +188,12 @@
 					<template v-if="section === 'notifications'">
 						<div>
 							<h2 class="commerce-h2 mb-2">Notifications</h2>
-							<div class="commerce-lede">Destinations notified when a manual inventory task is raised.
-								Stored separately from the Shopify credentials.</div>
+							<div class="commerce-lede">Destinations notified when an inventory, order or refund task is
+								raised. Each enabled channel receives the same message in its own format. Stored
+								separately from the Shopify credentials.</div>
 						</div>
 
+						<!-- Slack -->
 						<div class="property-group">
 							<div class="property-group-title">Slack</div>
 							<label class="wt-checkbox-label">
@@ -177,13 +201,16 @@
 								Enable Slack notifications
 							</label>
 							<div class="property-row">
-								<label class="property-label">Incoming webhook URL</label>
+								<label class="property-label">Incoming webhook URL<span v-if="notif.slack.enabled"
+										class="required-mark" title="Required">*</span></label>
 								<input type="text" class="wt w-100" v-model="notif.slack.webhookUrl"
 									:disabled="!notif.slack.enabled"
+									:class="{ 'is-invalid': notif.slack.enabled && !notif.slack.webhookUrl }"
 									placeholder="https://hooks.slack.com/services/...">
 							</div>
 						</div>
 
+						<!-- Discord -->
 						<div class="property-group">
 							<div class="property-group-title">Discord</div>
 							<label class="wt-checkbox-label">
@@ -191,13 +218,837 @@
 								Enable Discord notifications
 							</label>
 							<div class="property-row">
-								<label class="property-label">Incoming webhook URL</label>
+								<label class="property-label">Incoming webhook URL<span v-if="notif.discord.enabled"
+										class="required-mark" title="Required">*</span></label>
 								<input type="text" class="wt w-100" v-model="notif.discord.webhookUrl"
 									:disabled="!notif.discord.enabled"
+									:class="{ 'is-invalid': notif.discord.enabled && !notif.discord.webhookUrl }"
 									placeholder="https://discord.com/api/webhooks/...">
 							</div>
 						</div>
+
+						<!-- Microsoft Teams -->
+						<div class="property-group">
+							<div class="property-group-title">Microsoft Teams</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="notif.teams.enabled">
+								Enable Teams notifications
+							</label>
+							<div class="property-row">
+								<label class="property-label">Incoming webhook URL<span v-if="notif.teams.enabled"
+										class="required-mark" title="Required">*</span></label>
+								<input type="text" class="wt w-100" v-model="notif.teams.webhookUrl"
+									:disabled="!notif.teams.enabled"
+									:class="{ 'is-invalid': notif.teams.enabled && !notif.teams.webhookUrl }"
+									placeholder="https://...webhook.office.com/...">
+							</div>
+							<div class="property-hint">Teams Workflows / connector URL. Posts an Adaptive Card.</div>
+						</div>
+
+						<!-- LINE -->
+						<div class="property-group">
+							<div class="property-group-title">LINE</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="notif.line.enabled">
+								Enable LINE notifications
+							</label>
+							<div class="property-row">
+								<label class="property-label">Channel access token<span v-if="notif.line.enabled"
+										class="required-mark" title="Required">*</span></label>
+								<div class="input-group">
+									<input :type="reveal.lineToken ? 'text' : 'password'" autocomplete="off"
+										v-model="notif.line.accessToken" :disabled="!notif.line.enabled"
+										:class="{ 'is-invalid': notif.line.enabled && !notif.line.accessToken }">
+									<div class="input-group-actions">
+										<button class="input-group-btn" @click="reveal.lineToken = !reveal.lineToken"
+											:disabled="!notif.line.enabled"
+											:title="reveal.lineToken ? 'Hide' : 'Show'">
+											<i class="bi" :class="reveal.lineToken ? 'bi-eye' : 'bi-eye-slash'"></i>
+										</button>
+									</div>
+								</div>
+							</div>
+							<div class="property-row">
+								<label class="property-label">Recipient ID<span v-if="notif.line.enabled"
+										class="required-mark" title="Required">*</span></label>
+								<input type="text" class="wt w-100" v-model="notif.line.to"
+									:disabled="!notif.line.enabled"
+									:class="{ 'is-invalid': notif.line.enabled && !notif.line.to }"
+									placeholder="user / group / room ID">
+							</div>
+							<div class="property-hint">Messaging API push (LINE Notify reached end of service in 2025).</div>
+						</div>
+
+						<!-- Generic webhook -->
+						<div class="property-group">
+							<div class="property-group-title">Webhook</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="notif.webhook.enabled">
+								Enable generic webhook
+							</label>
+							<div class="property-row">
+								<label class="property-label">URL<span v-if="notif.webhook.enabled"
+										class="required-mark" title="Required">*</span></label>
+								<input type="text" class="wt w-100" v-model="notif.webhook.url"
+									:disabled="!notif.webhook.enabled"
+									:class="{ 'is-invalid': notif.webhook.enabled && !notif.webhook.url }"
+									placeholder="https://example.com/hook">
+							</div>
+							<div class="property-row">
+								<label class="property-label">Text field</label>
+								<input type="text" class="wt w-100" v-model="notif.webhook.textField"
+									:disabled="!notif.webhook.enabled" placeholder="text">
+							</div>
+							<div class="property-hint">Posts structured JSON; the plain-text body is placed under the
+								"Text field" key (default <code>text</code>).</div>
+						</div>
+
+						<!-- Email (SMTP) -->
+						<div class="property-group">
+							<div class="property-group-title">Email</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="notif.email.enabled">
+								Enable email notifications
+							</label>
+							<div class="property-row">
+								<label class="property-label">SMTP host<span v-if="notif.email.enabled"
+										class="required-mark" title="Required">*</span></label>
+								<input type="text" class="wt w-100" v-model="notif.email.smtpHost"
+									:disabled="!notif.email.enabled"
+									:class="{ 'is-invalid': notif.email.enabled && !notif.email.smtpHost }"
+									placeholder="smtp.example.com">
+							</div>
+							<div class="property-row">
+								<label class="property-label">Port</label>
+								<input type="number" class="wt w-100" v-model="notif.email.smtpPort"
+									:disabled="!notif.email.enabled" placeholder="587">
+							</div>
+							<div class="property-row">
+								<label class="property-label">Security</label>
+								<select class="wt w-100" v-model="notif.email.security"
+									:disabled="!notif.email.enabled">
+									<option value="starttls">STARTTLS (587)</option>
+									<option value="ssl">SSL/TLS (465)</option>
+									<option value="none">None (25)</option>
+								</select>
+							</div>
+							<div class="property-row">
+								<label class="property-label">Username</label>
+								<input type="text" class="wt w-100" v-model="notif.email.username"
+									:disabled="!notif.email.enabled" autocomplete="off">
+							</div>
+							<div class="property-row">
+								<label class="property-label">Password</label>
+								<div class="input-group">
+									<input :type="reveal.emailPassword ? 'text' : 'password'" autocomplete="off"
+										v-model="notif.email.password" :disabled="!notif.email.enabled">
+									<div class="input-group-actions">
+										<button class="input-group-btn"
+											@click="reveal.emailPassword = !reveal.emailPassword"
+											:disabled="!notif.email.enabled"
+											:title="reveal.emailPassword ? 'Hide' : 'Show'">
+											<i class="bi" :class="reveal.emailPassword ? 'bi-eye' : 'bi-eye-slash'"></i>
+										</button>
+									</div>
+								</div>
+							</div>
+							<div class="property-row">
+								<label class="property-label">From<span v-if="notif.email.enabled"
+										class="required-mark" title="Required">*</span></label>
+								<input type="text" class="wt w-100" v-model="notif.email.from"
+									:disabled="!notif.email.enabled"
+									:class="{ 'is-invalid': notif.email.enabled && !notif.email.from }"
+									placeholder="commerce@example.com">
+							</div>
+							<div class="property-row">
+								<label class="property-label">To<span v-if="notif.email.enabled"
+										class="required-mark" title="Required">*</span></label>
+								<input type="text" class="wt w-100" v-model="notif.email.to"
+									:disabled="!notif.email.enabled"
+									:class="{ 'is-invalid': notif.email.enabled && !notif.email.to }"
+									placeholder="ops@example.com, alerts@example.com">
+							</div>
+							<div class="property-row">
+								<label class="property-label">Subject prefix</label>
+								<input type="text" class="wt w-100" v-model="notif.email.subjectPrefix"
+									:disabled="!notif.email.enabled" placeholder="[Commerce] ">
+							</div>
+							<div class="property-hint">Comma-separate multiple recipients. Sent as plain-text UTF-8.</div>
+						</div>
 					</template>
+
+					<!-- ========== Health ========== -->
+					<template v-if="section === 'health'">
+						<div>
+							<h2 class="commerce-h2 mb-2">Health</h2>
+							<div class="commerce-lede">Alert thresholds for the integration health monitor. Metrics are
+								always recorded; alerts are sent through the enabled channels in Notifications.</div>
+						</div>
+
+						<div class="property-group">
+							<div class="property-group-title">Alerting</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="health.enabled">
+								Enable health alerts
+							</label>
+							<div class="property-hint">When off, metrics are still recorded but no alerts are sent.</div>
+							<div class="property-row">
+								<label class="property-label">Cooldown (minutes)</label>
+								<input type="number" class="wt w-100" v-model.number="health.cooldownMinutes"
+									:disabled="!health.enabled" placeholder="30">
+							</div>
+							<div class="property-hint">Minimum minutes between repeat alerts of the same kind.</div>
+						</div>
+
+						<div class="property-group">
+							<div class="property-group-title">HMAC failures</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="health.hmacFailures.enabled"
+									:disabled="!health.enabled">
+								Alert on failed webhook signature verifications
+							</label>
+							<div class="property-row">
+								<label class="property-label">Threshold (count today)</label>
+								<input type="number" class="wt w-100" v-model.number="health.hmacFailures.threshold"
+									:disabled="!health.enabled || !health.hmacFailures.enabled" placeholder="5">
+							</div>
+						</div>
+
+						<div class="property-group">
+							<div class="property-group-title">Admin API error rate</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="health.apiErrorRate.enabled"
+									:disabled="!health.enabled">
+								Alert when the Shopify Admin API error rate is high
+							</label>
+							<div class="property-row">
+								<label class="property-label">Min sample (calls today)</label>
+								<input type="number" class="wt w-100" v-model.number="health.apiErrorRate.minSample"
+									:disabled="!health.enabled || !health.apiErrorRate.enabled" placeholder="10">
+							</div>
+							<div class="property-row">
+								<label class="property-label">Threshold (0–1)</label>
+								<input type="number" step="0.05" min="0" max="1" class="wt w-100"
+									v-model.number="health.apiErrorRate.threshold"
+									:disabled="!health.enabled || !health.apiErrorRate.enabled" placeholder="0.2">
+							</div>
+							<div class="property-hint">0.2 = alert at 20% errors once at least the minimum calls are seen.</div>
+						</div>
+
+						<div class="property-group">
+							<div class="property-group-title">Processing error rate</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="health.routeErrorRate.enabled"
+									:disabled="!health.enabled">
+								Alert when the webhook processing error rate is high
+							</label>
+							<div class="property-row">
+								<label class="property-label">Min sample (processed today)</label>
+								<input type="number" class="wt w-100" v-model.number="health.routeErrorRate.minSample"
+									:disabled="!health.enabled || !health.routeErrorRate.enabled" placeholder="10">
+							</div>
+							<div class="property-row">
+								<label class="property-label">Threshold (0–1)</label>
+								<input type="number" step="0.05" min="0" max="1" class="wt w-100"
+									v-model.number="health.routeErrorRate.threshold"
+									:disabled="!health.enabled || !health.routeErrorRate.enabled" placeholder="0.2">
+							</div>
+						</div>
+
+						<div class="property-group">
+							<div class="property-group-title">Processing latency</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="health.processingLatency.enabled"
+									:disabled="!health.enabled">
+								Alert on slow webhook processing
+							</label>
+							<div class="property-row">
+								<label class="property-label">Max latency (ms)</label>
+								<input type="number" class="wt w-100" v-model.number="health.processingLatency.maxMs"
+									:disabled="!health.enabled || !health.processingLatency.enabled" placeholder="30000">
+							</div>
+							<div class="property-hint">Receipt → completion. Exceeding this raises an alert.</div>
+						</div>
+					</template>
+
+					<!-- ========== Tasks (SLA) ========== -->
+					<template v-if="section === 'tasks'">
+						<div>
+							<h2 class="commerce-h2 mb-2">Tasks</h2>
+							<div class="commerce-lede">Service-level rules for the workflow's human tasks. A periodic scan
+								escalates breaches: an alert through the Notifications channels plus the optional action
+								below.</div>
+						</div>
+
+						<div class="property-group">
+							<div class="property-group-title">Escalation</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="sla.enabled">
+								Enable task SLA escalation
+							</label>
+							<div class="property-hint">When off, the scan does nothing.</div>
+							<div class="property-row">
+								<label class="property-label">Cooldown (minutes)</label>
+								<input type="number" class="wt w-100" v-model.number="sla.cooldownMinutes"
+									:disabled="!sla.enabled" placeholder="120">
+							</div>
+							<div class="property-hint">Minimum minutes between repeat escalations of the same task.</div>
+						</div>
+
+						<div class="property-group">
+							<div class="property-group-title">Unclaimed</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="sla.unclaimed.enabled"
+									:disabled="!sla.enabled">
+								Alert when a task stays unassigned too long
+							</label>
+							<div class="property-row">
+								<label class="property-label">After (minutes)</label>
+								<input type="number" class="wt w-100" v-model.number="sla.unclaimed.minutes"
+									:disabled="!sla.enabled || !sla.unclaimed.enabled" placeholder="60">
+							</div>
+						</div>
+
+						<div class="property-group">
+							<div class="property-group-title">Open too long</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="sla.open.enabled"
+									:disabled="!sla.enabled">
+								Alert when a task stays open too long (claimed or not)
+							</label>
+							<div class="property-row">
+								<label class="property-label">After (minutes)</label>
+								<input type="number" class="wt w-100" v-model.number="sla.open.minutes"
+									:disabled="!sla.enabled || !sla.open.enabled" placeholder="1440">
+							</div>
+						</div>
+
+						<div class="property-group">
+							<div class="property-group-title">Overdue</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="sla.overdue.enabled"
+									:disabled="!sla.enabled">
+								Alert when a task is past its due date
+							</label>
+							<div class="property-row">
+								<label class="property-label">Grace (minutes)</label>
+								<input type="number" class="wt w-100" v-model.number="sla.overdue.graceMinutes"
+									:disabled="!sla.enabled || !sla.overdue.enabled" placeholder="0">
+							</div>
+							<div class="property-hint">Only applies to tasks that have a due date set.</div>
+						</div>
+
+						<div class="property-group">
+							<div class="property-group-title">Escalation action</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="sla.escalation.bumpPriority"
+									:disabled="!sla.enabled">
+								Raise the priority of a breached task
+							</label>
+							<div class="property-row">
+								<label class="property-label">Priority</label>
+								<input type="number" class="wt w-100" v-model.number="sla.escalation.priority"
+									:disabled="!sla.enabled || !sla.escalation.bumpPriority" placeholder="75">
+							</div>
+							<div class="property-row">
+								<label class="property-label">Candidate group</label>
+								<input type="text" class="wt w-100" v-model="sla.escalation.candidateGroup"
+									:disabled="!sla.enabled" placeholder="(optional) reassign to this group">
+							</div>
+							<div class="property-hint">Applied to a breached task in addition to the alert. Leave the group
+								blank to not reassign.</div>
+						</div>
+					</template>
+
+					<!-- ========== Forecast (sales velocity / stockout) ========== -->
+					<template v-if="section === 'forecast'">
+						<div>
+							<h2 class="commerce-h2 mb-2">Forecast</h2>
+							<div class="commerce-lede">Sales velocity &amp; stockout prediction. A periodic batch computes
+								per-variant velocity from order history (feeding the inventory rules) and alerts on imminent
+								stockouts through the Notifications channels.</div>
+						</div>
+
+						<div class="property-group">
+							<div class="property-group-title">Velocity</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="velocity.enabled">
+								Enable the velocity &amp; forecast batch
+							</label>
+							<div class="property-hint">When off, the batch does nothing and cached velocity is left as-is.</div>
+							<div class="property-row">
+								<label class="property-label">Window (days)</label>
+								<input type="number" class="wt w-100" v-model.number="velocity.windowDays"
+									:disabled="!velocity.enabled" placeholder="30">
+							</div>
+							<div class="property-hint">Averaging window for units/day.</div>
+							<div class="property-row">
+								<label class="property-label">Cooldown (minutes)</label>
+								<input type="number" class="wt w-100" v-model.number="velocity.cooldownMinutes"
+									:disabled="!velocity.enabled" placeholder="720">
+							</div>
+							<div class="property-hint">Minimum minutes between repeat stockout alerts for the same variant.</div>
+						</div>
+
+						<div class="property-group">
+							<div class="property-group-title">Stockout alerts</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="velocity.stockout.enabled"
+									:disabled="!velocity.enabled">
+								Alert on variants predicted to run out soon
+							</label>
+							<div class="property-row">
+								<label class="property-label">Warn within (days)</label>
+								<input type="number" class="wt w-100" v-model.number="velocity.stockout.warnDays"
+									:disabled="!velocity.enabled || !velocity.stockout.enabled" placeholder="7">
+							</div>
+							<div class="property-hint">Alert when current stock / velocity is at or below this many days.</div>
+						</div>
+					</template>
+
+					<!-- ========== Replenishment (auto-reorder) ========== -->
+					<template v-if="section === 'replenishment'">
+						<div>
+							<h2 class="commerce-h2 mb-2">Replenishment</h2>
+							<div class="commerce-lede">Auto-reorder proposals. A batch proposes purchase orders for variants that
+								won't cover the lead time + target cover at the current velocity; an operator approves, then the PO
+								is sent to the supplier.</div>
+						</div>
+
+						<div class="property-group">
+							<div class="property-group-title">Replenishment</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="reorder.enabled">
+								Enable reorder proposals
+							</label>
+							<div class="property-hint">When off, no purchase-order proposals are created.</div>
+							<div class="property-row">
+								<label class="property-label">Lead time (days)</label>
+								<input type="number" class="wt w-100" v-model.number="reorder.leadTimeDays" :disabled="!reorder.enabled" placeholder="7">
+							</div>
+							<div class="property-row">
+								<label class="property-label">Target cover (days)</label>
+								<input type="number" class="wt w-100" v-model.number="reorder.targetCoverDays" :disabled="!reorder.enabled" placeholder="14">
+							</div>
+							<div class="property-row">
+								<label class="property-label">Min order qty</label>
+								<input type="number" class="wt w-100" v-model.number="reorder.minOrderQty" :disabled="!reorder.enabled" placeholder="1">
+							</div>
+							<div class="property-row">
+								<label class="property-label">Round to (pack size)</label>
+								<input type="number" class="wt w-100" v-model.number="reorder.roundTo" :disabled="!reorder.enabled" placeholder="1">
+							</div>
+							<div class="property-hint">Order qty = round up of (velocity × (lead + cover) − stock), at least the min.</div>
+						</div>
+
+						<div class="property-group">
+							<div class="property-group-title">Supplier delivery</div>
+							<div class="property-row">
+								<label class="property-label">Delivery</label>
+								<select class="wt w-100" v-model="reorder.supplier.delivery" :disabled="!reorder.enabled">
+									<option value="none">None (record only)</option>
+									<option value="email">Email</option>
+									<option value="webhook">Webhook</option>
+								</select>
+							</div>
+							<div class="property-row">
+								<label class="property-label">Supplier email</label>
+								<input type="text" class="wt w-100" v-model="reorder.supplier.email" :disabled="!reorder.enabled || reorder.supplier.delivery !== 'email'" placeholder="supplier@example.com">
+							</div>
+							<div class="property-row">
+								<label class="property-label">Supplier webhook URL</label>
+								<input type="text" class="wt w-100" v-model="reorder.supplier.webhookUrl" :disabled="!reorder.enabled || reorder.supplier.delivery !== 'webhook'" placeholder="https://supplier.example.com/po">
+							</div>
+							<div class="property-hint">Email uses the SMTP transport from the Notifications &gt; Email settings; only the recipient is set here.</div>
+						</div>
+					</template>
+
+					<!-- ========== Locations (multi-location inventory) ========== -->
+					<template v-if="section === 'locations'">
+						<div>
+							<h2 class="commerce-h2 mb-2">Locations</h2>
+							<div class="commerce-lede">Cross-location allocation strategy. Per-location stock is ingested from
+								Shopify; this advises which locations to draw from to fulfil a quantity (it does not override
+								Shopify's own fulfillment routing).</div>
+						</div>
+
+						<div class="property-group">
+							<div class="property-group-title">Allocation</div>
+							<div class="property-row">
+								<label class="property-label">Strategy</label>
+								<select class="wt w-100" v-model="locations.strategy">
+									<option value="most_stock">Most stock first</option>
+									<option value="priority">Priority order</option>
+								</select>
+							</div>
+							<div class="property-row">
+								<label class="property-label">Priority order</label>
+								<input type="text" class="wt w-100" v-model="locations.priorityOrder" :disabled="locations.strategy !== 'priority'" placeholder="comma-separated location IDs, e.g. 123,456">
+							</div>
+							<div class="property-hint">Used by the "Priority order" strategy: draw from these locations first, in order, then the rest by most stock.</div>
+							<div class="property-row">
+								<label class="property-label">Safety stock (per location)</label>
+								<input type="number" class="wt w-100" v-model.number="locations.defaultSafetyStock" placeholder="0">
+							</div>
+							<div class="property-hint">Quantity held back at each location (not allocatable).</div>
+						</div>
+					</template>
+
+					<!-- ========== Storefront ========== -->
+					<template v-if="section === 'storefront'">
+						<div>
+							<h2 class="commerce-h2 mb-2">Storefront</h2>
+							<div class="commerce-lede">Headless storefront &amp; real-time inventory (#20/#21). The publisher builds a sanitized public catalog the ichigo.js storefront reads; rebuild it from the Commerce Publishing app.</div>
+						</div>
+						<div class="property-group">
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="storefront.enabled"> Publish the public catalog
+							</label>
+							<div class="property-hint">When off, the catalog/landing projection is not rebuilt.</div>
+							<div class="property-row">
+								<label class="property-label">Store name</label>
+								<input type="text" class="wt w-100" v-model="storefront.storeName">
+							</div>
+							<div class="property-row">
+								<label class="property-label">Fallback currency</label>
+								<input type="text" class="wt w-100" v-model="storefront.currency" placeholder="JPY">
+							</div>
+							<div class="property-hint">Used only when a product carries no currency.</div>
+							<div class="property-row">
+								<label class="property-label">Low-stock threshold</label>
+								<input type="number" class="wt w-100" v-model.number="storefront.lowStock" placeholder="5">
+							</div>
+							<div class="property-hint">At/below this available quantity the storefront shows "only a few left"; 0 shows "sold out".</div>
+						</div>
+					</template>
+
+					<!-- ========== Customers (CRM) ========== -->
+					<template v-if="section === 'crm'">
+						<div>
+							<h2 class="commerce-h2 mb-2">Customers (CRM)</h2>
+							<div class="commerce-lede">Segmentation, behaviour alerts and abandoned-cart follow-up (#13–#15).</div>
+						</div>
+						<div class="property-group">
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="crm.enabled"> Enable the CRM batches
+							</label>
+						</div>
+						<div class="property-group">
+							<div class="property-group-title">Segments</div>
+							<div class="property-row">
+								<label class="property-label">VIP — min spend</label>
+								<input type="number" class="wt w-100" v-model.number="crm.segments.vipMinSpend" :disabled="!crm.enabled">
+							</div>
+							<div class="property-row">
+								<label class="property-label">VIP — or min orders</label>
+								<input type="number" class="wt w-100" v-model.number="crm.segments.vipMinOrders" :disabled="!crm.enabled">
+							</div>
+							<div class="property-row">
+								<label class="property-label">New — max orders</label>
+								<input type="number" class="wt w-100" v-model.number="crm.segments.newMaxOrders" :disabled="!crm.enabled">
+							</div>
+							<div class="property-row">
+								<label class="property-label">At-risk — days since order</label>
+								<input type="number" class="wt w-100" v-model.number="crm.segments.atRiskDays" :disabled="!crm.enabled">
+							</div>
+							<div class="property-row">
+								<label class="property-label">Dormant — days since order</label>
+								<input type="number" class="wt w-100" v-model.number="crm.segments.dormantDays" :disabled="!crm.enabled">
+							</div>
+						</div>
+						<div class="property-group">
+							<div class="property-group-title">Alerts</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="crm.alert.enabled" :disabled="!crm.enabled"> Alert operators on newly VIP / at-risk / dormant customers
+							</label>
+						</div>
+						<div class="property-group">
+							<div class="property-group-title">Abandoned cart</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="crm.abandonedCart.enabled" :disabled="!crm.enabled"> Enable abandoned-cart follow-up
+							</label>
+							<div class="property-row">
+								<label class="property-label">Abandoned after (minutes)</label>
+								<input type="number" class="wt w-100" v-model.number="crm.abandonedCart.abandonedAfterMinutes" :disabled="!crm.enabled || !crm.abandonedCart.enabled">
+							</div>
+							<div class="property-row">
+								<label class="property-label">Reminder interval (minutes)</label>
+								<input type="number" class="wt w-100" v-model.number="crm.abandonedCart.reminderIntervalMinutes" :disabled="!crm.enabled || !crm.abandonedCart.enabled">
+							</div>
+							<div class="property-row">
+								<label class="property-label">Max reminders</label>
+								<input type="number" class="wt w-100" v-model.number="crm.abandonedCart.maxReminders" :disabled="!crm.enabled || !crm.abandonedCart.enabled">
+							</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="crm.abandonedCart.sendToCustomer" :disabled="!crm.enabled || !crm.abandonedCart.enabled"> Email recovery links to customers (outward-facing)
+							</label>
+							<div class="property-hint">Off by default. When off, operators still get the abandoned-cart summary.</div>
+						</div>
+					</template>
+
+					<!-- ========== Reconciliation ========== -->
+					<template v-if="section === 'reconciliation'">
+						<div>
+							<h2 class="commerce-h2 mb-2">Reconciliation</h2>
+							<div class="commerce-lede">A periodic batch compares the CMS mirror with Shopify and reports drift (#24). Requires the Admin API. Healing is OFF by default — detect &amp; report first.</div>
+						</div>
+						<div class="property-group">
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="reconcile.enabled"> Enable the reconciliation batch
+							</label>
+							<div class="property-row">
+								<label class="property-label">Products per run</label>
+								<input type="number" class="wt w-100" v-model.number="reconcile.maxPerRun" :disabled="!reconcile.enabled">
+							</div>
+							<div class="property-hint">A round-robin cursor covers the whole catalog over time.</div>
+						</div>
+						<div class="property-group">
+							<div class="property-group-title">Source of truth</div>
+							<div class="property-row">
+								<label class="property-label">Status</label>
+								<select class="wt w-100" v-model="reconcile.sourceOfTruth.status" :disabled="!reconcile.enabled"><option value="cms">CMS</option><option value="shopify">Shopify</option></select>
+							</div>
+							<div class="property-row">
+								<label class="property-label">Price</label>
+								<select class="wt w-100" v-model="reconcile.sourceOfTruth.price" :disabled="!reconcile.enabled"><option value="cms">CMS</option><option value="shopify">Shopify</option></select>
+							</div>
+							<div class="property-row">
+								<label class="property-label">Inventory</label>
+								<select class="wt w-100" v-model="reconcile.sourceOfTruth.inventory" :disabled="!reconcile.enabled"><option value="cms">CMS</option><option value="shopify">Shopify</option></select>
+							</div>
+							<div class="property-hint">Decides the heal direction when auto-heal is enabled.</div>
+						</div>
+						<div class="property-group">
+							<div class="property-group-title">Auto-heal (opt-in)</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="reconcile.autoHeal.status" :disabled="!reconcile.enabled"> Heal status drift
+							</label>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="reconcile.autoHeal.price" :disabled="!reconcile.enabled"> Heal price drift
+							</label>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="reconcile.autoHeal.inventory" disabled> Heal inventory drift (never auto-healed)
+							</label>
+							<div class="property-hint">Inventory is always reported, never auto-healed.</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="reconcile.alert" :disabled="!reconcile.enabled"> Notify (debounced) when drift is detected
+							</label>
+						</div>
+					</template>
+
+					<!-- ========== Ingestion ========== -->
+					<template v-if="section === 'ingestion'">
+						<div>
+							<h2 class="commerce-h2 mb-2">Ingestion</h2>
+							<div class="commerce-lede">Event intake is always on; this governs automatic replay of failed events and pruning of the event log (#1/#4).</div>
+						</div>
+						<div class="property-group">
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="ingest.enabled"> Enable the replay / housekeeping batch
+							</label>
+						</div>
+						<div class="property-group">
+							<div class="property-group-title">Automatic replay</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="ingest.replay.enabled" :disabled="!ingest.enabled"> Replay failed events automatically
+							</label>
+							<div class="property-row">
+								<label class="property-label">Max attempts</label>
+								<input type="number" class="wt w-100" v-model.number="ingest.replay.maxAttempts" :disabled="!ingest.enabled || !ingest.replay.enabled">
+							</div>
+							<div class="property-row">
+								<label class="property-label">Backoff (minutes)</label>
+								<input type="number" class="wt w-100" v-model.number="ingest.replay.backoffMinutes" :disabled="!ingest.enabled || !ingest.replay.enabled">
+							</div>
+							<div class="property-row">
+								<label class="property-label">Retention (days)</label>
+								<input type="number" class="wt w-100" v-model.number="ingest.replay.retentionDays" :disabled="!ingest.enabled">
+							</div>
+							<div class="property-hint">Processed event-log entries older than this are pruned.</div>
+						</div>
+					</template>
+
+					<!-- ========== Backorders ========== -->
+					<template v-if="section === 'backorders'">
+						<div>
+							<h2 class="commerce-h2 mb-2">Backorders</h2>
+							<div class="commerce-lede">Shortfall &amp; pre-order tracking (#12). Shortfall backorders are raised only for stock-tracked items; pre-orders are detected by tag.</div>
+						</div>
+						<div class="property-group">
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="backorder.enabled"> Enable backorder detection &amp; release
+							</label>
+							<div class="property-row">
+								<label class="property-label">Pre-order tags</label>
+								<input type="text" class="wt w-100" v-model="backorder.preorderTags" :disabled="!backorder.enabled" placeholder="preorder, pre-order">
+							</div>
+							<div class="property-hint">Comma-separated Shopify tags (case-insensitive). Tagged products are backordered even when in stock. Leave blank to disable pre-order detection.</div>
+						</div>
+						<div class="property-group">
+							<div class="property-group-title">Notifications</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="backorder.notify.onCreated" :disabled="!backorder.enabled"> When items go on backorder
+							</label>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="backorder.notify.onReady" :disabled="!backorder.enabled"> When a backorder has stock (release task)
+							</label>
+						</div>
+					</template>
+
+					<!-- ========== Order review ========== -->
+					<template v-if="section === 'orderReview'">
+						<div>
+							<h2 class="commerce-h2 mb-2">Order review</h2>
+							<div class="commerce-lede">Screening rules for paid orders. If any enabled rule matches, the order goes to a manual review task; otherwise it is auto-approved. Fail-open.</div>
+						</div>
+						<div class="property-group">
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="orderReview.enabled"> Enable screening
+							</label>
+							<div class="property-hint">When off, every order is auto-approved.</div>
+						</div>
+						<div class="property-group">
+							<div class="property-group-title">High value</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="orderReview.highValue.enabled" :disabled="!orderReview.enabled"> Flag orders at/above a per-currency threshold
+							</label>
+							<div v-for="(t, i) in orderReview.highValue.thresholds" :key="i" class="rule-row">
+								<input type="text" class="wt rule-cur" v-model="t.currency" placeholder="JPY" :disabled="!orderReview.enabled">
+								<input type="number" class="wt rule-val" v-model.number="t.value" :disabled="!orderReview.enabled">
+								<button class="btn-icon" @click="removeThreshold(orderReview.highValue.thresholds, i)" :disabled="!orderReview.enabled" title="Remove"><i class="bi bi-trash"></i></button>
+							</div>
+							<button class="wt wt-sm" @click="addThreshold(orderReview.highValue.thresholds)" :disabled="!orderReview.enabled"><i class="bi bi-plus-lg me-1"></i>Currency</button>
+							<div class="property-row">
+								<label class="property-label">Default (other currencies)</label>
+								<input type="number" class="wt w-100" v-model.number="orderReview.highValue.default" :disabled="!orderReview.enabled">
+							</div>
+						</div>
+						<div class="property-group">
+							<div class="property-group-title">Flagged financial status</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="orderReview.flaggedFinancialStatus.enabled" :disabled="!orderReview.enabled"> Flag these financial statuses
+							</label>
+							<div class="property-row">
+								<label class="property-label">Statuses</label>
+								<input type="text" class="wt w-100" v-model="orderReview.flaggedFinancialStatus.statuses" :disabled="!orderReview.enabled" placeholder="pending, authorized, partially_paid">
+							</div>
+							<div class="property-hint">Comma-separated.</div>
+						</div>
+						<div class="property-group">
+							<div class="property-group-title">Large quantity</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="orderReview.largeQuantity.enabled" :disabled="!orderReview.enabled"> Flag a single line at/above
+							</label>
+							<div class="property-row">
+								<label class="property-label">Max line quantity</label>
+								<input type="number" class="wt w-100" v-model.number="orderReview.largeQuantity.maxLineQuantity" :disabled="!orderReview.enabled">
+							</div>
+						</div>
+						<div class="property-group">
+							<div class="property-group-title">New customer</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="orderReview.newCustomer.enabled" :disabled="!orderReview.enabled"> Flag first-time customers
+							</label>
+							<div class="property-row">
+								<label class="property-label">Max orders count</label>
+								<input type="number" class="wt w-100" v-model.number="orderReview.newCustomer.maxOrdersCount" :disabled="!orderReview.enabled">
+							</div>
+						</div>
+						<div class="property-group">
+							<div class="property-group-title">Address mismatch</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="orderReview.addressMismatch.enabled" :disabled="!orderReview.enabled"> Flag billing/shipping country mismatch
+							</label>
+						</div>
+					</template>
+
+					<!-- ========== Refund review ========== -->
+					<template v-if="section === 'refundReview'">
+						<div>
+							<h2 class="commerce-h2 mb-2">Refund review</h2>
+							<div class="commerce-lede">Screening rules for refunds (audit / fraud-monitoring only — nothing is written back to Shopify). Matching refunds go to a manual review task; otherwise auto-acknowledged. Fail-open.</div>
+						</div>
+						<div class="property-group">
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="refundReview.enabled"> Enable screening
+							</label>
+							<div class="property-hint">When off, every refund is auto-acknowledged.</div>
+						</div>
+						<div class="property-group">
+							<div class="property-group-title">High refund value</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="refundReview.highRefundValue.enabled" :disabled="!refundReview.enabled"> Flag refunds at/above a per-currency threshold
+							</label>
+							<div v-for="(t, i) in refundReview.highRefundValue.thresholds" :key="i" class="rule-row">
+								<input type="text" class="wt rule-cur" v-model="t.currency" placeholder="JPY" :disabled="!refundReview.enabled">
+								<input type="number" class="wt rule-val" v-model.number="t.value" :disabled="!refundReview.enabled">
+								<button class="btn-icon" @click="removeThreshold(refundReview.highRefundValue.thresholds, i)" :disabled="!refundReview.enabled" title="Remove"><i class="bi bi-trash"></i></button>
+							</div>
+							<button class="wt wt-sm" @click="addThreshold(refundReview.highRefundValue.thresholds)" :disabled="!refundReview.enabled"><i class="bi bi-plus-lg me-1"></i>Currency</button>
+							<div class="property-row">
+								<label class="property-label">Default (other currencies)</label>
+								<input type="number" class="wt w-100" v-model.number="refundReview.highRefundValue.default" :disabled="!refundReview.enabled">
+							</div>
+						</div>
+						<div class="property-group">
+							<div class="property-group-title">Full refund</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="refundReview.fullRefund.enabled" :disabled="!refundReview.enabled"> Flag refunds returning the full order value
+							</label>
+						</div>
+						<div class="property-group">
+							<div class="property-group-title">No restock</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="refundReview.noRestock.enabled" :disabled="!refundReview.enabled"> Flag refunds that restock no inventory
+							</label>
+						</div>
+					</template>
+
+					<!-- ========== Inventory rules ========== -->
+					<template v-if="section === 'inventoryRules'">
+						<div>
+							<h2 class="commerce-h2 mb-2">Inventory rules</h2>
+							<div class="commerce-lede">Dynamic alert thresholds. Effective threshold per variant: manual override &gt; first matching rule (top-down) &gt; default &gt; none.</div>
+						</div>
+						<div class="property-group">
+							<div class="property-row">
+								<label class="property-label">Default threshold</label>
+								<input type="number" class="wt w-100" v-model.number="inventoryRules.default" placeholder="(blank = unmatched variants unmonitored)">
+							</div>
+							<div class="property-hint">Applied when no rule matches. Leave blank to monitor only products with a manual threshold.</div>
+						</div>
+						<div class="property-group">
+							<div class="property-group-title">Rules (evaluated top-down — put the most specific first)</div>
+							<div v-if="inventoryRules.rules.length === 0" class="property-hint">No rules. Add one to raise the threshold for matching products.</div>
+							<div v-for="(r, i) in inventoryRules.rules" :key="i" class="rule-card">
+								<div class="rule-card-head">
+									<input type="text" class="wt rule-name" v-model="r.name" placeholder="Rule name">
+									<div class="rule-thr"><span class="property-label" style="margin:0">Threshold</span><input type="number" class="wt" v-model.number="r.threshold"></div>
+									<button class="btn-icon" @click="removeRule(i)" title="Remove rule"><i class="bi bi-trash"></i></button>
+								</div>
+							<div class="property-row">
+								<label class="property-label">Product types</label>
+								<input type="text" class="wt w-100" v-model="r.productType" placeholder="Food, Beverage">
+							</div>
+							<div class="property-row">
+								<label class="property-label">Vendors</label>
+								<input type="text" class="wt w-100" v-model="r.vendor">
+							</div>
+							<div class="property-row">
+								<label class="property-label">Tags</label>
+								<input type="text" class="wt w-100" v-model="r.tags" placeholder="seasonal, gift">
+							</div>
+								<div class="rule-season">
+									<div class="rule-season-f"><label class="property-label">Season from (MM-DD)</label><input type="text" class="wt w-100" v-model="r.seasonFrom" placeholder="11-15"></div>
+									<div class="rule-season-f"><label class="property-label">Season to (MM-DD)</label><input type="text" class="wt w-100" v-model="r.seasonTo" placeholder="12-31"></div>
+									<div class="rule-season-f"><label class="property-label">Min velocity/day</label><input type="number" class="wt w-100" v-model.number="r.minVelocityPerDay"></div>
+								</div>
+								<div class="property-hint">A rule matches when ALL declared criteria hold; comma-separated lists match any. Leave all blank for a catch-all.</div>
+							</div>
+							<button class="wt wt-sm" @click="addRule"><i class="bi bi-plus-lg me-1"></i>Add rule</button>
+						</div>
+					</template>
+
 
 				</div>
 			</div>
@@ -209,6 +1060,7 @@
 			<div class="status-group">
 				<span v-if="saving" class="status-item"><i class="bi bi-arrow-repeat me-1"></i>Saving&hellip;</span>
 				<span v-else-if="adminApiInvalid" class="status-item status-err"><i class="bi bi-exclamation-circle me-1"></i>Admin API needs shop domain, API version, client ID &amp; secret</span>
+				<span v-else-if="notifInvalid" class="status-item status-err"><i class="bi bi-exclamation-circle me-1"></i>An enabled channel is missing required fields</span>
 				<span v-else-if="hasChanges" class="status-item">Unsaved changes</span>
 				<span v-else-if="statusKind === 'ok'" class="status-item status-ok"><i class="bi bi-check-lg me-1"></i>{{ status }}</span>
 				<span v-else-if="statusKind === 'err'" class="status-item status-err">{{ status }}</span>
@@ -235,7 +1087,7 @@
 						<button class="wt wt-danger" @click="onCloseConfirmDialogAction('discard')">
 							<i class="bi bi-trash me-1"></i>Don't Save
 						</button>
-						<button class="wt wt-primary" :disabled="adminApiInvalid"
+						<button class="wt wt-primary" :disabled="adminApiInvalid || notifInvalid"
 							@click="onCloseConfirmDialogAction('save')">
 							<i class="bi bi-floppy me-1"></i>Save
 						</button>

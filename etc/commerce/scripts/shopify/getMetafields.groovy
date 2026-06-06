@@ -1,6 +1,6 @@
 import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
+import commerce.ShopifyAdmin
+import commerce.Health
 
 // Fetch product metafields from Shopify GraphQL API
 //
@@ -23,8 +23,6 @@ context.setAttribute("metafields", [:])
 def configNode = repositorySession.getResource("/etc/commerce/config/shopify.yml")
 def config = YAML.parse(configNode)
 def adminApi = config.adminApi ?: config
-def shopDomain = adminApi.shopDomain
-def apiVersion = adminApi.apiVersion
 
 // Build GraphQL query
 def gqlString = """
@@ -43,30 +41,11 @@ query {
   }
 }
 """.trim()
-def requestPayload = JSON.stringify([query: gqlString])
-
-// Send request
+// Send request via the shared Admin API helper (handles status / GraphQL errors).
+// Wrapped in Health.timeApi so the call's outcome + latency feed the health monitor.
 def httpClient = HttpClient.newHttpClient()
-def request = HttpRequest.newBuilder()
-    .uri(URI.create("https://${shopDomain}/admin/api/${apiVersion}/graphql.json"))
-    .header("Content-Type", "application/json")
-    .header("X-Shopify-Access-Token", shopifyAccessToken)
-    .POST(HttpRequest.BodyPublishers.ofString(requestPayload))
-    .build()
-
-def httpResponse = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
-
-if (httpResponse.statusCode() != 200) {
-    throw new RuntimeException("Shopify GraphQL API error: ${httpResponse.statusCode()} - ${httpResponse.body()}")
-}
-
-// Parse response
-def responseJson = JSON.parse(httpResponse.body())
-
-// Check for GraphQL errors
-def errors = responseJson.errors
-if (errors != null) {
-    throw new RuntimeException("Shopify GraphQL errors: ${JSON.stringify(errors)}")
+def responseJson = Health.timeApi(repositorySession, log, "getMetafields") {
+    ShopifyAdmin.graphql(httpClient, ShopifyAdmin.endpoint(adminApi), shopifyAccessToken, [query: gqlString])
 }
 
 def edges = responseJson.data?.product?.metafields?.edges

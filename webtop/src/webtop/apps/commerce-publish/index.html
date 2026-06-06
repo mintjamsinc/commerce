@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no">
+	<title>Commerce Publishing</title>
+
+	<link rel="stylesheet" href="../../assets/vendor/bootstrap-icons/bootstrap-icons.min.css?v=__BUILD_VERSION__">
+	<link href="./assets/css/style.css?v=__BUILD_VERSION__" rel="stylesheet" />
+	<link href="../../assets/css/webtop-app.css?v=__BUILD_VERSION__" rel="stylesheet" />
+</head>
+
+<body>
+	<div id="app" v-cloak class="d-flex flex-column" @mounted="onMounted" @unmount="onUnmount">
+
+		<!-- Top toolbar -->
+		<nav class="nav-bar window-drag-region">
+			<div class="toolbar-group">
+				<button class="btn-icon" @click="refresh" :disabled="busy" title="Refresh">
+					<i class="bi bi-arrow-clockwise" :class="{ spin: busy }"></i>
+				</button>
+				<button v-if="section === 'pages'" class="btn-icon" @click="savePage" :disabled="!canSave" title="Save page">
+					<i class="bi bi-floppy"></i>
+				</button>
+			</div>
+
+			<div class="toolbar-group">
+				<button class="btn-icon section-toggle" :class="{ active: section === 'publish' }"
+					@click="selectSection('publish')" title="Publish status"><i class="bi bi-send"></i></button>
+				<button class="btn-icon section-toggle" :class="{ active: section === 'pages' }"
+					@click="selectSection('pages')" title="Landing pages"><i class="bi bi-layout-text-window"></i></button>
+			</div>
+
+			<span class="nav-spacer"></span>
+
+			<div class="window-controls">
+				<button class="btn-icon" @click="onMinimizeWindow" title="Minimize"><i class="bi bi-dash-lg"></i></button>
+				<button class="btn-icon" @click="onToggleMaximizeWindow" title="Maximize"><i class="bi bi-square"></i></button>
+				<button class="btn-icon window-control-close" @click="onCloseWindow" title="Close"><i class="bi bi-x-lg"></i></button>
+			</div>
+		</nav>
+
+		<div class="content-body">
+
+			<!-- ================= PUBLISH ================= -->
+			<main v-if="section === 'publish'" class="content-main island">
+				<section class="property-group">
+					<div class="property-group-title pub-section-head">
+						<span>Storefront publishing</span>
+						<button class="wt wt-primary wt-sm" :disabled="busy" @click="rebuild">
+							<i class="bi bi-arrow-repeat"></i> Rebuild now
+						</button>
+					</div>
+
+					<div class="pub-kpis">
+						<div class="pub-kpi"><span class="pub-kpi-v">{{ status.publishedProducts }}</span><span class="pub-kpi-l">Products</span></div>
+						<div class="pub-kpi"><span class="pub-kpi-v">{{ status.inventoryItems }}</span><span class="pub-kpi-l">Tracked items</span></div>
+						<div class="pub-kpi"><span class="pub-kpi-v">{{ status.publishedPages }}</span><span class="pub-kpi-l">Landing pages</span></div>
+					</div>
+
+					<div class="property-hint">
+						Catalog projected {{ fmtTime(status.catalogGeneratedAt) }} · inventory {{ fmtTime(status.inventoryUpdatedAt) }}.
+						Rebuild refreshes the public catalog, inventory map and landing pages (catalog runs on a 5-minute
+						timer; inventory updates live on stock changes).
+					</div>
+				</section>
+
+				<section class="property-group">
+					<div class="property-group-title">Store</div>
+					<div class="pub-store">
+						<div><span class="pub-lbl">Name</span><span>{{ store.name || '—' }}</span></div>
+						<div><span class="pub-lbl">Shop domain</span><span>{{ store.shopDomain || '— (checkout disabled)' }}</span></div>
+						<div><span class="pub-lbl">Currency</span><span>{{ store.currency || '—' }}</span></div>
+						<div><span class="pub-lbl">Low-stock</span><span>{{ store.lowStock }}</span></div>
+					</div>
+					<div class="pub-links">
+						<button class="wt wt-sm" @click="openPublic('storefront/index.html')"><i class="bi bi-box-arrow-up-right"></i> Open storefront</button>
+						<button class="wt wt-sm" @click="openPublic('landing/index.html')"><i class="bi bi-box-arrow-up-right"></i> Open landing</button>
+						<button class="wt wt-sm" @click="openPublic('catalog/index.json')"><i class="bi bi-filetype-json"></i> Catalog JSON</button>
+					</div>
+					<div class="property-hint">Settings (store name, currency, low-stock threshold) are edited in the
+						<strong>Commerce</strong> app · shop domain comes from the Shopify config.</div>
+				</section>
+			</main>
+
+			<!-- ================= LANDING PAGES ================= -->
+			<template v-else-if="section === 'pages'">
+				<!-- Sidebar -->
+				<aside class="pub-sidebar island">
+					<div class="pub-search">
+						<span class="property-group-title" style="border:none;padding:0;">Pages</span>
+						<button class="wt wt-sm" @click="newPage" title="New page"><i class="bi bi-plus-lg"></i> New</button>
+					</div>
+					<div class="pub-list">
+						<div v-if="pages.length === 0" class="property-hint">No landing pages yet.</div>
+						<button v-for="p in pages" :key="p.slug" class="pub-item"
+							:class="{ active: editing && editing.slug === p.slug && !isNew }"
+							@click="selectPage(p.slug)">
+							<span class="pub-item-title">{{ p.title || p.slug }}</span>
+							<span class="pub-item-sub">
+								<span class="pub-pill" :class="'st-' + (p.status || 'published')">{{ p.status || 'published' }}</span>
+								<span v-if="publishedSet[p.slug]" class="pub-pill st-live" title="In the public projection">live</span>
+								<span class="pub-item-slug">/{{ p.slug }}</span>
+							</span>
+						</button>
+					</div>
+				</aside>
+
+				<!-- Editor -->
+				<main class="content-main island">
+					<div v-if="loadingPage" class="pub-state"><div class="spinner"></div><span>Loading&hellip;</span></div>
+					<div v-else-if="!editing" class="pub-state">
+						<i class="bi bi-layout-text-window"></i>
+						<span>Select a page to edit, or create a new one.</span>
+					</div>
+					<template v-else>
+						<div class="pub-editor-head">
+							<div class="pub-page-fields">
+								<div class="pub-field" style="width:11rem;">
+									<label class="property-label">Slug</label>
+									<input class="wt w-100" v-model="editing.slug" :disabled="!isNew" placeholder="welcome" />
+								</div>
+								<div class="pub-field pub-grow">
+									<label class="property-label">Title</label>
+									<input class="wt w-100" v-model="editing.title" />
+								</div>
+								<div class="pub-field" style="width:8rem;">
+									<label class="property-label">Status</label>
+									<select class="wt w-100" v-model="editing.status">
+										<option value="published">Published</option>
+										<option value="draft">Draft</option>
+									</select>
+								</div>
+							</div>
+							<div class="pub-field">
+								<label class="property-label">Subtitle</label>
+								<input class="wt w-100" v-model="editing.subtitle" />
+							</div>
+							<div class="pub-editor-actions">
+								<button class="wt wt-danger wt-sm" :disabled="isNew || busy" @click="deletePage"><i class="bi bi-trash"></i> Delete</button>
+								<button class="wt wt-sm" :disabled="!hasChanges || busy" @click="revert"><i class="bi bi-arrow-counterclockwise"></i> Revert</button>
+								<button class="wt wt-primary wt-sm" :disabled="!canSave" @click="savePage"><i class="bi bi-floppy"></i> Save</button>
+							</div>
+						</div>
+
+						<!-- Blocks -->
+						<div class="property-group-title pub-section-head">
+							<span>Blocks ({{ editing.blocks.length }})</span>
+							<div class="pub-addblock">
+								<select class="wt wt-sm" v-model="newBlockType">
+									<option value="hero">Hero</option>
+									<option value="heading">Heading</option>
+									<option value="markdown">Markdown</option>
+									<option value="html">HTML</option>
+									<option value="products">Products</option>
+								</select>
+								<button class="wt wt-sm" @click="addBlock"><i class="bi bi-plus-lg"></i> Add</button>
+							</div>
+						</div>
+
+						<div v-if="editing.blocks.length === 0" class="property-hint">No blocks. Add a hero, prose or product showcase.</div>
+
+						<div v-for="(b, i) in editing.blocks" :key="i" class="pub-block">
+							<div class="pub-block-head">
+								<span class="pub-block-type"><i class="bi" :class="blockIcon(b.type)"></i> {{ b.type }}</span>
+								<div class="pub-block-tools">
+									<button class="btn-icon" :disabled="i === 0" @click="moveBlock(i, -1)" title="Move up"><i class="bi bi-chevron-up"></i></button>
+									<button class="btn-icon" :disabled="i === editing.blocks.length - 1" @click="moveBlock(i, 1)" title="Move down"><i class="bi bi-chevron-down"></i></button>
+									<button class="btn-icon" @click="editing.blocks.splice(i, 1)" title="Remove block"><i class="bi bi-trash"></i></button>
+								</div>
+							</div>
+
+							<!-- hero -->
+							<template v-if="b.type === 'hero'">
+								<div class="pub-row">
+									<div class="pub-grow"><label class="property-label">Title</label><input class="wt w-100" v-model="b.title" /></div>
+									<div class="pub-grow"><label class="property-label">Subtitle</label><input class="wt w-100" v-model="b.subtitle" /></div>
+								</div>
+								<div class="pub-row">
+									<div class="pub-grow"><label class="property-label">Image URL</label><input class="wt w-100" v-model="b.image" /></div>
+									<div style="width:10rem;"><label class="property-label">CTA text</label><input class="wt w-100" v-model="b.ctaText" /></div>
+									<div class="pub-grow"><label class="property-label">CTA link</label><input class="wt w-100" v-model="b.ctaHref" /></div>
+								</div>
+							</template>
+							<!-- heading -->
+							<template v-else-if="b.type === 'heading'">
+								<label class="property-label">Text</label><input class="wt w-100" v-model="b.text" />
+							</template>
+							<!-- markdown / html -->
+							<template v-else-if="b.type === 'markdown' || b.type === 'html'">
+								<label class="property-label">{{ b.type === 'markdown' ? 'Markdown' : 'HTML' }}</label>
+								<textarea class="wt w-100" rows="5" v-model="b.value"></textarea>
+							</template>
+							<!-- products -->
+							<template v-else-if="b.type === 'products'">
+								<div class="pub-row">
+									<div class="pub-grow"><label class="property-label">Section title</label><input class="wt w-100" v-model="b.title" /></div>
+									<div style="width:8rem;">
+										<label class="property-label">Select by</label>
+										<select class="wt w-100" v-model="b._mode"><option value="tag">Tag</option><option value="ids">Product IDs</option></select>
+									</div>
+									<div style="width:6rem;"><label class="property-label">Limit</label><input class="wt w-100" type="number" v-model="b.limit" /></div>
+								</div>
+								<div v-if="b._mode === 'tag'"><label class="property-label">Tag</label><input class="wt w-100" v-model="b.tag" placeholder="featured" /></div>
+								<div v-else><label class="property-label">Product IDs (comma-separated)</label><input class="wt w-100" v-model="b._productIds" placeholder="123, 456" /></div>
+							</template>
+						</div>
+					</template>
+				</main>
+			</template>
+		</div>
+
+		<!-- Status bar -->
+		<div class="status-bar window-drag-region">
+			<span class="nav-spacer"></span>
+			<div class="status-group">
+				<span v-if="busy" class="status-item"><i class="bi bi-arrow-repeat me-1"></i>Working&hellip;</span>
+				<span v-else-if="section === 'pages' && hasChanges" class="status-item">Unsaved changes</span>
+				<span v-else-if="statusKind === 'ok'" class="status-item status-ok"><i class="bi bi-check-lg me-1"></i>{{ status_ }}</span>
+				<span v-else-if="statusKind === 'err'" class="status-item status-err">{{ status_ }}</span>
+				<span v-else class="status-item">Ready</span>
+			</div>
+		</div>
+
+		<!-- Toast -->
+		<div v-if="toast" class="commerce-toast" :class="{ error: toastError }" role="alert">{{ toast }}</div>
+
+		<!-- Confirm dialog -->
+		<div v-if="confirmDialog.visible" class="dialog-overlay">
+			<div class="dialog-frame" style="max-width: 32rem;">
+				<div class="island p-2">
+					<div class="dialog-header"><h3><i class="bi bi-exclamation-triangle-fill me-2"></i>{{ confirmDialog.title }}</h3></div>
+					<div class="dialog-body"><p class="mt-0">{{ confirmDialog.message }}</p></div>
+					<div class="dialog-footer flex-wrap">
+						<button class="wt" @click="onConfirm('cancel')">Cancel</button>
+						<button v-if="confirmDialog.showDiscard" class="wt wt-danger" @click="onConfirm('discard')">Don't Save</button>
+						<button class="wt wt-primary" @click="onConfirm('ok')">{{ confirmDialog.ok }}</button>
+					</div>
+				</div>
+			</div>
+		</div>
+
+	</div>
+
+	<script type="module" src="./app.js?v=__BUILD_VERSION__"></script>
+</body>
+
+</html>

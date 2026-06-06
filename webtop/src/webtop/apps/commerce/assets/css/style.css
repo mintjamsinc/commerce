@@ -246,3 +246,99 @@ nav.nav-bar {
 	cursor: not-allowed;
 	opacity: 0.55;
 }
+
+/* ----------------------------------------------------------------------------
+ * Settings sidebar navigation (grouped sections) + rule editors. Added for the
+ * expanded section set so the console scales past the original toolbar toggles.
+ * -------------------------------------------------------------------------- */
+.settings-nav {
+	flex: none;
+	min-width: 0;            /* width comes from the inline :style; JS clamps the range */
+	overflow-y: auto;
+	display: flex;
+	flex-direction: column;
+}
+
+/* Group heading doubles as a collapse toggle (chevron + label), matching the
+ * content-browser sidebar sections. */
+.settings-nav-group {
+	display: flex;
+	align-items: center;
+	gap: 0.35rem;
+	color: var(--text-soft-color);
+	padding: 0.6rem 0.5rem 0.2rem;
+	cursor: pointer;
+	user-select: none;
+	transition: color 0.15s;
+}
+.settings-nav-group:hover { color: var(--primary-color); }
+.settings-nav-chevron { font-size: 0.7em; flex: none; }
+.settings-nav-group-label {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* Items wrapper — collapses with the group (v-show). */
+.settings-nav-group-items {
+	display: flex;
+	flex-direction: column;
+}
+
+/* Drag handle on the sidebar's right edge — mirrors content-browser's
+ * .sidebar-resize-handle so width adjustment feels identical across apps. */
+.settings-nav-resize-handle {
+	width: 4px;
+	cursor: col-resize;
+	background-color: transparent;
+	flex-shrink: 0;
+	position: relative;
+	z-index: 2;
+	transition: background-color 0.15s;
+}
+.settings-nav-resize-handle:hover,
+.settings-nav-resize-handle:active {
+	background-color: var(--selection-rect-border);
+}
+.settings-nav-item {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	width: 100%;
+	text-align: left;
+	border-radius: 0.5rem;
+	padding: 0.375rem 1rem;
+	cursor: pointer;
+	color: inherit;
+	font-size: 13px;
+}
+.settings-nav-item:hover { background: var(--item-hover-bg); }
+.settings-nav-item.active { background: var(--item-selected-bg); }
+.settings-nav-item .bi { width: 1rem; text-align: center; }
+.settings-nav-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-nav-dot { width: 0.4rem; height: 0.4rem; border-radius: 50%; background: var(--primary-color); flex: none; }
+
+/* Small inline button (add currency / add rule). */
+.wt.wt-sm { padding: 0.25rem 0.5rem; font-size: 12px; min-width: 8rem; width: fit-content; }
+
+/* Per-currency threshold rows. */
+.rule-row { display: flex; align-items: center; gap: 0.5rem; }
+.rule-cur { width: 6rem; flex: none; }
+.rule-val { flex: 1; min-width: 0; }
+
+/* Inventory rule cards. */
+.rule-card {
+	border: 1px solid var(--navbar-border-color);
+	border-radius: 0.5rem;
+	padding: 0.6rem 0.7rem;
+	display: flex;
+	flex-direction: column;
+	gap: 0.4rem;
+}
+.rule-card-head { display: flex; align-items: flex-end; gap: 0.5rem; }
+.rule-name { flex: 1; min-width: 0; }
+.rule-thr { display: flex; flex-direction: column; gap: 0.125rem; width: 6rem; flex: none; }
+.rule-season { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.rule-season-f { flex: 1; min-width: 7rem; }

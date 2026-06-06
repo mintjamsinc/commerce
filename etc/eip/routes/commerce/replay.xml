@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<camel>
+
+    <!-- Swallow batch failures: replay housekeeping must never surface errors. -->
+    <routeConfiguration id="commerce-replay-error-handler">
+        <onException>
+            <exception>java.lang.Exception</exception>
+            <handled>
+                <constant>true</constant>
+            </handled>
+            <log message="commerce-replay error: ${exception.message}"
+                 loggingLevel="WARN"/>
+        </onException>
+    </routeConfiguration>
+
+    <!--
+      Automatic event replay + housekeeping (category A, #4). Fires every 5 minutes
+      (after a 2-minute warm-up) and runs replayEvents.groovy as the service user:
+      it re-dispatches events that ended in "error" (bounded attempts, after a
+      backoff) back through direct:commerce-ingest, then prunes old processed events.
+      Manual, on-demand replay uses the same ingest path from the events endpoint
+      (content/commerce/endpoints/events.groovy). Settings live in
+      /etc/commerce/config/ingest.yml.
+    -->
+    <route id="commerce-replay" routeConfigurationId="commerce-replay-error-handler">
+        <from uri="timer:commerce-replay?period=300000&amp;delay=120000"/>
+
+        <setHeader name="runAs">
+            <constant>commerce-service-user</constant>
+        </setHeader>
+
+        <toD uri="cms:/etc/commerce/scripts/commerce/replayEvents.groovy"/>
+    </route>
+
+</camel>

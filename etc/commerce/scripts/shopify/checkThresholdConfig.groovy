@@ -1,21 +1,26 @@
-// Check whether a Shopify product already has an inventory alert threshold
-// configuration stored on its repository resource.
+// Check whether a Shopify product has an EFFECTIVE inventory alert threshold, so
+// the workflow can decide whether the manual "Set Inventory Threshold" task is
+// needed.
 //
-// The first time a product is seen there is no threshold configured yet, so the
-// inventory alert workflow cannot decide whether stock is "low". In that case
-// the BPMN routes the flow to a manual task where an operator sets the
-// thresholds. On subsequent updates the configuration already exists and the
-// flow proceeds straight to the inventory check.
+// With the rule engine (commerce.InventoryRules) a threshold can come from three
+// places: a manual per-variant override, a matching rule in inventory-rules.yml,
+// or the configured default. If any variant resolves to a threshold, the product
+// is already monitorable and the manual setup task is skipped (the operator can
+// still set explicit overrides later via the form).
 //
-// A configuration is considered present only when at least one variant has a
-// numeric `inventory_alert_threshold`. An empty or malformed property is treated
-// as "not configured" so the operator gets a chance to fix it.
+// Backward compatible: when inventory-rules.yml is absent (no rules, no default),
+// only a manual configuration counts — exactly the original behaviour, so a
+// brand-new product still routes to the manual setup task.
 //
 // Requires exchange headers:
 //   - productPath: repository path to the product resource
 //
 // Sets exchange headers:
-//   - hasThresholdConfig: true if a usable threshold configuration exists
+//   - hasThresholdConfig: true if a usable (effective) threshold exists
+
+import commerce.Inventory
+import commerce.InventoryRules
+import commerce.SalesVelocity
 
 if (!productPath) {
     throw new IllegalArgumentException("Required header 'productPath' is missing")
@@ -27,23 +32,43 @@ if (!resource.exists()) {
 }
 
 def hasThresholdConfig = false
+try {
+    def manual = Inventory.thresholdsByVariantId(resource)
+    def rulesConfig = loadRulesConfig()
 
-if (resource.hasProperty("inventory_level_config")) {
-    try {
-        def config = JSON.parse(resource.getProperty("inventory_level_config").getValue())
-        def variants = config?.variants
-        if (variants) {
-            for (v in variants) {
-                if (v?.id != null && v?.inventory_alert_threshold != null) {
-                    hasThresholdConfig = true
-                    break
-                }
-            }
-        }
-    } catch (Exception e) {
-        log.warn("Failed to parse inventory_level_config at ${productPath}: ${e.message} - treating as unconfigured")
-    }
+    def productJson = JSON.parse(resource.content.toString())
+    def variants = productJson?.variants ?: []
+    def product = [
+        productType: productJson?.product_type,
+        vendor     : productJson?.vendor,
+        tags       : splitTags(productJson?.tags),
+        variants   : variants.collect { [id: it.id?.toString(), quantity: null] },
+    ]
+
+    def resolved = InventoryRules.resolve(product, rulesConfig, manual, SalesVelocity.loadPerDay(repositorySession))
+    hasThresholdConfig = InventoryRules.hasEffectiveThreshold(resolved)
+} catch (Exception e) {
+    log.warn("Failed to resolve thresholds at ${productPath}: ${e.message} - treating as unconfigured")
 }
 
 context.setAttribute("hasThresholdConfig", hasThresholdConfig)
 log.info("Threshold config check for ${productPath}: hasThresholdConfig=${hasThresholdConfig}")
+
+// --- Helpers -----------------------------------------------------------------
+
+def loadRulesConfig() {
+    try {
+        def node = repositorySession.getResource(InventoryRules.CONFIG_PATH)
+        if (node != null && node.exists()) {
+            return YAML.parse(node)
+        }
+    } catch (Exception e) {
+        log.warn("checkThresholdConfig: could not parse inventory-rules.yml: ${e.message} - ignoring rules")
+    }
+    return null
+}
+
+List splitTags(value) {
+    if (value == null) return []
+    return value.toString().split(",").collect { it.trim() }.findAll { it }
+}

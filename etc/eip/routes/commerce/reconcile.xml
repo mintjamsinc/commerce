@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<camel>
+
+    <!-- Swallow batch failures: reconciliation must never surface errors. -->
+    <routeConfiguration id="commerce-reconcile-error-handler">
+        <onException>
+            <exception>java.lang.Exception</exception>
+            <handled>
+                <constant>true</constant>
+            </handled>
+            <log message="commerce-reconcile error: ${exception.message}"
+                 loggingLevel="WARN"/>
+        </onException>
+    </routeConfiguration>
+
+    <!--
+      Periodic CMS <-> Shopify reconciliation (category G, #24). Fires hourly (after
+      a 10-minute warm-up) and runs reconcile.groovy as the service user: it compares
+      a cursor-advanced batch of products against Shopify, reports drift and (only
+      when enabled per field) heals it. On-demand runs come through the reconcile
+      endpoint. Settings live in /etc/commerce/config/reconcile.yml.
+    -->
+    <route id="commerce-reconcile" routeConfigurationId="commerce-reconcile-error-handler">
+        <from uri="timer:commerce-reconcile?period=3600000&amp;delay=600000"/>
+
+        <setHeader name="runAs">
+            <constant>commerce-service-user</constant>
+        </setHeader>
+
+        <toD uri="cms:/etc/commerce/scripts/commerce/reconcile.groovy"/>
+    </route>
+
+    <!-- On-demand entry point: the reconcile endpoint sends here to trigger a run.
+         Honor the caller-supplied runAs (the logged-in operator who triggered it) so
+         the run - and the reports / healed products it writes under /content/commerce
+         - is attributed to that user. Fall back to the service user only when no
+         caller identity was supplied (e.g. an internal trigger). -->
+    <route id="commerce-reconcile-run" routeConfigurationId="commerce-reconcile-error-handler">
+        <from uri="direct:commerce-reconcile"/>
+
+        <choice>
+            <when>
+                <simple>${header.runAs} == null || ${header.runAs} == ''</simple>
+                <setHeader name="runAs">
+                    <constant>commerce-service-user</constant>
+                </setHeader>
+            </when>
+        </choice>
+
+        <toD uri="cms:/etc/commerce/scripts/commerce/reconcile.groovy"/>
+    </route>
+
+</camel>

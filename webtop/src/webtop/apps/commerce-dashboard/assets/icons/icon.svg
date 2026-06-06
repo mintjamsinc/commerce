@@ -1,0 +1,25 @@
+<svg viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="commerce dashboard">
+<defs>
+  <clipPath id="clip-cdash"><rect x="0" y="0" width="180" height="180" rx="42" ry="42"></rect></clipPath>
+  <linearGradient id="hl-cdash" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="white" stop-opacity="0.25"></stop>
+    <stop offset="55%" stop-color="white" stop-opacity="0"></stop>
+  </linearGradient>
+  <linearGradient id="bg-cdash" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="#34d399"></stop>
+    <stop offset="100%" stop-color="#0f766e"></stop>
+  </linearGradient>
+</defs>
+<rect x="0" y="0" width="180" height="180" rx="42" ry="42" fill="url(#bg-cdash)"></rect>
+<g clip-path="url(#clip-cdash)">
+  <!-- bars -->
+  <rect x="46" y="96" width="20" height="44" rx="5" fill="white"></rect>
+  <rect x="80" y="74" width="20" height="66" rx="5" fill="white"></rect>
+  <rect x="114" y="54" width="20" height="86" rx="5" fill="white"></rect>
+  <!-- trend line -->
+  <path d="M 50 86 L 84 66 L 118 46" fill="none" stroke="white" stroke-width="6"
+        stroke-linecap="round" stroke-linejoin="round" opacity="0.9"></path>
+  <circle cx="118" cy="46" r="7" fill="white"></circle>
+  <rect x="0" y="0" width="180" height="180" fill="url(#hl-cdash)"></rect>
+</g>
+</svg>

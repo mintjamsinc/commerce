@@ -27,24 +27,28 @@
 // IMPORTANT: a notification failure must never break the business process, so
 // every external call is wrapped defensively and only logged on error.
 
-import java.net.URI
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
+// Shared commerce helpers (see /content/WEB-INF/classes/commerce/).
+import commerce.Inventory
+import commerce.InventoryRules
+import commerce.SalesVelocity
+import commerce.Notifications
+import commerce.NotificationMessage
 
 // --- Resolve task / process context ---------------------------------------
 def taskName = task?.getName() ?: "Manual task"
 def assignee = task?.getAssignee()
 
 // Process variables carried by the flow (set when the process was started).
-def productID = safeVar("productID")
-def productPath = safeVar("productPath")
+def productID = Notifications.taskVar(task, "productID")
+def productPath = Notifications.taskVar(task, "productPath")
 
 // --- Resolve product title and current inventory state ---------------------
 // productTitle : human-friendly product name
-// variants     : list of [title, available, threshold, below] maps, where
-//                threshold is null when none is configured for that variant.
-// hasThreshold : true if at least one variant has a configured threshold
+// variants     : list of [title, available, threshold, source, rule, below] maps,
+//                where threshold is the EFFECTIVE threshold (manual override / rule
+//                / default) resolved by commerce.InventoryRules, or null when the
+//                variant is not monitored.
+// hasThreshold : true if at least one variant has an effective threshold
 def productTitle = productID ? "Product ${productID}" : "a product"
 def variants = []
 def hasThreshold = false
@@ -60,30 +64,44 @@ try {
                 }
             }
 
-            // Configured thresholds, keyed by variant ID.
-            def thresholdByVariantID = [:]
-            if (resource.hasProperty("inventory_level_config")) {
-                try {
-                    def thresholdJson = JSON.parse(resource.getProperty("inventory_level_config").getValue())
-                    thresholdJson?.variants?.each { tv ->
-                        if (tv.id != null && tv.inventory_alert_threshold != null) {
-                            thresholdByVariantID[tv.id.toString()] = tv.inventory_alert_threshold as int
-                        }
-                    }
-                } catch (Exception e) {
-                    log.warn("notifyTaskCreated: could not parse inventory_level_config: ${e.message}")
-                }
+            // Manual per-variant overrides (see commerce.Inventory).
+            def manual = [:]
+            try {
+                manual = Inventory.thresholdsByVariantId(resource)
+            } catch (Exception e) {
+                log.warn("notifyTaskCreated: could not parse inventory_level_config: ${e.message}")
             }
-            hasThreshold = !thresholdByVariantID.isEmpty()
+
+            // Threshold rules (a list structure → parsed with the YAML binding).
+            def rulesConfig = null
+            try {
+                def rn = repositorySession.getResource(InventoryRules.CONFIG_PATH)
+                if (rn != null && rn.exists()) {
+                    rulesConfig = YAML.parse(rn)
+                }
+            } catch (Exception e) {
+                log.warn("notifyTaskCreated: could not parse inventory-rules.yml: ${e.message}")
+            }
 
             // Current inventory per variant from the product JSON (Shopify webhook payload).
             def productJson = JSON.parse(resource.content.toString())
             if (productTitle == "Product ${productID}" && productJson?.title) {
                 productTitle = productJson.title.toString()
             }
+
+            def product = [
+                productType: productJson?.product_type,
+                vendor     : productJson?.vendor,
+                tags       : (productJson?.tags ? productJson.tags.toString().split(",").collect { it.trim() }.findAll { it } : []),
+                variants   : (productJson?.variants ?: []).collect { [id: it.id?.toString()] },
+            ]
+            def resolved = InventoryRules.resolve(product, rulesConfig, manual, SalesVelocity.loadPerDay(repositorySession))
+            hasThreshold = InventoryRules.hasEffectiveThreshold(resolved)
+
             productJson?.variants?.each { v ->
                 def variantID = v.id?.toString()
-                def threshold = variantID != null ? thresholdByVariantID[variantID] : null
+                def eff = variantID != null ? resolved[variantID] : null
+                def threshold = eff?.threshold
                 def available = null
                 try {
                     available = v.inventory_quantity == null ? null : (v.inventory_quantity as int)
@@ -91,9 +109,11 @@ try {
                     available = null
                 }
                 variants << [
-                    title    : v.title?.toString(),
+                    title     : v.title?.toString(),
                     available : available,
                     threshold : threshold,
+                    source    : eff?.source,
+                    rule      : eff?.rule,
                     below     : (threshold != null && available != null && available < threshold)
                 ]
             }
@@ -125,126 +145,66 @@ try {
 }
 
 // --- Build the notification message ---------------------------------------
-// Rendered twice (once per channel) so bold markers match each platform:
-// Slack uses *bold*, Discord uses **bold**.
-def slackText = buildMessage("*", taskName, productTitle, productID, variants, hasThreshold, assignee)
-def discordText = buildMessage("**", taskName, productTitle, productID, variants, hasThreshold, assignee)
+// One channel-agnostic message; each enabled channel renders it in its own
+// format (see commerce.NotificationMessage / commerce.Notifications).
+def variantHasName = { v ->
+    def t = v.title
+    return t != null && !t.trim().isEmpty() && t != "Default Title"
+}
+
+def productLabel = productID ? "${productTitle} (ID: ${productID})" : productTitle
+
+// Render an effective threshold with its origin so reviewers can see WHY the
+// alert fired (e.g. "20 (rule: Perishable)" / "5 (default)"; manual shows no note).
+def formatThreshold = { v ->
+    if (v.threshold == null) {
+        return "unknown"
+    }
+    if (v.source == "rule" && v.rule) {
+        return "${v.threshold} (rule: ${v.rule})"
+    }
+    if (v.source == "default") {
+        return "${v.threshold} (default)"
+    }
+    return "${v.threshold}"
+}
+
+def message = NotificationMessage.create()
+    .title("📦", "Inventory alert workflow")
+
+if (hasThreshold) {
+    // Review context: one or more variants are below their threshold.
+    message.status("⚠", "Inventory review required")
+    message.field("Product", productLabel)
+
+    // Fall back to all variants with a threshold if the below-list is empty
+    // (e.g. the listener fired but stock recovered between steps).
+    def lowVariants = variants.findAll { it.below }
+    def rows = lowVariants.isEmpty() ? variants.findAll { it.threshold != null } : lowVariants
+    rows.each { v ->
+        // Group named variants with a sub-heading; for a single unnamed
+        // (default) variant, list the values directly under the product.
+        if (variantHasName(v)) {
+            message.heading("Variant: ${v.title}")
+        }
+        message.field("Available", v.available == null ? "unknown" : v.available)
+        message.field("Threshold", formatThreshold(v))
+    }
+} else {
+    // Setup context: no threshold configured yet.
+    message.status("⚙", "Inventory threshold setup required")
+    message.field("Product", productLabel)
+    message.text("No inventory threshold is configured yet. Please set one.")
+
+    variants.each { v ->
+        if (variantHasName(v)) {
+            message.heading("Variant: ${v.title}")
+        }
+        message.field("Available", v.available == null ? "unknown" : v.available)
+    }
+}
+
+message.footer(taskName, assignee)
 
 // --- Dispatch to each enabled channel -------------------------------------
-def httpClient = HttpClient.newHttpClient()
-
-// Slack: expects { "text": "..." }
-def slack = config?.slack
-if (slack && isEnabled(slack) && slack.webhookUrl) {
-    post(httpClient, slack.webhookUrl.toString().trim(), JSON.stringify([text: slackText]), "Slack")
-}
-
-// Discord: expects { "content": "..." }
-def discord = config?.discord
-if (discord && isEnabled(discord) && discord.webhookUrl) {
-    post(httpClient, discord.webhookUrl.toString().trim(), JSON.stringify([content: discordText]), "Discord")
-}
-
-// --- Helpers ---------------------------------------------------------------
-
-// Build the full notification text. `b` is the bold delimiter for the target
-// channel ("*" for Slack, "**" for Discord).
-String buildMessage(String b, String taskName, String productTitle, String productID,
-                    List variants, boolean hasThreshold, String assignee) {
-    def variantHasName = { v ->
-        def t = v.title
-        return t != null && !t.trim().isEmpty() && t != "Default Title"
-    }
-
-    def sb = new StringBuilder()
-    sb.append("📦 ${b}Inventory alert workflow${b}\n\n")
-
-    def lowVariants = variants.findAll { it.below }
-
-    if (hasThreshold) {
-        // Review context: one or more variants are below their threshold.
-        sb.append("⚠ ${b}Inventory review required${b}\n\n")
-        sb.append("Product: ${productTitle}")
-        if (productID) {
-            sb.append(" (ID: ${productID})")
-        }
-        sb.append("\n")
-
-        // Fall back to all variants with a threshold if the below-list is empty
-        // (e.g. the listener fired but stock recovered between steps).
-        def rows = lowVariants.isEmpty() ? variants.findAll { it.threshold != null } : lowVariants
-        rows.each { v ->
-            // Group named variants with a blank line; for a single unnamed
-            // (default) variant, list the values directly under the product.
-            if (variantHasName(v)) {
-                sb.append("\n")
-                sb.append("Variant: ${v.title}\n")
-            }
-            sb.append("Available: ${v.available == null ? "unknown" : v.available}\n")
-            sb.append("Threshold: ${v.threshold == null ? "unknown" : v.threshold}\n")
-        }
-    } else {
-        // Setup context: no threshold configured yet.
-        sb.append("⚙ ${b}Inventory threshold setup required${b}\n\n")
-        sb.append("Product: ${productTitle}")
-        if (productID) {
-            sb.append(" (ID: ${productID})")
-        }
-        sb.append("\n")
-        sb.append("No inventory threshold is configured yet. Please set one.\n")
-
-        variants.each { v ->
-            if (variantHasName(v)) {
-                sb.append("\n")
-                sb.append("Variant: ${v.title}\n")
-            }
-            sb.append("Available: ${v.available == null ? "unknown" : v.available}\n")
-        }
-    }
-
-    sb.append("\n")
-    sb.append("Task: ${taskName}\n")
-    sb.append(assignee ? "Assignee: ${assignee}" : "Unassigned - awaiting claim")
-
-    return sb.toString()
-}
-
-def safeVar(String name) {
-    try {
-        def v = task?.getVariable(name)
-        return v == null ? null : v.toString()
-    } catch (Exception e) {
-        return null
-    }
-}
-
-boolean isEnabled(channel) {
-    // Treat a channel as enabled unless explicitly disabled; a missing webhook
-    // URL is filtered out by the caller anyway.
-    if (channel == null) return false
-    def enabled = channel.enabled
-    if (enabled == null) return true
-    return enabled.toString().toLowerCase() == "true"
-}
-
-void post(HttpClient client, String url, String body, String label) {
-    if (!url || url.startsWith("REPLACE")) {
-        log.info("notifyTaskCreated: ${label} webhook not configured - skipping")
-        return
-    }
-    try {
-        def request = HttpRequest.newBuilder()
-            .uri(URI.create(url))
-            .header("Content-Type", "application/json")
-            .POST(HttpRequest.BodyPublishers.ofString(body))
-            .build()
-        def res = client.send(request, HttpResponse.BodyHandlers.ofString())
-        if (res.statusCode() >= 200 && res.statusCode() < 300) {
-            log.info("notifyTaskCreated: ${label} notification sent (status ${res.statusCode()})")
-        } else {
-            log.warn("notifyTaskCreated: ${label} notification failed: ${res.statusCode()} - ${res.body()}")
-        }
-    } catch (Exception e) {
-        log.warn("notifyTaskCreated: ${label} notification error: ${e.message}")
-    }
-}
+Notifications.dispatch(log, "notifyTaskCreated", config, message)

@@ -1,0 +1,35 @@
+# Customer CRM & marketing (category D: #13 segmentation, #14 abandoned cart, #15 alerts)
+# Deploy to: /etc/commerce/config/crm.yml
+# Managed by the Commerce app (Webtop > Commerce).
+#
+# Segmentation rolls up purchase history from the stored orders and classifies each
+# customer; abandoned-cart follow-up reminds on un-completed checkouts. Both build on
+# the ingestion platform (customers/* and checkouts/* normalized into the entity
+# mirror). See docs/crm.md.
+
+# Master switch for the CRM batches.
+enabled: true
+
+# Segment thresholds (#13). A customer is VIP by spend OR order count; at-risk /
+# dormant by days since their last order; new by order count.
+segments:
+  vipMinSpend: 100000     # total spent (store currency) at/above which a customer is VIP
+  vipMinOrders: 10        # OR this many orders
+  newMaxOrders: 1         # at/below this many orders → "new"
+  atRiskDays: 60          # no order in this many days → "at_risk"
+  dormantDays: 120        # no order in this many days → "dormant"
+
+# Operator alerts on behaviour changes (#15): newly VIP / at-risk / dormant.
+alert:
+  enabled: true
+
+# Abandoned cart follow-up (#14).
+abandonedCart:
+  enabled: true
+  abandonedAfterMinutes: 60       # idle, un-completed checkout older than this is abandoned
+  reminderIntervalMinutes: 1440   # min gap between staged reminders to the same cart
+  maxReminders: 2                 # stop after this many reminders per cart
+  # Customer-facing reminder emails are OFF by default (outward-facing). When false,
+  # operators still receive the abandoned-cart summary; flip to true to email
+  # customers a recovery link via the notifications.yml SMTP transport.
+  sendToCustomer: false

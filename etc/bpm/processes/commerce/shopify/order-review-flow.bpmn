@@ -1,0 +1,247 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+                  id="Definitions_order_review" targetNamespace="http://bpmn.io/schema/bpmn">
+  <!-- The process key stays "order-review-flow" (the order-paid route starts it
+       by this key). The flow now spans the whole order lifecycle: screen ->
+       (review) -> approve -> fulfill -> record fulfillment. -->
+  <bpmn:process id="order-review-flow" name="Order Processing Flow" isExecutable="true">
+    <bpmn:startEvent id="StartEvent_start">
+      <bpmn:outgoing>Flow_start_screen</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <!-- 1. Screen the order against the configured review rules. Produces the
+         requiresReview decision and the human-readable reasons behind it. -->
+    <bpmn:serviceTask id="ServiceTask_screenOrder" name="Screen Order" camunda:class="org.mintjams.script.bpm.CmsDelegate">
+      <bpmn:extensionElements>
+        <camunda:field name="path">
+          <camunda:string>/etc/commerce/scripts/shopify/screenOrder.groovy</camunda:string>
+        </camunda:field>
+        <camunda:field name="inputs">
+          <camunda:string>orderPath</camunda:string>
+        </camunda:field>
+        <camunda:field name="outputs">
+          <camunda:string>requiresReview,reviewReasons</camunda:string>
+        </camunda:field>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_start_screen</bpmn:incoming>
+      <bpmn:outgoing>Flow_screen_gw</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- 2. Review required? -->
+    <bpmn:exclusiveGateway id="Gateway_reviewRequired" name="Review required?">
+      <bpmn:incoming>Flow_screen_gw</bpmn:incoming>
+      <bpmn:outgoing>Flow_review_no</bpmn:outgoing>
+      <bpmn:outgoing>Flow_review_yes</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- 2a. A rule matched: an operator reviews the order via a manual task. -->
+    <bpmn:userTask id="UserTask_orderReview" name="Order Review" camunda:formKey="cms:/content/commerce/forms/shopify/order-review.html?t={{lastModified}}">
+      <bpmn:extensionElements>
+        <!-- Advance the processing status to "review_pending" (waiting on an operator). -->
+        <camunda:taskListener event="create" class="org.mintjams.script.bpm.CmsDelegate">
+          <camunda:field name="path">
+            <camunda:string>/etc/commerce/scripts/shopify/setOrderWorkflowStatus.groovy</camunda:string>
+          </camunda:field>
+          <camunda:field name="inputs">
+            <camunda:string>orderPath</camunda:string>
+          </camunda:field>
+          <camunda:field name="runAs">
+            <camunda:string>commerce-service-user</camunda:string>
+          </camunda:field>
+        </camunda:taskListener>
+        <camunda:taskListener event="create" class="org.mintjams.script.bpm.CmsDelegate">
+          <camunda:field name="path">
+            <camunda:string>/etc/commerce/scripts/shopify/notifyOrderTaskCreated.groovy</camunda:string>
+          </camunda:field>
+        </camunda:taskListener>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_review_yes</bpmn:incoming>
+      <bpmn:outgoing>Flow_review_join</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- 2b. Join the auto-approve and reviewed branches. -->
+    <bpmn:exclusiveGateway id="Gateway_reviewJoin">
+      <bpmn:incoming>Flow_review_no</bpmn:incoming>
+      <bpmn:incoming>Flow_review_join</bpmn:incoming>
+      <bpmn:outgoing>Flow_join_approve</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- 3. Mark the order approved (cleared for fulfillment). Reached whether the
+         order was auto-approved or a manual review was completed. -->
+    <bpmn:serviceTask id="ServiceTask_approveOrder" name="Approve Order" camunda:class="org.mintjams.script.bpm.CmsDelegate">
+      <bpmn:extensionElements>
+        <camunda:field name="path">
+          <camunda:string>/etc/commerce/scripts/shopify/setOrderWorkflowStatus.groovy</camunda:string>
+        </camunda:field>
+        <camunda:field name="inputs">
+          <camunda:string>orderPath</camunda:string>
+        </camunda:field>
+        <camunda:field name="runAs">
+          <camunda:string>commerce-service-user</camunda:string>
+        </camunda:field>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_join_approve</bpmn:incoming>
+      <bpmn:outgoing>Flow_approve_fulfill</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- 4. Fulfillment: a warehouse operator picks/packs and records tracking. -->
+    <bpmn:userTask id="UserTask_fulfillOrder" name="Fulfill Order" camunda:formKey="cms:/content/commerce/forms/shopify/order-fulfillment.html?t={{lastModified}}">
+      <bpmn:extensionElements>
+        <!-- Advance the processing status to "fulfillment_pending" (waiting on a fulfiller). -->
+        <camunda:taskListener event="create" class="org.mintjams.script.bpm.CmsDelegate">
+          <camunda:field name="path">
+            <camunda:string>/etc/commerce/scripts/shopify/setOrderWorkflowStatus.groovy</camunda:string>
+          </camunda:field>
+          <camunda:field name="inputs">
+            <camunda:string>orderPath</camunda:string>
+          </camunda:field>
+          <camunda:field name="runAs">
+            <camunda:string>commerce-service-user</camunda:string>
+          </camunda:field>
+        </camunda:taskListener>
+        <camunda:taskListener event="create" class="org.mintjams.script.bpm.CmsDelegate">
+          <camunda:field name="path">
+            <camunda:string>/etc/commerce/scripts/shopify/notifyFulfillmentTaskCreated.groovy</camunda:string>
+          </camunda:field>
+        </camunda:taskListener>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_approve_fulfill</bpmn:incoming>
+      <bpmn:outgoing>Flow_fulfill_record</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- 5. Record the fulfillment: persist tracking metadata and, when the Admin
+         API is enabled, write the fulfillment back to Shopify (best-effort). -->
+    <bpmn:serviceTask id="ServiceTask_createFulfillment" name="Create Fulfillment" camunda:class="org.mintjams.script.bpm.CmsDelegate">
+      <bpmn:extensionElements>
+        <camunda:field name="path">
+          <camunda:string>/etc/commerce/scripts/shopify/recordFulfillment.groovy</camunda:string>
+        </camunda:field>
+        <camunda:field name="inputs">
+          <camunda:string>orderPath,order_id</camunda:string>
+        </camunda:field>
+        <camunda:field name="runAs">
+          <camunda:string>commerce-service-user</camunda:string>
+        </camunda:field>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_fulfill_record</bpmn:incoming>
+      <bpmn:outgoing>Flow_record_end</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:endEvent id="EndEvent_orderProcessing">
+      <bpmn:extensionElements>
+        <!-- Workflow finished: mark the order as "fulfilled" (terminal status). -->
+        <camunda:executionListener event="end" class="org.mintjams.script.bpm.CmsDelegate">
+          <camunda:field name="path">
+            <camunda:string>/etc/commerce/scripts/shopify/setOrderWorkflowStatus.groovy</camunda:string>
+          </camunda:field>
+          <camunda:field name="inputs">
+            <camunda:string>orderPath</camunda:string>
+          </camunda:field>
+          <camunda:field name="runAs">
+            <camunda:string>commerce-service-user</camunda:string>
+          </camunda:field>
+        </camunda:executionListener>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_record_end</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- Sequence flows -->
+    <bpmn:sequenceFlow id="Flow_start_screen" sourceRef="StartEvent_start" targetRef="ServiceTask_screenOrder"/>
+    <bpmn:sequenceFlow id="Flow_screen_gw" sourceRef="ServiceTask_screenOrder" targetRef="Gateway_reviewRequired"/>
+    <bpmn:sequenceFlow id="Flow_review_no" name="No" sourceRef="Gateway_reviewRequired" targetRef="Gateway_reviewJoin">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${requiresReview == false}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_review_yes" name="Yes" sourceRef="Gateway_reviewRequired" targetRef="UserTask_orderReview">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${requiresReview == true}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_review_join" sourceRef="UserTask_orderReview" targetRef="Gateway_reviewJoin"/>
+    <bpmn:sequenceFlow id="Flow_join_approve" sourceRef="Gateway_reviewJoin" targetRef="ServiceTask_approveOrder"/>
+    <bpmn:sequenceFlow id="Flow_approve_fulfill" sourceRef="ServiceTask_approveOrder" targetRef="UserTask_fulfillOrder"/>
+    <bpmn:sequenceFlow id="Flow_fulfill_record" sourceRef="UserTask_fulfillOrder" targetRef="ServiceTask_createFulfillment"/>
+    <bpmn:sequenceFlow id="Flow_record_end" sourceRef="ServiceTask_createFulfillment" targetRef="EndEvent_orderProcessing"/>
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_order_review">
+    <bpmndi:BPMNPlane id="BPMNPlane_order_review" bpmnElement="order-review-flow">
+      <bpmndi:BPMNShape id="Shape_StartEvent_start" bpmnElement="StartEvent_start">
+        <dc:Bounds x="140" y="202" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_ServiceTask_screenOrder" bpmnElement="ServiceTask_screenOrder">
+        <dc:Bounds x="230" y="180" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Gateway_reviewRequired" bpmnElement="Gateway_reviewRequired">
+        <dc:Bounds x="385" y="195" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="377" y="169" width="76" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_UserTask_orderReview" bpmnElement="UserTask_orderReview">
+        <dc:Bounds x="450" y="300" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Gateway_reviewJoin" bpmnElement="Gateway_reviewJoin">
+        <dc:Bounds x="535" y="195" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_ServiceTask_approveOrder" bpmnElement="ServiceTask_approveOrder">
+        <dc:Bounds x="635" y="180" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_UserTask_fulfillOrder" bpmnElement="UserTask_fulfillOrder">
+        <dc:Bounds x="790" y="180" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_ServiceTask_createFulfillment" bpmnElement="ServiceTask_createFulfillment">
+        <dc:Bounds x="945" y="180" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_EndEvent_orderProcessing" bpmnElement="EndEvent_orderProcessing">
+        <dc:Bounds x="1102" y="202" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_Flow_start_screen" bpmnElement="Flow_start_screen">
+        <di:waypoint x="176" y="220"/>
+        <di:waypoint x="230" y="220"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_screen_gw" bpmnElement="Flow_screen_gw">
+        <di:waypoint x="330" y="220"/>
+        <di:waypoint x="385" y="220"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_review_no" bpmnElement="Flow_review_no">
+        <di:waypoint x="435" y="220"/>
+        <di:waypoint x="535" y="220"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="478" y="202" width="15" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_review_yes" bpmnElement="Flow_review_yes">
+        <di:waypoint x="410" y="245"/>
+        <di:waypoint x="410" y="340"/>
+        <di:waypoint x="450" y="340"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="394" y="271" width="20" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_review_join" bpmnElement="Flow_review_join">
+        <di:waypoint x="550" y="340"/>
+        <di:waypoint x="560" y="340"/>
+        <di:waypoint x="560" y="245"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_join_approve" bpmnElement="Flow_join_approve">
+        <di:waypoint x="585" y="220"/>
+        <di:waypoint x="635" y="220"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_approve_fulfill" bpmnElement="Flow_approve_fulfill">
+        <di:waypoint x="735" y="220"/>
+        <di:waypoint x="790" y="220"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_fulfill_record" bpmnElement="Flow_fulfill_record">
+        <di:waypoint x="890" y="220"/>
+        <di:waypoint x="945" y="220"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_record_end" bpmnElement="Flow_record_end">
+        <di:waypoint x="1045" y="220"/>
+        <di:waypoint x="1102" y="220"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

@@ -1,0 +1,51 @@
+# Refund review (screening) rules for the Shopify refund-review workflow
+# Deploy to: /etc/commerce/config/refund-review.yml
+#
+# When a `refunds/create` webhook is received, the EIP route stores the refund
+# and starts refund-review-flow.bpmn. Its first step runs
+# etc/commerce/scripts/shopify/screenRefund.groovy, which evaluates the refund
+# against the rules below. If ANY enabled rule matches, the refund is routed to a
+# manual "Refund Review" task (commerce:status -> review_pending) and announced to
+# the channels in notifications.yml. If no rule matches, the refund is
+# auto-acknowledged (no human step) and simply recorded.
+#
+# A refund is already executed in Shopify by the time this fires, so review here
+# is for audit / fraud-monitoring, NOT for issuing the money. Nothing is written
+# back to Shopify.
+#
+# This file is kept SEPARATE from shopify.yml (API credentials), order-review.yml
+# (order screening) and notifications.yml (alert destinations) so refund policy
+# can be tuned independently.
+#
+# Design note: screening is fail-open. If this file is missing or unparseable,
+# screenRefund.groovy logs a warning and auto-acknowledges rather than flooding
+# operators with reviews for refunds it cannot evaluate.
+
+# Master switch. When false, every refund is auto-acknowledged (no screening).
+enabled: true
+
+rules:
+  # Flag refunds whose total refunded amount meets/exceeds a threshold.
+  # Thresholds are keyed by ISO currency code (from the refund transactions);
+  # `default` applies to any currency not listed. Values are in the currency's
+  # major unit (e.g. 50000 JPY, 500 USD).
+  highRefundValue:
+    enabled: true
+    thresholds:
+      JPY: 50000
+      USD: 500
+      EUR: 500
+    default: 500
+
+  # Flag refunds that return the full order value (refunded amount >= the
+  # order's total_price). Requires the original order to be locatable in the
+  # repository; if it cannot be found, this rule is skipped for that refund.
+  fullRefund:
+    enabled: true
+
+  # Flag refunds that return items to the customer WITHOUT restocking any
+  # inventory (every refund line item has restock_type "no_restock"). A common
+  # signal for write-offs / goodwill refunds worth an eyeball. Refunds with no
+  # line items at all (pure monetary adjustments) are not flagged by this rule.
+  noRestock:
+    enabled: true

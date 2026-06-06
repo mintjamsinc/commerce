@@ -1,0 +1,27 @@
+# Sales velocity & stockout forecast
+# Deploy to: /etc/commerce/config/velocity.yml
+# Managed by the Commerce app (Webtop > Commerce > Forecast).
+#
+# A periodic batch computes each variant's sales velocity (units/day) from the
+# order history over `windowDays` and caches it to
+# /content/commerce/analytics/velocity.json. The cached velocity feeds the
+# inventory threshold rules (minVelocityPerDay) and the stockout forecast.
+#
+# The same batch predicts "days until stockout" (current stock / velocity) and,
+# when stockout.enabled, alerts on variants predicted to run out within
+# `warnDays` — through the channels in notifications.yml. Alerts are debounced
+# per variant by `cooldownMinutes`.
+
+# Master switch (false = the batch does nothing; cached velocity is left as-is).
+enabled: true
+
+# Averaging window for velocity, in days.
+windowDays: 30
+
+# Minimum minutes between repeat stockout alerts for the same variant.
+cooldownMinutes: 720
+
+stockout:
+  enabled: true
+  # Alert when a variant is predicted to run out within this many days.
+  warnDays: 7

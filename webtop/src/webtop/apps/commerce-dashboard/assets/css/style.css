@@ -1,0 +1,332 @@
+/* Commerce Dashboard — app-specific styles.
+ *
+ * Layout, the nav/status bars, islands, buttons and theme tokens come from the
+ * shared webtop-app.css (loaded alongside this file). These rules only add the
+ * dashboard's KPI grid and metric typography, and avoid redefining design-system
+ * tokens so the app stays consistent across themes. */
+
+:root {
+	--navbar-height: 2.5rem;
+	--statusbar-height: 1.75rem;
+}
+
+[v-cloak] {
+	display: none;
+}
+
+#app {
+	height: 100%;
+}
+
+/* Bottom status bar — compact, right-aligned (matches eip-modeler). */
+.status-bar {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	height: var(--statusbar-height);
+	margin-bottom: -1rem;
+	margin-left: -1rem;
+	margin-right: -1rem;
+	padding: 0 1rem;
+	color: var(--navbar-color);
+	font-size: 11px;
+	white-space: nowrap;
+	user-select: none;
+}
+
+/* Status items grouped like cms0 text-editor so positioning is identical. */
+.status-group {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.25rem;
+}
+
+.status-item {
+	padding: 0 0.5rem;
+}
+
+/* Scrollable content area holding the KPI grid. */
+.dash-body {
+	flex: 1;
+	min-height: 0;
+	overflow: auto;
+}
+
+.dash-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+	gap: 1rem;
+	align-items: start;
+}
+
+/* Each KPI card reuses the shared .island surface. */
+.dash-card {
+	display: flex;
+	flex-direction: column;
+	gap: 0.75rem;
+	padding: 1rem 1.1rem;
+	height: 100%;
+	min-height: 12rem;
+}
+
+.dash-card-head {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	color: var(--text-soft-color);
+	font-size: 13px;
+	font-weight: 600;
+	letter-spacing: 0;
+	text-transform: uppercase;
+}
+
+/* When a card carries a drill-down link, the head splits title | link. */
+.dash-card-head.has-link {
+	justify-content: space-between;
+}
+
+.dash-card-head .head-title {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.dash-card-head .bi {
+	font-size: 15px;
+}
+
+/* Subtle drill-down affordance opening the backing endpoint. */
+.dash-card-link {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 1.4rem;
+	height: 1.4rem;
+	border: none;
+	background: transparent;
+	color: var(--text-soft-color);
+	border-radius: 0.35rem;
+	cursor: pointer;
+	opacity: 0.6;
+	transition: opacity 0.15s, background-color 0.15s, color 0.15s;
+}
+
+.dash-card-link:hover {
+	opacity: 1;
+	color: var(--primary-color);
+	background: color-mix(in srgb, var(--primary-color) 14%, transparent);
+}
+
+.dash-card-link .bi { font-size: 13px; }
+
+/* Full-width "hero" card (sales trend). */
+.dash-card-wide {
+	grid-column: 1 / -1;
+}
+
+/* KPI strip inside the wide card. */
+.dash-kpis {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 1.5rem 2.5rem;
+}
+
+.dash-kpi {
+	display: flex;
+	flex-direction: column;
+	gap: 0.15rem;
+}
+
+.dash-kpi-value {
+	font-size: 26px;
+	font-weight: 700;
+	line-height: 1.1;
+	font-variant-numeric: tabular-nums;
+}
+
+.dash-kpi-label {
+	font-size: 12px;
+	color: var(--text-soft-color);
+	text-transform: uppercase;
+	letter-spacing: 0;
+}
+
+/* Inline SVG sparkline. */
+.spark {
+	width: 100%;
+	height: 56px;
+	display: block;
+	overflow: visible;
+}
+
+.spark-line {
+	fill: none;
+	stroke: var(--primary-color);
+	stroke-width: 2;
+	stroke-linejoin: round;
+	stroke-linecap: round;
+	vector-effect: non-scaling-stroke;
+}
+
+.spark-area {
+	fill: color-mix(in srgb, var(--primary-color) 14%, transparent);
+	stroke: none;
+}
+
+.spark-empty {
+	font-size: 12px;
+	color: var(--text-soft-color);
+	padding: 1rem 0;
+}
+
+/* Two-column body for the wide card: chart | top products. */
+.dash-wide-body {
+	display: grid;
+	grid-template-columns: 2fr 1fr;
+	gap: 1.5rem;
+	align-items: start;
+}
+
+@media (max-width: 48rem) {
+	.dash-wide-body { grid-template-columns: 1fr; }
+}
+
+/* Range selector in the toolbar. */
+.dash-range {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.15rem;
+	margin-left: 0.5rem;
+}
+
+.dash-range button {
+	border: none;
+	background: transparent;
+	color: var(--text-soft-color);
+	font-size: 12px;
+	font-weight: 600;
+	padding: 0.15rem 0.5rem;
+	border-radius: 0.35rem;
+	cursor: pointer;
+}
+
+.dash-range button.active {
+	background: color-mix(in srgb, var(--primary-color) 18%, transparent);
+	color: var(--primary-color);
+}
+
+/* The headline metric. */
+.dash-metric {
+	display: flex;
+	align-items: baseline;
+	gap: 0.5rem;
+}
+
+.dash-metric-value {
+	font-size: 30px;
+	font-weight: 700;
+	line-height: 1.1;
+}
+
+.dash-metric-unit {
+	font-size: 13px;
+	color: var(--text-soft-color);
+}
+
+/* Secondary rows: label/value pairs under the headline. */
+.dash-rows {
+	display: flex;
+	flex-direction: column;
+	gap: 0.3rem;
+}
+
+.dash-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 0.75rem;
+	font-size: 13px;
+}
+
+.dash-row-label {
+	color: var(--text-soft-color);
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.dash-row-value {
+	font-variant-numeric: tabular-nums;
+	font-weight: 600;
+	padding-right: 0.5rem;
+}
+
+/* Status pills for SLA / health severity. */
+.dash-pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+	padding: 0.05rem 0.5rem;
+	border-radius: 9999px;
+	font-size: 12px;
+	font-weight: 600;
+	line-height: 1.5;
+}
+
+.dash-pill.ok      { background: color-mix(in srgb, var(--primary-color) 18%, transparent); color: var(--primary-color); }
+.dash-pill.warn    { background: color-mix(in srgb, var(--warning-color) 20%, transparent); color: var(--warning-color); }
+.dash-pill.danger  { background: color-mix(in srgb, var(--danger-color) 18%, transparent);  color: var(--danger-color); }
+.dash-pill.neutral { background: color-mix(in srgb, var(--text-soft-color) 16%, transparent); color: var(--text-soft-color); }
+
+.dash-value-danger { color: var(--danger-color); }
+.dash-value-warn   { color: var(--warning-color); }
+.dash-value-ok     { color: var(--primary-color); }
+
+/* Centred state (loading / error / empty). */
+.dash-state {
+	flex: 1 1 auto;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 0.6rem;
+	color: var(--text-soft-color);
+}
+
+/* Live indicator in the nav bar. */
+.dash-live {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+	font-size: 12px;
+	color: var(--text-soft-color);
+	padding: 0 0.5rem;
+}
+
+.dash-live-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--text-soft-color);
+}
+
+.dash-live.connected .dash-live-dot {
+	background: var(--primary-color);
+	box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary-color) 60%, transparent);
+	animation: dash-pulse 2s infinite;
+}
+
+@keyframes dash-pulse {
+	0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary-color) 55%, transparent); }
+	70%  { box-shadow: 0 0 0 6px color-mix(in srgb, var(--primary-color) 0%, transparent); }
+	100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary-color) 0%, transparent); }
+}
+
+.spin {
+	animation: dash-spin 1s linear infinite;
+}
+
+@keyframes dash-spin {
+	from { transform: rotate(0deg); }
+	to   { transform: rotate(360deg); }
+}

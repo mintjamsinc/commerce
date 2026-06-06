@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<camel>
+
+    <!-- Swallow scan failures: SLA monitoring must never surface errors. -->
+    <routeConfiguration id="commerce-task-sla-error-handler">
+        <onException>
+            <exception>java.lang.Exception</exception>
+            <handled>
+                <constant>true</constant>
+            </handled>
+            <log message="commerce-task-sla error: ${exception.message}"
+                 loggingLevel="WARN"/>
+        </onException>
+    </routeConfiguration>
+
+    <!--
+      Periodic task-SLA scan. Fires every 15 minutes (first run after a 2-minute
+      warm-up) and runs scanTaskSla.groovy as the service user: it evaluates open
+      human tasks against /etc/commerce/config/sla.yml and escalates breaches
+      (notification + optional priority bump). The scan is cheap and idempotent;
+      escalations are debounced per task in commerce.TaskSla.
+    -->
+    <route id="commerce-task-sla" routeConfigurationId="commerce-task-sla-error-handler">
+        <from uri="timer:commerce-task-sla?period=900000&amp;delay=120000"/>
+
+        <setHeader name="runAs">
+            <constant>commerce-service-user</constant>
+        </setHeader>
+
+        <toD uri="cms:/etc/commerce/scripts/shopify/scanTaskSla.groovy"/>
+    </route>
+
+</camel>

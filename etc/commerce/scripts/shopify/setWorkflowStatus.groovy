@@ -39,6 +39,8 @@
 // errors are logged and swallowed - the workflow continues regardless.
 
 // --- Resolve invocation context (task listener vs. execution listener) -------
+import commerce.WorkflowStatus
+
 def task = context.hasAttribute("task") ? context.getAttribute("task") : null
 def execution = context.hasAttribute("execution") ? context.getAttribute("execution") : null
 
@@ -66,39 +68,12 @@ if (task != null) {
 }
 
 // --- Resolve the product path ------------------------------------------------
-// Prefer the `inputs`-mapped attribute; fall back to the variable scope so the
-// script keeps working even if the inputs mapping is omitted.
-def productPath = context.hasAttribute("productPath") ? context.getAttribute("productPath") : null
-if (productPath == null && task != null) {
-    productPath = task.getVariable("productPath")
-}
-if (productPath == null && execution != null) {
-    productPath = execution.getVariable("productPath")
-}
+def productPath = WorkflowStatus.pathVariable(context, task, execution, "productPath")
 if (!productPath) {
     log.warn("setWorkflowStatus: 'productPath' is not available - cannot update commerce:status to '${status}'")
     return
 }
-productPath = productPath.toString()
 
-// --- Write commerce:status ---------------------------------------------------
-// NOTE: `resource` (bound by CmsDelegate) refers to THIS script, not the
-// product, so we resolve the product resource explicitly.
-try {
-    def productResource = repositorySession.getResource(productPath)
-    if (productResource == null || !productResource.exists()) {
-        log.warn("setWorkflowStatus: product resource not found: ${productPath} - skipping status update")
-        return
-    }
-
-    productResource.setProperty("commerce:status", status)
-    repositorySession.commit()
-    log.info("setWorkflowStatus: ${productPath} commerce:status -> ${status}")
-} catch (Exception e) {
-    try {
-        repositorySession.rollback()
-    } catch (Exception ignore) {
-    }
-    // Defensive: never let a status-update failure break the workflow.
-    log.warn("setWorkflowStatus: failed to update commerce:status to '${status}' for ${productPath}: ${e.message}")
-}
+// --- Write commerce:status (defensive; never breaks the workflow) ------------
+// This product flow logs without an element id, so no elementId is passed.
+WorkflowStatus.write(repositorySession, log, "setWorkflowStatus", productPath.toString(), status)

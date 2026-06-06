@@ -17,12 +17,13 @@
 // webhooks are still saved but no Admin API call is attempted with placeholder
 // or incomplete credentials.
 
+import commerce.ShopifyAdmin
+
 def adminApiEnabled = false
 try {
     def configNode = repositorySession.getResource("/etc/commerce/config/shopify.yml")
     def config = YAML.parse(configNode)
-    def enabled = config?.adminApi?.enabled
-    adminApiEnabled = enabled != null && enabled.toString().trim().toLowerCase() == "true"
+    adminApiEnabled = ShopifyAdmin.adminApiEnabled(config)
 } catch (Exception e) {
     log.warn("checkAdminApiEnabled: could not determine Admin API state from shopify.yml: ${e.message} - treating as disabled")
 }

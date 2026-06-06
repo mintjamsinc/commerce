@@ -1,0 +1,137 @@
+// Record a refund at the end of refund-review-flow.bpmn.
+//
+// Two responsibilities:
+//   1. Persist the computed refund facts on the refund resource (amount,
+//      currency, whether inventory was restocked, line-item count, note). These
+//      are derived from the transactions / line items in the webhook payload,
+//      which the EIP route cannot sum with JSONPath.
+//   2. Update the ORIGINAL order's cumulative refund summary (best-effort): add
+//      this refund to commerce:refunded_amount, bump commerce:refund_count, and
+//      reflect the order's business status (refunded / partially_refunded).
+//
+// A refund is already executed in Shopify, so nothing is written back to Shopify
+// here - this is bookkeeping only.
+//
+// Required process variables (mapped in via the service task's `inputs` field):
+//   - refundPath: repository path to the refund resource
+//   - order_id  : Shopify order ID the refund belongs to (may be absent)
+//
+// Records on the refund resource:
+//   - commerce:refund_amount, commerce:currency, commerce:restocked,
+//     commerce:line_item_count, commerce:refund_note
+//   - commerce:order_updated   guard so the order summary is applied at most once
+//
+// Updates on the order resource (when locatable):
+//   - commerce:refunded_amount (cumulative), commerce:refund_count,
+//     commerce:source_status (refunded | partially_refunded)
+
+// Shared commerce helpers (see /content/WEB-INF/classes/commerce/).
+import commerce.Money
+import commerce.Refunds
+import commerce.Orders
+
+if (!refundPath) {
+    throw new IllegalArgumentException("Required variable 'refundPath' is missing")
+}
+
+def refundResource = repositorySession.getResource(refundPath)
+if (refundResource == null || !refundResource.exists()) {
+    log.warn("recordRefund: refund resource not found: ${refundPath} - skipping")
+    return
+}
+
+def refund
+try {
+    refund = JSON.parse(refundResource.content.toString())
+} catch (Exception e) {
+    log.warn("recordRefund: could not parse refund JSON at ${refundPath}: ${e.message} - skipping")
+    return
+}
+
+// --- Derive refund facts -----------------------------------------------------
+def amount = Refunds.amount(refund)
+def currency = Refunds.currency(refund)
+def lineItems = refund.refund_line_items ?: []
+def restocked = lineItems.any { Refunds.isRestocked(it) }
+def note = refund.note?.toString()
+
+// --- 1. Persist the facts on the refund resource -----------------------------
+try {
+    if (amount != null) refundResource.setProperty("commerce:refund_amount", amount.toString())
+    if (currency != null) refundResource.setProperty("commerce:currency", currency)
+    refundResource.setProperty("commerce:restocked", restocked.toString())
+    refundResource.setProperty("commerce:line_item_count", lineItems.size().toString())
+    if (note != null && !note.trim().isEmpty()) {
+        def trimmed = note.length() > 2048 ? note.substring(0, 2048) : note
+        refundResource.setProperty("commerce:refund_note", trimmed)
+    }
+    repositorySession.commit()
+} catch (Exception e) {
+    try { repositorySession.rollback() } catch (Exception ignore) {}
+    log.warn("recordRefund: failed to persist refund facts for ${refundPath}: ${e.message}")
+}
+
+// --- 2. Update the original order's cumulative refund summary -----------------
+// Guard so re-running the workflow (e.g. a retried instance) cannot double-count.
+if (refundResource.hasProperty("commerce:order_updated")
+        && refundResource.getProperty("commerce:order_updated").getValue()?.toString() == "true") {
+    log.info("recordRefund: order summary already applied for ${refundPath} - skipping")
+    return
+}
+
+def orderId = context.hasAttribute("order_id") ? context.getAttribute("order_id") : null
+if (amount == null || !orderId) {
+    log.info("recordRefund: no amount or order_id - skipping order summary for ${refundPath}")
+    return
+}
+
+try {
+    def orderResource = Orders.findResource(repositorySession, orderId)
+    if (orderResource == null) {
+        log.info("recordRefund: original order ${orderId} not found - refund recorded without order summary")
+        return
+    }
+
+    def previous = orderResource.hasProperty("commerce:refunded_amount")
+        ? Money.toNumber(orderResource.getProperty("commerce:refunded_amount").getValue())
+        : null
+    def refundedTotal = (previous ?: BigDecimal.ZERO).add(amount)
+
+    def previousCount = orderResource.hasProperty("commerce:refund_count")
+        ? Money.toNumber(orderResource.getProperty("commerce:refund_count").getValue())
+        : null
+    def refundCount = (previousCount ?: BigDecimal.ZERO).add(BigDecimal.ONE)
+
+    orderResource.setProperty("commerce:refunded_amount", refundedTotal.toString())
+    orderResource.setProperty("commerce:refund_count", refundCount.toBigInteger().toString())
+
+    // Reflect the order's business status based on how much has been refunded.
+    def orderTotal = orderTotalOf(orderResource)
+    if (orderTotal != null && orderTotal > 0) {
+        def status = refundedTotal >= orderTotal ? "refunded" : "partially_refunded"
+        orderResource.setProperty("commerce:source_status", status)
+    }
+
+    // Mark the refund as applied in the SAME transaction as the order increment,
+    // so a crash can never leave the order updated without the guard set (which
+    // would let a re-run double-count this refund). Both nodes commit atomically.
+    refundResource.setProperty("commerce:order_updated", "true")
+    repositorySession.commit()
+
+    log.info("recordRefund: order ${orderId} refunded_amount -> ${refundedTotal} (count ${refundCount.toBigInteger()})")
+} catch (Exception e) {
+    try { repositorySession.rollback() } catch (Exception ignore) {}
+    log.warn("recordRefund: failed to update order summary for order ${orderId}: ${e.message}")
+}
+
+// --- Helpers -----------------------------------------------------------------
+
+// Read the original order's total_price from its resource. Best-effort.
+Number orderTotalOf(orderResource) {
+    try {
+        def order = JSON.parse(orderResource.content.toString())
+        return Orders.totalPrice(order)
+    } catch (Exception e) {
+        return null
+    }
+}

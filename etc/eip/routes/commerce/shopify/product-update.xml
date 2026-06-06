@@ -14,19 +14,31 @@
                  loggingLevel="ERROR"/>
 
             <!-- Set error metadata as headers for JCR properties -->
-            <setHeader name="commerce_status">
+            <setHeader name="commerce:status">
                 <constant>error</constant>
             </setHeader>
-            <setHeader name="commerce_errorMessage">
+            <setHeader name="commerce:errorMessage">
                 <simple>${exception.message}</simple>
             </setHeader>
-            <setHeader name="commerce_stackTrace">
+            <setHeader name="commerce:stackTrace">
                 <simple>${exception.stacktrace}</simple>
             </setHeader>
-            <toD uri="transform:truncateString?targets=commerce_stackTrace&amp;maxLength=2048"/>
+            <toD uri="transform:truncateString?targets=commerce:stackTrace&amp;maxLength=2048"/>
 
             <!-- Write error metadata to JCR node properties -->
-            <toD uri="cms:setProperties?path=${header.productPath}&amp;includes=commerce_~"/>
+            <toD uri="cms:setProperties?path=${header.productPath}&amp;includes=commerce:*"/>
+
+            <!-- Record processing health (error) -->
+            <setHeader name="health_group">
+                <constant>route</constant>
+            </setHeader>
+            <setHeader name="health_name">
+                <simple>${header.shopify_topic}</simple>
+            </setHeader>
+            <setHeader name="health_ok">
+                <constant>false</constant>
+            </setHeader>
+            <toD uri="cms:/etc/commerce/scripts/shopify/recordHealth.groovy?inputs=health_*,received_at"/>
         </onException>
     </routeConfiguration>
 
@@ -35,13 +47,20 @@
 
         <!-- Include headers for history tracking -->
         <setHeader name="mi:history.header.includes">
-            <constant>commerce_~</constant>
+            <constant>commerce:*</constant>
         </setHeader>
 
-        <!-- Run as service user for all CMS operations -->
-        <setHeader name="runAs">
-            <constant>shopify-service-user</constant>
-        </setHeader>
+        <!-- Inherit the caller's identity from the ingest core (the service user
+             for webhook traffic, or the operator who replayed the event); fall back
+             to the service user when none was supplied. -->
+        <choice>
+            <when>
+                <simple>${header.runAs} == null || ${header.runAs} == ''</simple>
+                <setHeader name="runAs">
+                    <constant>commerce-service-user</constant>
+                </setHeader>
+            </when>
+        </choice>
 
         <!-- Save original body before idempotency check (cms:exists overwrites body) -->
         <setHeader name="shopify_payload">
@@ -53,7 +72,7 @@
 
         <choice>
             <when>
-                <simple>${header.webhookAlreadyProcessed} == true</simple>
+                <simple>${header.webhookAlreadyProcessed} == true &amp;&amp; ${header.replay} != 'true'</simple>
                 <log message="Duplicate webhook ${header.shopify_webhook_id} - skipping"
                      loggingLevel="INFO"/>
             </when>
@@ -80,59 +99,59 @@
                 <toD uri="cms:store?mimeType=application/json&amp;path=${header.productPath}"/>
 
                 <!-- Map product metadata as JCR properties -->
-                <setHeader name="commerce_product_id">
+                <setHeader name="commerce:product_id">
                     <jsonpath>$.id</jsonpath>
                 </setHeader>
-                <setHeader name="commerce_title">
+                <setHeader name="commerce:title">
                     <jsonpath>$.title</jsonpath>
                 </setHeader>
-                <setHeader name="commerce_handle">
+                <setHeader name="commerce:handle">
                     <jsonpath>$.handle</jsonpath>
                 </setHeader>
-                <!-- commerce_source_status mirrors Shopify's business status
+                <!-- commerce:source_status mirrors Shopify's business status
                      (active / archived / draft). It is the product's own state in
                      the source system, NOT our processing state. -->
-                <setHeader name="commerce_source_status">
+                <setHeader name="commerce:source_status">
                     <jsonpath>$.status</jsonpath>
                 </setHeader>
-                <!-- commerce_status is the integration processing lifecycle status.
+                <!-- commerce:status is the integration processing lifecycle status.
                      Ingestion succeeded, so it is "received"; the BPMN workflow then
                      advances it (threshold_pending / review_pending / monitored).
                      See docs/commerce-status.md. -->
-                <setHeader name="commerce_status">
+                <setHeader name="commerce:status">
                     <constant>received</constant>
                 </setHeader>
-                <setHeader name="commerce_vendor">
+                <setHeader name="commerce:vendor">
                     <jsonpath>$.vendor</jsonpath>
                 </setHeader>
-                <setHeader name="commerce_product_type">
+                <setHeader name="commerce:product_type">
                     <jsonpath>$.product_type</jsonpath>
                 </setHeader>
-                <setHeader name="commerce_tags">
+                <setHeader name="commerce:tags">
                     <jsonpath>$.tags</jsonpath>
                 </setHeader>
-                <setHeader name="commerce_updated_at">
+                <setHeader name="commerce:updated_at">
                     <jsonpath>$.updated_at</jsonpath>
                 </setHeader>
                 <!-- Clear deletion flag on create/update -->
-                <setHeader name="commerce_deletedAt">
+                <setHeader name="commerce:deletedAt">
                     <simple>${null}</simple>
                 </setHeader>
                 <!-- Clear any previous error metadata -->
-                <setHeader name="commerce_errorMessage">
+                <setHeader name="commerce:errorMessage">
                     <simple>${null}</simple>
                 </setHeader>
-                <setHeader name="commerce_stackTrace">
+                <setHeader name="commerce:stackTrace">
                     <simple>${null}</simple>
                 </setHeader>
 
                 <!-- Normalize property types (e.g. updated_at should be date) -->
-                <toD uri="transform:toDate?targets=commerce_updated_at"/>
+                <toD uri="transform:toDate?targets=commerce:updated_at"/>
 
                 <!-- Write metadata to JCR node properties -->
-                <toD uri="cms:setProperties?path=${header.productPath}&amp;includes=commerce_~"/>
+                <toD uri="cms:setProperties?path=${header.productPath}&amp;includes=commerce:*"/>
 
-                <log message="Product ${header.commerce_product_id} saved to ${header.productPath}"
+                <log message="Product ${header.productID} saved to ${header.productPath}"
                      loggingLevel="INFO"/>
 
                 <!-- Admin API enrichment is optional. Resolve the toggle from
@@ -150,11 +169,11 @@
                         <!-- Write metafields to JCR node properties -->
                         <toD uri="cms:setProperties?path=${header.productPath}&amp;includes=metafields"/>
 
-                        <log message="Metafields saved for product ${header.commerce_product_id}"
+                        <log message="Metafields saved for product ${header.productID}"
                              loggingLevel="INFO"/>
                     </when>
                     <otherwise>
-                        <log message="Admin API disabled - skipping metafields enrichment for product ${header.commerce_product_id}"
+                        <log message="Admin API disabled - skipping metafields enrichment for product ${header.productID}"
                              loggingLevel="INFO"/>
                     </otherwise>
                 </choice>
@@ -185,6 +204,18 @@
                 </choice>
             </otherwise>
         </choice>
+
+        <!-- Record processing health (success): received_at -> completion latency. -->
+        <setHeader name="health_group">
+            <constant>route</constant>
+        </setHeader>
+        <setHeader name="health_name">
+            <simple>${header.shopify_topic}</simple>
+        </setHeader>
+        <setHeader name="health_ok">
+            <constant>true</constant>
+        </setHeader>
+        <toD uri="cms:/etc/commerce/scripts/shopify/recordHealth.groovy?inputs=health_*,received_at"/>
     </route>
 
 </camel>

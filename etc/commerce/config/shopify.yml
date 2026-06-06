@@ -11,8 +11,9 @@ webhookSecret: "REPLACE_WITH_WEBHOOK_SECRET"
 
 # Admin API integration (optional).
 # When enabled, product webhooks are enriched with metafields fetched from the
-# Shopify Admin API (GraphQL). When disabled, no Admin API calls are made and
-# the connection fields below are ignored.
+# Shopify Admin API (GraphQL), and completed Fulfill Order tasks are written back
+# to Shopify as fulfillments. When disabled, no Admin API calls are made and the
+# connection fields below are ignored.
 #
 # The four connection fields are REQUIRED when `enabled` is true.
 adminApi:
@@ -25,3 +26,7 @@ adminApi:
   # IMPORTANT: Replace with actual values before enabling.
   clientID: "REPLACE_WITH_CLIENT_ID"
   clientSecret: "REPLACE_WITH_CLIENT_SECRET"
+  # When writing a fulfillment back to Shopify, whether to have Shopify email the
+  # customer a shipping notification. Off by default to avoid surprise/duplicate
+  # emails when the store already notifies on fulfillment. Set true to opt in.
+  notifyCustomer: false

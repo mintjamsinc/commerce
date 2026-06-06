@@ -1,0 +1,58 @@
+# Order review (screening) rules for the Shopify order-review workflow
+# Deploy to: /etc/commerce/config/order-review.yml
+#
+# When an `orders/paid` webhook is received, the EIP route stores the order and
+# starts order-review-flow.bpmn. Its first step runs
+# etc/commerce/scripts/shopify/screenOrder.groovy, which evaluates the order
+# against the rules below. If ANY enabled rule matches, the order is routed to a
+# manual "Order Review" task (commerce:status -> review_pending) and announced to
+# the channels in notifications.yml. If no rule matches, the order is
+# auto-approved (commerce:status -> approved) with no human step.
+#
+# This file is kept SEPARATE from shopify.yml (API credentials) and
+# notifications.yml (alert destinations) so screening policy can be tuned
+# independently.
+#
+# Design note: screening is fail-open. If this file is missing or unparseable,
+# screenOrder.groovy logs a warning and auto-approves rather than flooding
+# operators with reviews for orders it cannot evaluate.
+
+# Master switch. When false, every order is auto-approved (no screening).
+enabled: true
+
+rules:
+  # Flag orders whose total_price meets/exceeds a threshold. Thresholds are keyed
+  # by ISO currency code (order.currency); `default` applies to any currency not
+  # listed. Values are in the currency's major unit (e.g. 100000 JPY, 1000 USD).
+  highValue:
+    enabled: true
+    thresholds:
+      JPY: 100000
+      USD: 1000
+      EUR: 1000
+    default: 1000
+
+  # Flag orders whose Shopify financial_status is one of these. `orders/paid`
+  # normally arrives as "paid", but partial/authorized states warrant a look.
+  flaggedFinancialStatus:
+    enabled: true
+    statuses:
+      - pending
+      - authorized
+      - partially_paid
+
+  # Flag orders where any single line item quantity meets/exceeds this count
+  # (a common signal for resellers / bulk-buying abuse).
+  largeQuantity:
+    enabled: true
+    maxLineQuantity: 10
+
+  # Flag orders from first-time / new customers (customer.orders_count low).
+  # Off by default to avoid reviewing every new shopper.
+  newCustomer:
+    enabled: false
+    maxOrdersCount: 1
+
+  # Flag orders whose billing and shipping countries differ (a fraud signal).
+  addressMismatch:
+    enabled: true

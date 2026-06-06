@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+                  id="Definitions_backorder_release" targetNamespace="http://bpmn.io/schema/bpmn">
+  <!-- Backorder release workflow (feature #12). Started by releaseBackorders.groovy
+       (from the inventory_levels/update route) once arriving stock covers an open
+       backorder. The backorder record already exists with commerce:status =
+       "backordered"; this flow asks an operator to release it to fulfilment, then
+       records the release. No money is moved and nothing is written back to Shopify
+       - releasing is an internal hand-off to normal fulfilment.
+
+       Mirrors the order-fulfillment tail (task -> service task -> end, no gateway):
+       the operator confirms the task, the service task stamps the release, the end
+       event marks the terminal status. -->
+  <bpmn:process id="backorder-release-flow" name="Backorder Release Flow" isExecutable="true">
+    <bpmn:startEvent id="StartEvent_start">
+      <bpmn:outgoing>Flow_start_release</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <!-- 1. An operator releases the now-in-stock backorder to fulfilment. -->
+    <bpmn:userTask id="UserTask_releaseBackorder" name="Release Backorder" camunda:formKey="cms:/content/commerce/forms/shopify/backorder-release.html?t={{lastModified}}">
+      <bpmn:extensionElements>
+        <!-- Advance the processing status to "ready" (stock arrived, awaiting release). -->
+        <camunda:taskListener event="create" class="org.mintjams.script.bpm.CmsDelegate">
+          <camunda:field name="path">
+            <camunda:string>/etc/commerce/scripts/shopify/setBackorderWorkflowStatus.groovy</camunda:string>
+          </camunda:field>
+          <camunda:field name="inputs">
+            <camunda:string>backorderPath</camunda:string>
+          </camunda:field>
+          <camunda:field name="runAs">
+            <camunda:string>commerce-service-user</camunda:string>
+          </camunda:field>
+        </camunda:taskListener>
+        <camunda:taskListener event="create" class="org.mintjams.script.bpm.CmsDelegate">
+          <camunda:field name="path">
+            <camunda:string>/etc/commerce/scripts/shopify/notifyBackorderReady.groovy</camunda:string>
+          </camunda:field>
+        </camunda:taskListener>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_start_release</bpmn:incoming>
+      <bpmn:outgoing>Flow_release_record</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- 2. Record the release: stamp released_at on the backorder record. -->
+    <bpmn:serviceTask id="ServiceTask_recordRelease" name="Record Release" camunda:class="org.mintjams.script.bpm.CmsDelegate">
+      <bpmn:extensionElements>
+        <camunda:field name="path">
+          <camunda:string>/etc/commerce/scripts/shopify/recordBackorderRelease.groovy</camunda:string>
+        </camunda:field>
+        <camunda:field name="inputs">
+          <camunda:string>backorderPath</camunda:string>
+        </camunda:field>
+        <camunda:field name="runAs">
+          <camunda:string>commerce-service-user</camunda:string>
+        </camunda:field>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_release_record</bpmn:incoming>
+      <bpmn:outgoing>Flow_record_end</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:endEvent id="EndEvent_backorderRelease">
+      <bpmn:extensionElements>
+        <!-- Workflow finished: mark the backorder as "released" (terminal status). -->
+        <camunda:executionListener event="end" class="org.mintjams.script.bpm.CmsDelegate">
+          <camunda:field name="path">
+            <camunda:string>/etc/commerce/scripts/shopify/setBackorderWorkflowStatus.groovy</camunda:string>
+          </camunda:field>
+          <camunda:field name="inputs">
+            <camunda:string>backorderPath</camunda:string>
+          </camunda:field>
+          <camunda:field name="runAs">
+            <camunda:string>commerce-service-user</camunda:string>
+          </camunda:field>
+        </camunda:executionListener>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_record_end</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- Sequence flows -->
+    <bpmn:sequenceFlow id="Flow_start_release" sourceRef="StartEvent_start" targetRef="UserTask_releaseBackorder"/>
+    <bpmn:sequenceFlow id="Flow_release_record" sourceRef="UserTask_releaseBackorder" targetRef="ServiceTask_recordRelease"/>
+    <bpmn:sequenceFlow id="Flow_record_end" sourceRef="ServiceTask_recordRelease" targetRef="EndEvent_backorderRelease"/>
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_backorder_release">
+    <bpmndi:BPMNPlane id="BPMNPlane_backorder_release" bpmnElement="backorder-release-flow">
+      <bpmndi:BPMNShape id="Shape_StartEvent_start" bpmnElement="StartEvent_start">
+        <dc:Bounds x="140" y="202" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_UserTask_releaseBackorder" bpmnElement="UserTask_releaseBackorder">
+        <dc:Bounds x="230" y="180" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_ServiceTask_recordRelease" bpmnElement="ServiceTask_recordRelease">
+        <dc:Bounds x="390" y="180" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_EndEvent_backorderRelease" bpmnElement="EndEvent_backorderRelease">
+        <dc:Bounds x="552" y="202" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_Flow_start_release" bpmnElement="Flow_start_release">
+        <di:waypoint x="176" y="220"/>
+        <di:waypoint x="230" y="220"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_release_record" bpmnElement="Flow_release_record">
+        <di:waypoint x="330" y="220"/>
+        <di:waypoint x="390" y="220"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_record_end" bpmnElement="Flow_record_end">
+        <di:waypoint x="490" y="220"/>
+        <di:waypoint x="552" y="220"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

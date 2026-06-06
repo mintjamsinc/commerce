@@ -47,7 +47,7 @@
             <camunda:string>productPath</camunda:string>
           </camunda:field>
           <camunda:field name="runAs">
-            <camunda:string>shopify-service-user</camunda:string>
+            <camunda:string>commerce-service-user</camunda:string>
           </camunda:field>
         </camunda:taskListener>
         <camunda:taskListener event="create" class="org.mintjams.script.bpm.CmsDelegate">
@@ -109,7 +109,7 @@
             <camunda:string>productPath</camunda:string>
           </camunda:field>
           <camunda:field name="runAs">
-            <camunda:string>shopify-service-user</camunda:string>
+            <camunda:string>commerce-service-user</camunda:string>
           </camunda:field>
         </camunda:taskListener>
         <camunda:taskListener event="create" class="org.mintjams.script.bpm.CmsDelegate">
@@ -133,7 +133,7 @@
             <camunda:string>productPath</camunda:string>
           </camunda:field>
           <camunda:field name="runAs">
-            <camunda:string>shopify-service-user</camunda:string>
+            <camunda:string>commerce-service-user</camunda:string>
           </camunda:field>
         </camunda:executionListener>
       </bpmn:extensionElements>

@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reorder Approval</title>
+<style>
+:root {
+	color-scheme: light dark;
+	--bg:            light-dark(#f7f8fa, #0f172a);
+	--surface:       light-dark(#ffffff, #1e293b);
+	--surface-soft:  light-dark(#f3f4f6, #233044);
+	--border:        light-dark(#e5e7eb, #334155);
+	--border-strong: light-dark(#d1d5db, #475569);
+	--text:          light-dark(#1f2937, #f1f5f9);
+	--text-soft:     light-dark(#4b5563, #cbd5e1);
+	--text-muted:    light-dark(#6b7280, #94a3b8);
+	--primary:       light-dark(#2563eb, #3b82f6);
+	--primary-hover: light-dark(#1d4ed8, #60a5fa);
+	--primary-fg:    #ffffff;
+	--success:       light-dark(#059669, #34d399);
+	--success-soft:  light-dark(rgba(5, 150, 105, 0.1), rgba(52, 211, 153, 0.12));
+	--danger:        light-dark(#dc2626, #f87171);
+	--danger-soft:   light-dark(rgba(220, 38, 38, 0.1), rgba(248, 113, 113, 0.12));
+	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+	--radius: 0.5rem;
+	--radius-sm: 0.375rem;
+}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"]  { color-scheme: dark; }
+
+* { scrollbar-width: thin; color: inherit; font-family: inherit; font-size: inherit; box-sizing: border-box; }
+html { font-family: ui-sans-serif, -apple-system, system-ui, Segoe UI, Helvetica, Arial, sans-serif; font-size: 14px; position: absolute; inset: 0; }
+body { margin: 0; height: 100%; background: var(--bg); color: var(--text); line-height: 1.5; }
+#app { min-height: 100%; display: flex; flex-direction: column; }
+[v-cloak] { display: none !important; }
+
+.state-pane { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.75rem; color: var(--text-muted); padding: 2rem; text-align: center; }
+.state-pane .state-icon { width: 2.5rem; height: 2.5rem; opacity: 0.45; }
+.state-pane.error-pane { color: var(--danger); }
+.spinner { width: 1.5rem; height: 1.5rem; border: 2px solid var(--border-strong); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.wrap { flex: 1; padding: 1.5rem; max-width: 48rem; width: 100%; margin: 0 auto; }
+.header { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem; box-shadow: var(--shadow-sm); }
+.header h1 { margin: 0; font-size: 1.4rem; font-weight: 700; line-height: 1.25; word-wrap: break-word; }
+.header .tagline { display: flex; flex-wrap: wrap; gap: 0.5rem; color: var(--text-muted); font-size: 13px; margin-top: 0.5rem; }
+.header .tagline > span:not(:last-child)::after { content: "·"; margin-left: 0.5rem; }
+
+.card { margin-top: 1.5rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); overflow: hidden; }
+.section-title { margin: 0; padding: 1rem 1.25rem; font-size: 1rem; font-weight: 700; border-bottom: 1px solid var(--border); }
+.card-body { padding: 1rem 1.25rem 1.25rem; }
+
+.info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem 1.5rem; }
+.info-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin-bottom: 0.25rem; }
+.info-value { font-size: 1.1rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.info-value.muted { color: var(--text-muted); font-weight: 400; font-size: 13px; }
+
+.field { display: flex; flex-direction: column; gap: 0.375rem; margin-top: 1rem; }
+.field label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; }
+.field input, .field textarea { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font-size: 13px; box-sizing: border-box; }
+.field textarea { min-height: 5rem; resize: vertical; line-height: 1.5; }
+.field input:focus-visible, .field textarea:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-color: var(--primary); }
+.field-hint { margin: 0.25rem 0 0; font-size: 12px; color: var(--text-muted); }
+.field-value { font-size: 13px; }
+.field-value.empty { color: var(--text-muted); font-style: italic; }
+
+.actions { position: sticky; bottom: 0; z-index: 5; display: flex; align-items: center; justify-content: flex-end; gap: 0.75rem; padding: 0.875rem 1.5rem; background: var(--surface); border-top: 1px solid var(--border); box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.04); }
+.btn { appearance: none; display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; line-height: 1.25; cursor: pointer; border: 1px solid transparent; background: transparent; color: var(--text); user-select: none; }
+.btn:disabled { cursor: not-allowed; opacity: 0.55; }
+.btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.btn svg { width: 1rem; height: 1rem; flex-shrink: 0; }
+.btn-primary { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
+.btn-primary:not(:disabled):hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+.btn-secondary { background: var(--surface); color: var(--text); border-color: var(--border-strong); }
+.btn-danger { background: transparent; color: var(--danger); border-color: var(--border-strong); }
+.btn-danger:not(:disabled):hover { background: var(--danger-soft); }
+
+.action-notice { display: inline-flex; align-items: center; gap: 0.5rem; color: var(--text-soft); font-size: 13px; padding: 0.375rem 0.75rem; border-radius: var(--radius-sm); }
+.action-notice.completed { color: var(--success); font-weight: 600; background: var(--success-soft); }
+.toast { position: fixed; bottom: 5rem; left: 50%; transform: translateX(-50%); background: var(--danger); color: #fff; padding: 0.625rem 1rem; border-radius: var(--radius-sm); box-shadow: 0 4px 12px rgba(0,0,0,0.2); font-size: 13px; z-index: 100; max-width: 80%; text-align: center; }
+</style>
+</head>
+<body>
+<main id="app" v-cloak @mounted="onMounted" @unmount="onUnmount">
+
+	<div v-if="view === 'loading'" class="state-pane">
+		<div class="spinner"></div>
+		<p>Loading proposal…</p>
+	</div>
+
+	<div v-else-if="view === 'error'" class="state-pane error-pane">
+		<svg class="state-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1.5a.75.75 0 0 1 .67.418l6.5 13a.75.75 0 0 1-.67 1.082h-13a.75.75 0 0 1-.67-1.082l6.5-13A.75.75 0 0 1 8 1.5zm0 4.75a.75.75 0 0 0-.75.75v3a.75.75 0 0 0 1.5 0v-3A.75.75 0 0 0 8 6.25zm0 6.25a.875.875 0 1 0 0-1.75.875.875 0 0 0 0 1.75z"/></svg>
+		<p>{{ errorMessage }}</p>
+	</div>
+
+	<div v-else-if="view === 'standalone'" class="state-pane">
+		<p>This form must be opened from the Tasks application.</p>
+	</div>
+
+	<template v-else>
+		<article class="wrap">
+			<header class="header">
+				<h1>{{ productTitle }}</h1>
+				<div class="tagline">
+					<span v-if="variantName">{{ variantName }}</span>
+					<span v-if="record.variantId">Variant {{ record.variantId }}</span>
+				</div>
+			</header>
+
+			<section class="card">
+				<h2 class="section-title">Proposal</h2>
+				<div class="card-body">
+					<div class="info-grid">
+						<div>
+							<div class="info-label">In stock</div>
+							<div class="info-value">{{ fmt(record.currentStock) }}</div>
+						</div>
+						<div>
+							<div class="info-label">Velocity</div>
+							<div class="info-value">{{ record.velocity == null ? '—' : record.velocity + ' /day' }}</div>
+						</div>
+						<div>
+							<div class="info-label">Suggested qty</div>
+							<div class="info-value">{{ fmt(record.suggestedQty) }}</div>
+						</div>
+					</div>
+
+					<!-- Editable order quantity + note (when this user owns the task) -->
+					<div v-if="canEdit">
+						<div class="field">
+							<label for="qty">Order quantity</label>
+							<input id="qty" type="number" min="0" step="1" v-model.number="orderQty" :disabled="actionPending">
+							<p class="field-hint">Adjust before approving. Approving with 0 is not allowed — reject instead.</p>
+						</div>
+						<div class="field">
+							<label for="note">Note (optional)</label>
+							<textarea id="note" v-model="note" :disabled="actionPending" placeholder="Note for the purchase order / supplier…"></textarea>
+						</div>
+					</div>
+
+					<!-- Read-only when not the assignee / already decided -->
+					<div v-else>
+						<div class="field">
+							<div class="info-label">Order quantity</div>
+							<div class="field-value">{{ fmt(record.approvedQty != null ? record.approvedQty : record.suggestedQty) }}</div>
+						</div>
+						<div class="field" v-if="record.note">
+							<div class="info-label">Note</div>
+							<div class="field-value">{{ record.note }}</div>
+						</div>
+					</div>
+				</div>
+			</section>
+		</article>
+
+		<footer class="actions">
+			<span v-if="taskCompleted" class="action-notice completed">
+				<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7 7a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.25 10.69l6.47-6.47a.75.75 0 0 1 1.06 0z"/></svg>
+				<span>This reorder has been processed.</span>
+			</span>
+			<span v-else-if="!taskAssignee" class="action-notice">
+				<span>Claim this task to review and decide on the reorder.</span>
+			</span>
+			<span v-else-if="!isAssignedToMe" class="action-notice">
+				<span>This task is assigned to {{ assigneeDisplay || taskAssignee }}. View only.</span>
+			</span>
+			<template v-else>
+				<button class="btn btn-danger" type="button" :disabled="actionPending" @click="onReject">
+					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.22 4.22a.75.75 0 0 1 1.06 0L8 6.94l2.72-2.72a.75.75 0 1 1 1.06 1.06L9.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L8 9.06l-2.72 2.72a.75.75 0 0 1-1.06-1.06L6.94 8 4.22 5.28a.75.75 0 0 1 0-1.06z"/></svg>
+					<span>Reject</span>
+				</button>
+				<button class="btn btn-primary" type="button" :disabled="actionPending || !(orderQty > 0)" @click="onApprove">
+					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7 7a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.25 10.69l6.47-6.47a.75.75 0 0 1 1.06 0z"/></svg>
+					<span>Approve &amp; order</span>
+				</button>
+			</template>
+		</footer>
+
+		<div v-if="toastMessage" class="toast" role="alert" aria-live="polite">{{ toastMessage }}</div>
+	</template>
+</main>
+
+<script type="module">
+import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ichigo.esm.min.js';
+
+	const pending = new Map();
+	let nextID = 1;
+	function rpcCall(method, params) {
+		return new Promise((resolve, reject) => {
+			const id = String(nextID++);
+			pending.set(id, { resolve, reject });
+			try { window.parent.postMessage({ __tasksRpc: 'call', id, method, params: params || {} }, '*'); }
+			catch (err) { pending.delete(id); reject(err); }
+		});
+	}
+	function fmt(n) { if (n == null || n === '') return '—'; const x = Number(n); return Number.isFinite(x) ? x.toLocaleString() : String(n); }
+
+	const App = {
+		data() {
+			return {
+				view: 'loading', errorMessage: '', toastMessage: '', actionPending: false,
+				currentUserID: '', currentUserDisplay: '', task: null, assigneeDisplay: '',
+				loaded: false, reorderPath: '', record: {},
+				orderQty: 0, note: '',
+				_messageListener: null, _standaloneTimer: null, _toastTimer: null, _assigneeDisplayCache: {},
+			};
+		},
+		computed: {
+			productTitle() { return (this.record && this.record.title) ? String(this.record.title) : 'Reorder proposal'; },
+			variantName() { const t = this.record && this.record.variantTitle; return (t && t !== 'Default Title') ? String(t) : ''; },
+			taskAssignee() { return (this.task && this.task.assignee) || ''; },
+			taskCompleted() { return !!(this.task && this.task.completed); },
+			isAssignedToMe() { return !!this.taskAssignee && this.taskAssignee === this.currentUserID; },
+			canEdit() { return this.isAssignedToMe && !this.taskCompleted; },
+		},
+		methods: {
+			onMounted() {
+				this._messageListener = (ev) => this.onMessage(ev);
+				window.addEventListener('message', this._messageListener);
+				this._standaloneTimer = setTimeout(() => { if (this.view === 'loading') this.view = 'standalone'; }, 3000);
+				try { window.parent.postMessage({ __tasksRpc: 'ready' }, '*'); } catch (_) {}
+			},
+			onUnmount() {
+				if (this._messageListener) window.removeEventListener('message', this._messageListener);
+				if (this._standaloneTimer) clearTimeout(this._standaloneTimer);
+				if (this._toastTimer) clearTimeout(this._toastTimer);
+			},
+			fmt,
+			onMessage(ev) {
+				const data = ev.data;
+				if (!data || typeof data !== 'object') return;
+				if (data.__tasksRpc === 'result') {
+					const p = pending.get(String(data.id));
+					if (!p) return;
+					pending.delete(String(data.id));
+					if (data.ok) p.resolve(data.data); else p.reject(new Error(data.error || 'RPC error'));
+					return;
+				}
+				if (data.__tasksRpc === 'event' && data.type === 'context') {
+					if (this._standaloneTimer) { clearTimeout(this._standaloneTimer); this._standaloneTimer = null; }
+					const payload = data.payload || {};
+					if (payload.theme !== undefined) this.applyTheme(payload.theme);
+					this.handleContext(payload);
+					return;
+				}
+				if (data.__tasksRpc === 'event' && data.type === 'theme-changed') { this.applyTheme(data.theme); }
+			},
+			applyTheme(theme) {
+				const root = document.documentElement;
+				if (theme === 'light' || theme === 'dark') root.dataset.theme = theme; else delete root.dataset.theme;
+			},
+			showToast(message) {
+				this.toastMessage = message || '';
+				if (this._toastTimer) clearTimeout(this._toastTimer);
+				this._toastTimer = setTimeout(() => { this.toastMessage = ''; }, 4000);
+			},
+			showError(message) { this.errorMessage = message || 'An unexpected error occurred.'; this.view = 'error'; },
+			async handleContext(ctx) {
+				if (!ctx || ctx.mode !== 'task' || !ctx.task) { if (!this.loaded) this.showError('This form must be opened from a Task.'); return; }
+				this.task = Object.assign({}, ctx.task);
+				this.currentUserID = (ctx.currentUser && ctx.currentUser.id) || '';
+				this.currentUserDisplay = (ctx.currentUser && ctx.currentUser.displayName) || this.currentUserID;
+				this.refreshAssigneeDisplay();
+				if (this.loaded) return;
+				this.loaded = true;
+				try { await this.loadProposal(); this.view = 'content'; }
+				catch (err) { this.loaded = false; this.showError(err && err.message ? err.message : String(err)); }
+			},
+			async loadProposal() {
+				const taskInfo = await rpcCall('getTaskWithVariables');
+				const variables = (taskInfo && Array.isArray(taskInfo.variables)) ? taskInfo.variables : [];
+				const variableMap = {};
+				for (const v of variables) { if (v && v.name) variableMap[v.name] = v.value; }
+				const reorderPath = String(variableMap.reorderPath || '');
+				if (!reorderPath) throw new Error('Process variable "reorderPath" is not set on this task.');
+
+				const text = await rpcCall('readNodeText', { path: reorderPath });
+				let record;
+				try { record = JSON.parse(text); } catch (err) { throw new Error('Failed to parse reorder record: ' + (err && err.message ? err.message : String(err))); }
+
+				this.reorderPath = reorderPath;
+				this.record = record || {};
+				const q = (this.record.approvedQty != null) ? this.record.approvedQty : this.record.suggestedQty;
+				this.orderQty = Number(q) || 0;
+				this.note = this.record.note || '';
+				document.title = 'Reorder Approval — ' + this.productTitle;
+			},
+			async refreshAssigneeDisplay() {
+				const assignee = this.taskAssignee;
+				if (!assignee || assignee === this.currentUserID) { this.assigneeDisplay = ''; return; }
+				const cached = this._assigneeDisplayCache[assignee];
+				if (cached) { this.assigneeDisplay = cached; return; }
+				try {
+					const user = await rpcCall('getUser', { username: assignee });
+					const display = (user && user.displayName) || assignee;
+					this._assigneeDisplayCache[assignee] = display;
+					if (this.taskAssignee === assignee) this.assigneeDisplay = display;
+				} catch (_) { if (this.taskAssignee === assignee) this.assigneeDisplay = assignee; }
+			},
+			async decide(decision, qty) {
+				if (this.actionPending) return;
+				if (!this.reorderPath) { this.showToast('Cannot decide: reorder path is unknown.'); return; }
+				this.actionPending = true;
+				try {
+					await rpcCall('setNodeProperty', { path: this.reorderPath, name: 'reorder:decision', value: decision });
+					await rpcCall('setNodeProperty', { path: this.reorderPath, name: 'reorder:approved_qty', value: String(qty) });
+					await rpcCall('setNodeProperty', { path: this.reorderPath, name: 'reorder:note', value: (this.note || '').trim() });
+					await rpcCall('completeTask', { variables: [] });
+					this.task = Object.assign({}, this.task, { completed: true });
+				} catch (err) {
+					this.showToast(err && err.message ? err.message : String(err));
+				} finally {
+					this.actionPending = false;
+				}
+			},
+			onApprove() { if (this.orderQty > 0) this.decide('approved', Math.round(this.orderQty)); },
+			onReject() { this.decide('rejected', 0); },
+		},
+	};
+
+VDOM.createApp(App).mount('#app');
+</script>
+</body>
+</html>

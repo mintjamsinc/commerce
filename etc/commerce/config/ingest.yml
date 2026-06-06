@@ -1,0 +1,21 @@
+# Event ingestion (category A: all-topics intake, multi-backend, replay)
+# Deploy to: /etc/commerce/config/ingest.yml
+# Managed by the Commerce app (Webtop > Commerce).
+#
+# Every inbound integration event, from any backend, funnels through the
+# source-agnostic ingest core (direct:commerce-ingest): it is logged to the durable
+# event log with its raw payload, then either forwarded to a dedicated workflow
+# (orders / products / refunds / inventory / locations) or normalized generically
+# (customers / fulfillments / carts / checkouts / any other topic). See
+# docs/ingestion.md.
+
+# Master switch for the replay/housekeeping batch (ingestion of live events is
+# always on; this only governs automatic replay + pruning).
+enabled: true
+
+# Automatic replay of failed events.
+replay:
+  enabled: true
+  maxAttempts: 5        # stop retrying an event after this many ingest passes
+  backoffMinutes: 15    # wait at least this long since the last attempt
+  retentionDays: 30     # prune processed event-log entries older than this
