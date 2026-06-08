@@ -108,7 +108,7 @@ backend adapter (verifies signature) ──► direct:commerce-ingest
 ```
 
 - **Multi-backend** — the core knows nothing Shopify-specific beyond a small
-  topic→route table. A new backend (楽天 / BASE / 自社EC / ERP) is just an adapter
+  topic→route table. A new backend (Rakuten / BASE / in-house storefront / ERP) is just an adapter
   that posts the same envelope (`event_source` / `event_topic` / `event_id` +
   payload) to the core — downstream is unchanged.
 - **Replay** — because the raw payload is kept, failed events are retried
