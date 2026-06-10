@@ -13,15 +13,20 @@
 //
 // Sets process variables (declared via the service task's `outputs` field):
 //   - requiresReview: true if at least one enabled rule matched
-//   - reviewReasons : JSON array string of human-readable reasons, e.g.
-//                     ["High-value order: 120,000 JPY >= 100,000",
-//                      "Billing/shipping country mismatch: JP -> US"]
+//   - reviewReasons : JSON array string of structured reason descriptors, e.g.
+//                     [{"code":"highValue",
+//                       "params":{"total":120000,"currency":"JPY","threshold":100000}},
+//                      {"code":"addressMismatch","params":{"billing":"JP","shipping":"US"}}]
+//                     Each consumer (review form / notification) renders these in
+//                     its own locale context; we deliberately do NOT pre-render
+//                     text here. See commerce.ReviewReasons.
 //
 // Screening is fail-open: a missing/unparseable config or order is logged and
 // treated as "no review required" rather than blocking or flooding operators.
 
-// Shared numeric/money helpers (see /content/WEB-INF/classes/commerce/Money.groovy).
+// Shared commerce helpers (see /content/WEB-INF/classes/commerce/).
 import commerce.Money
+import commerce.ReviewReasons
 
 if (!orderPath) {
     throw new IllegalArgumentException("Required variable 'orderPath' is missing")
@@ -79,7 +84,7 @@ if (ruleEnabled(highValue)) {
     def currency = order.currency?.toString()?.trim()
     def threshold = resolveThreshold(highValue, currency)
     if (total != null && threshold != null && total >= threshold) {
-        reasons << "High-value order: ${Money.format(total)} ${currency ?: ''}".trim() + " >= ${Money.format(threshold)}"
+        reasons << ReviewReasons.highValue(total, currency, threshold)
     }
 }
 
@@ -89,7 +94,7 @@ if (ruleEnabled(flaggedFin)) {
     def statuses = (flaggedFin.statuses ?: []).collect { it?.toString()?.toLowerCase() }
     def fin = order.financial_status?.toString()?.toLowerCase()
     if (fin != null && statuses.contains(fin)) {
-        reasons << "Financial status needs review: ${fin}"
+        reasons << ReviewReasons.flaggedFinancialStatus(fin)
     }
 }
 
@@ -102,7 +107,7 @@ if (ruleEnabled(largeQty)) {
         for (li in lineItems) {
             def qty = Money.toNumber(li?.quantity)
             if (qty != null && qty >= max) {
-                reasons << "Large quantity: '${li?.title ?: "item"}' x${qty.intValue()} (>= ${max.intValue()})"
+                reasons << ReviewReasons.largeQuantity(li?.title?.toString(), qty, max)
                 break
             }
         }
@@ -115,7 +120,7 @@ if (ruleEnabled(newCustomer)) {
     def maxOrders = Money.toNumber(newCustomer.maxOrdersCount)
     def ordersCount = Money.toNumber(order.customer?.orders_count)
     if (maxOrders != null && ordersCount != null && ordersCount <= maxOrders) {
-        reasons << "New customer: orders_count=${ordersCount.intValue()} (<= ${maxOrders.intValue()})"
+        reasons << ReviewReasons.newCustomer(ordersCount, maxOrders)
     }
 }
 
@@ -125,7 +130,7 @@ if (ruleEnabled(addressMismatch)) {
     def billCountry = countryCode(order.billing_address)
     def shipCountry = countryCode(order.shipping_address)
     if (billCountry && shipCountry && billCountry != shipCountry) {
-        reasons << "Billing/shipping country mismatch: ${billCountry} -> ${shipCountry}"
+        reasons << ReviewReasons.addressMismatch(billCountry, shipCountry)
     }
 }
 

@@ -14,6 +14,13 @@
 // re-dispatches many events. Self-contained (ichigo.js runtime only).
 
 import { VDOM } from '@mintjamsinc/ichigojs';
+import {
+	createLocalizationSnapshot,
+	refreshLocalization,
+	handleLocalizationMessage,
+	translate,
+	formatDate,
+} from '../../composables/use-localization.js';
 
 type AnyInstance = any;
 
@@ -26,6 +33,10 @@ const App = {
 	data() {
 		return {
 			instance: null as AnyInstance,
+			// Reactive localization snapshot — drives every t() / fmtTime() binding
+			// so the app repaints when the user switches language or a bundle is
+			// hot-reloaded. See composables/use-localization.ts.
+			localization: createLocalizationSnapshot(),
 			section: 'sync' as 'sync' | 'reconcile' | 'events',
 			busy: false,
 			status: '',
@@ -46,7 +57,7 @@ const App = {
 			evFilter: { status: 'error', source: '', topic: '', sinceDays: '' },
 			events: { summary: { total: 0, received: 0, processed: 0, error: 0 }, rows: [] as any[] },
 
-			confirmDialog: { visible: false, title: '', message: '', ok: 'Confirm', resolve: null as null | ((v: boolean) => void) },
+			confirmDialog: { visible: false, title: '', message: '', ok: '', resolve: null as null | ((v: boolean) => void) },
 
 			_base: '' as string,
 			_messageListener: null as any,
@@ -71,10 +82,28 @@ const App = {
 	},
 
 	methods: {
+		// ---- i18n / locale-aware formatting ------------------------------------
+		// Reactive i18n lookup: reading the localization snapshot inside
+		// translate() subscribes every {{ t(...) }} binding, so the UI repaints
+		// the instant the user switches language or a bundle hot-reloads.
+		t(messageId: string, params?: Record<string, any>, fallback?: string): string {
+			return translate(this.localization, this.instance, messageId, params, fallback);
+		},
+		// Locale- and timezone-aware datetime formatting.
+		fmtTime(v: any): string {
+			if (!v) return '—';
+			const d = new Date(v);
+			if (isNaN(d.getTime())) return String(v);
+			return formatDate(this.localization, d, { format: 'datetime' });
+		},
+
 		onMounted() {
 			const vm = this;
 			vm._messageListener = (event: MessageEvent) => {
 				const data: any = event.data || {};
+				// Fold locale / time-zone / currency changes and i18n bundle
+				// hot-reloads into the reactive snapshot so the UI re-localizes live.
+				if (handleLocalizationMessage(data.type, vm.localization, vm.instance)) return;
 				if (data.type === 'theme-changed' && data.theme) document.documentElement.dataset.theme = data.theme;
 				// Drill-down re-target from another app (e.g. the dashboard) when this
 				// singleton console is already open: route to the requested view.
@@ -85,7 +114,12 @@ const App = {
 			window.appLaunch = async (instance: AnyInstance, options?: any) => {
 				vm.instance = vm.$markRaw(instance);
 				try { document.documentElement.dataset.theme = instance.api.theme.currentTheme || 'light'; } catch (_) {}
-				try { instance.windowTitle = 'Commerce Operations'; } catch (_) {}
+
+				// Snapshot the effective localization preference so the first paint
+				// is already in the user's language / region.
+				refreshLocalization(vm.localization, vm.instance);
+
+				try { instance.windowTitle = vm.t('app.commerce-ops.title', undefined, 'Commerce Operations'); } catch (_) {}
 				// Persist the active section so a saved session reopens the same tab.
 				instance.appState = () => ({ section: vm.section });
 				await vm.resolveBase();
@@ -194,7 +228,11 @@ const App = {
 		async executeSync() {
 			if (!this.canExecute) return;
 			if (!this.form.dryRun) {
-				const ok = await this.confirm('Push to Shopify', `Execute "${this.form.action}" against Shopify now? This mutates live data.`, 'Execute');
+				const ok = await this.confirm(
+					this.t('app.commerce-ops.confirm.pushTitle', undefined, 'Push to Shopify'),
+					this.t('app.commerce-ops.confirm.pushMsg', { action: this.form.action }, `Execute "${this.form.action}" against Shopify now? This mutates live data.`),
+					this.t('app.commerce-ops.confirm.pushOk', undefined, 'Execute'),
+				);
 				if (!ok) return;
 			}
 			this.busy = true; this.syncResult = null;
@@ -204,14 +242,20 @@ const App = {
 				const payload = json.plan ?? json.result ?? json;
 				this.syncResult = {
 					ok,
-					title: ok ? (json.dryRun ? 'Dry run — validated' : 'Executed') : (json.error || `Failed (${status})`),
+					title: ok
+						? (json.dryRun
+							? this.t('app.commerce-ops.sync.result.dryRun', undefined, 'Dry run — validated')
+							: this.t('app.commerce-ops.sync.result.executed', undefined, 'Executed'))
+						: (json.error || this.t('app.commerce-ops.sync.result.failed', { status }, `Failed (${status})`)),
 					body: JSON.stringify(payload, null, 2),
 				};
-				this.setStatus(ok ? 'ok' : 'err', ok ? 'Done' : 'Failed');
+				this.setStatus(ok ? 'ok' : 'err', ok
+					? this.t('app.commerce-ops.statusbar.done', undefined, 'Done')
+					: this.t('app.commerce-ops.statusbar.failed', undefined, 'Failed'));
 				if (ok && !json.dryRun) this.loadOperations();
 			} catch (e: any) {
-				this.syncResult = { ok: false, title: e?.message || 'Request failed', body: '' };
-				this.setStatus('err', 'Failed');
+				this.syncResult = { ok: false, title: e?.message || this.t('app.commerce-ops.sync.result.failed', { status: '?' }, 'Request failed'), body: '' };
+				this.setStatus('err', this.t('app.commerce-ops.statusbar.failed', undefined, 'Failed'));
 			} finally { this.busy = false; }
 		},
 
@@ -233,17 +277,21 @@ const App = {
 			} catch (_) { /* keep */ }
 		},
 		async runReconcile() {
-			const ok = await this.confirm('Run reconciliation', 'Run a reconciliation pass now? It detects and reports drift (healing stays opt-in per field).', 'Run');
+			const ok = await this.confirm(
+				this.t('app.commerce-ops.reconcile.runTitle', undefined, 'Run reconciliation'),
+				this.t('app.commerce-ops.reconcile.runMsg', undefined, 'Run a reconciliation pass now? It detects and reports drift (healing stays opt-in per field).'),
+				this.t('app.commerce-ops.reconcile.runOk', undefined, 'Run'),
+			);
 			if (!ok) return;
 			this.busy = true;
 			try {
 				const { status } = await this.postJson(RECONCILE_SCRIPT, {});
 				if (status === 202 || status === 200) {
-					this.showToast('Reconciliation started. Refreshing shortly…', false);
+					this.showToast(this.t('app.commerce-ops.reconcile.started', undefined, 'Reconciliation started. Refreshing shortly…'), false);
 					setTimeout(() => this.loadReconcile(), 4000);
 					setTimeout(() => this.loadReconcile(), 12000);
-				} else { this.showToast(`Could not start (${status}).`, true); }
-			} catch (e: any) { this.showToast(e?.message || 'Could not start.', true); }
+				} else { this.showToast(this.t('app.commerce-ops.reconcile.couldNotStart', { status }, `Could not start (${status}).`), true); }
+			} catch (e: any) { this.showToast(e?.message || this.t('app.commerce-ops.reconcile.couldNotStart', { status: '?' }, 'Could not start.'), true); }
 			finally { this.busy = false; }
 		},
 		healClass(d: any): string {
@@ -271,22 +319,26 @@ const App = {
 					summary: { total: Number(j.summary?.total) || 0, received: Number(by.received) || 0, processed: Number(by.processed) || 0, error: Number(by.error) || 0 },
 					rows: this.$markRaw(Array.isArray(j.events) ? j.events : []),
 				};
-			} catch (e: any) { this.showToast(e?.message || 'Could not load events.', true); }
+			} catch (e: any) { this.showToast(e?.message || this.t('app.commerce-ops.events.loadFailed', undefined, 'Could not load events.'), true); }
 			finally { this.busy = false; }
 		},
 		async replayOne(e: any) {
 			this.busy = true;
 			try {
 				const { json } = await this.postJson(EVENTS_SCRIPT, { eventId: e.event_id, source: e.source });
-				this.showToast(`Replayed ${json.replayed || 0} event(s).`, false);
+				this.showToast(this.t('app.commerce-ops.events.replayed', { count: json.replayed || 0 }, `Replayed ${json.replayed || 0} event(s).`), false);
 				setTimeout(() => this.loadEvents(), 1500);
-			} catch (err: any) { this.showToast(err?.message || 'Replay failed.', true); }
+			} catch (err: any) { this.showToast(err?.message || this.t('app.commerce-ops.events.replayFailed', undefined, 'Replay failed.'), true); }
 			finally { this.busy = false; }
 		},
 		async replayMatching() {
 			const f = this.evFilter;
 			const desc = [f.status ? `status=${f.status}` : 'all', f.source && `source=${f.source}`, f.topic && `topic=${f.topic}`, String(f.sinceDays).trim() && `since=${f.sinceDays}d`].filter(Boolean).join(', ');
-			const ok = await this.confirm('Replay matching', `Re-dispatch every event matching: ${desc}. This can replay many events.`, 'Replay');
+			const ok = await this.confirm(
+				this.t('app.commerce-ops.events.replayMatchingTitle', undefined, 'Replay matching'),
+				this.t('app.commerce-ops.events.replayMatchingMsg', { desc }, `Re-dispatch every event matching: ${desc}. This can replay many events.`),
+				this.t('app.commerce-ops.events.replayOk', undefined, 'Replay'),
+			);
 			if (!ok) return;
 			this.busy = true;
 			try {
@@ -296,9 +348,9 @@ const App = {
 				if (f.topic) body.topic = f.topic;
 				if (String(f.sinceDays).trim()) body.sinceDays = Number(f.sinceDays);
 				const { json } = await this.postJson(EVENTS_SCRIPT, body);
-				this.showToast(`Replayed ${json.replayed || 0} of ${json.matched || 0} matched.`, false);
+				this.showToast(this.t('app.commerce-ops.events.replayedMatched', { replayed: json.replayed || 0, matched: json.matched || 0 }, `Replayed ${json.replayed || 0} of ${json.matched || 0} matched.`), false);
 				setTimeout(() => this.loadEvents(), 1800);
-			} catch (e: any) { this.showToast(e?.message || 'Replay failed.', true); }
+			} catch (e: any) { this.showToast(e?.message || this.t('app.commerce-ops.events.replayFailed', undefined, 'Replay failed.'), true); }
 			finally { this.busy = false; }
 		},
 
@@ -315,7 +367,8 @@ const App = {
 		},
 
 		// ---- Format / status -------------------------------------------------
-		fmtTime(v: any): string { if (!v) return '—'; const d = new Date(v); return isNaN(d.getTime()) ? String(v) : d.toLocaleString(); },
+		// NOTE: fmtTime is defined above in the i18n section; this stub is removed
+		// to avoid shadowing the locale-aware implementation.
 		setStatus(kind: '' | 'ok' | 'err', msg: string) { this.statusKind = kind; this.status = msg; },
 		showToast(msg: string, isError: boolean) {
 			this.toast = msg; this.toastError = !!isError;

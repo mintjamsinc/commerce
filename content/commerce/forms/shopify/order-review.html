@@ -529,7 +529,7 @@ body {
 	<!-- Loading state -->
 	<div v-if="view === 'loading'" class="state-pane">
 		<div class="spinner"></div>
-		<p>Loading order…</p>
+		<p>{{ t('form.commerce.shopify.orderReview.loading', undefined, 'Loading order…') }}</p>
 	</div>
 
 	<!-- Error state -->
@@ -541,7 +541,7 @@ body {
 	<!-- Standalone notice (form opened outside Tasks app) -->
 	<div v-else-if="view === 'standalone'" class="state-pane">
 		<svg class="state-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM7.25 5a.75.75 0 0 1 1.5 0v3.5a.75.75 0 0 1-1.5 0V5zM8 11.25a.875.875 0 1 1 0-1.75.875.875 0 0 1 0 1.75z"/></svg>
-		<p>This form must be opened from the Tasks application.</p>
+		<p>{{ t('form.commerce.shopify.orderReview.standaloneNotice', undefined, 'This form must be opened from the Tasks application.') }}</p>
 	</div>
 
 	<!-- Main content -->
@@ -555,7 +555,7 @@ body {
 				<div class="order-tagline">
 					<span v-if="financialStatus" class="status-badge" :class="financialStatusClass">{{ financialStatus }}</span>
 					<span v-if="createdAtText">{{ createdAtText }}</span>
-					<span v-if="itemCount">{{ itemCount }} {{ itemCount === 1 ? 'item' : 'items' }}</span>
+					<span v-if="itemCount">{{ itemCountText }}</span>
 				</div>
 			</header>
 
@@ -563,29 +563,29 @@ body {
 			<section v-if="reasons.length > 0" class="reasons">
 				<div class="reasons-title">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1.5a.75.75 0 0 1 .67.418l6.5 13a.75.75 0 0 1-.67 1.082h-13a.75.75 0 0 1-.67-1.082l6.5-13A.75.75 0 0 1 8 1.5zm0 4.75a.75.75 0 0 0-.75.75v3a.75.75 0 0 0 1.5 0v-3A.75.75 0 0 0 8 6.25zm0 6.25a.875.875 0 1 0 0-1.75.875.875 0 0 0 0 1.75z"/></svg>
-					<span>Flagged for review</span>
+					<span>{{ t('form.commerce.shopify.orderReview.flaggedForReview', undefined, 'Flagged for review') }}</span>
 				</div>
 				<ul>
-					<li v-for="(reason, i) in reasons" :key="i">{{ reason }}</li>
+					<li v-for="(reason, i) in reasons" :key="i">{{ reasonText(reason) }}</li>
 				</ul>
 			</section>
 
 			<!-- Customer & addresses -->
 			<section class="card">
-				<h2 class="section-title">Customer</h2>
+				<h2 class="section-title">{{ t('form.commerce.shopify.orderReview.customer', undefined, 'Customer') }}</h2>
 				<div class="card-body">
 					<div class="info-grid">
 						<div class="info-block">
-							<div class="info-label">Contact</div>
-							<div class="info-value" :class="{ empty: !customerLine }">{{ customerLine || 'Unknown' }}</div>
+							<div class="info-label">{{ t('form.commerce.shopify.orderReview.contact', undefined, 'Contact') }}</div>
+							<div class="info-value" :class="{ empty: !customerLine }">{{ customerLine || t('form.commerce.shopify.common.unknown', undefined, 'Unknown') }}</div>
 						</div>
 						<div class="info-block">
-							<div class="info-label">Shipping address</div>
-							<div class="info-value" :class="{ empty: !shippingAddressText }">{{ shippingAddressText || 'Not provided' }}</div>
+							<div class="info-label">{{ t('form.commerce.shopify.orderReview.shippingAddress', undefined, 'Shipping address') }}</div>
+							<div class="info-value" :class="{ empty: !shippingAddressText }">{{ shippingAddressText || t('form.commerce.shopify.common.notProvided', undefined, 'Not provided') }}</div>
 						</div>
 						<div class="info-block">
-							<div class="info-label">Billing address</div>
-							<div class="info-value" :class="{ empty: !billingAddressText }">{{ billingAddressText || 'Not provided' }}</div>
+							<div class="info-label">{{ t('form.commerce.shopify.orderReview.billingAddress', undefined, 'Billing address') }}</div>
+							<div class="info-value" :class="{ empty: !billingAddressText }">{{ billingAddressText || t('form.commerce.shopify.common.notProvided', undefined, 'Not provided') }}</div>
 						</div>
 					</div>
 				</div>
@@ -593,20 +593,20 @@ body {
 
 			<!-- Line items -->
 			<section class="card">
-				<h2 class="section-title">Items</h2>
+				<h2 class="section-title">{{ t('form.commerce.shopify.orderReview.items', undefined, 'Items') }}</h2>
 				<div class="table-wrap">
 					<table class="items-table">
 						<thead>
 							<tr>
-								<th>Item</th>
-								<th>SKU</th>
-								<th class="align-right">Qty</th>
-								<th class="align-right">Price</th>
+								<th>{{ t('form.commerce.shopify.orderReview.colItem', undefined, 'Item') }}</th>
+								<th>{{ t('form.commerce.shopify.orderReview.colSku', undefined, 'SKU') }}</th>
+								<th class="align-right">{{ t('form.commerce.shopify.orderReview.colQty', undefined, 'Qty') }}</th>
+								<th class="align-right">{{ t('form.commerce.shopify.orderReview.colPrice', undefined, 'Price') }}</th>
 							</tr>
 						</thead>
 						<tbody>
 							<tr v-if="itemRows.length === 0">
-								<td class="empty-cell" colspan="4">No line items.</td>
+								<td class="empty-cell" colspan="4">{{ t('form.commerce.shopify.orderReview.noLineItems', undefined, 'No line items.') }}</td>
 							</tr>
 							<tr v-for="(row, i) in itemRows" :key="row.id || i">
 								<td>
@@ -623,21 +623,21 @@ body {
 			</section>
 
 			<section class="card">
-				<h2 class="section-title">Memo</h2>
+				<h2 class="section-title">{{ t('form.commerce.shopify.orderReview.memo', undefined, 'Memo') }}</h2>
 				<div class="memo-body">
 					<div v-if="memo" class="memo-card">
 						<div class="memo-header">
-							<span class="memo-author">{{ memo.name || memo.id || 'Unknown' }}</span>
+							<span class="memo-author">{{ memo.name || memo.id || t('form.commerce.shopify.common.unknown', undefined, 'Unknown') }}</span>
 							<span class="memo-time" v-if="memoTimestampText">{{ memoTimestampText }}</span>
 						</div>
 						<div class="memo-content">{{ memo.content }}</div>
 					</div>
-					<div v-else class="memo-empty">No memo yet.</div>
+					<div v-else class="memo-empty">{{ t('form.commerce.shopify.orderReview.noMemo', undefined, 'No memo yet.') }}</div>
 
 					<div v-if="canEditMemo && memoMode === 'view'" class="memo-edit-trigger">
 						<button class="btn btn-secondary" type="button" @click="enterMemoEdit">
 							<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25a1.75 1.75 0 0 1 .445-.755l8.61-8.612zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086zM11.189 6.25 9.75 4.81l-6.286 6.287a.25.25 0 0 0-.064.108l-.558 1.953 1.953-.558a.25.25 0 0 0 .108-.064l6.286-6.286z"/></svg>
-							<span>{{ memo ? 'Edit memo' : 'Add memo' }}</span>
+							<span>{{ memo ? t('form.commerce.shopify.orderReview.editMemo', undefined, 'Edit memo') : t('form.commerce.shopify.orderReview.addMemo', undefined, 'Add memo') }}</span>
 						</button>
 					</div>
 
@@ -645,16 +645,16 @@ body {
 						<textarea v-model="memoDraft"
 							class="memo-textarea"
 							rows="4"
-							placeholder="Write a memo for the next reviewer..."
+							:placeholder="t('form.commerce.shopify.orderReview.memoPlaceholder', undefined, 'Write a memo for the next reviewer...')"
 							:disabled="memoSaving"></textarea>
 						<div class="memo-editor-actions">
 							<button class="btn btn-secondary" type="button"
 								:disabled="memoSaving"
-								@click="cancelMemoEdit">Cancel</button>
+								@click="cancelMemoEdit">{{ t('form.commerce.shopify.common.cancel', undefined, 'Cancel') }}</button>
 							<button class="btn btn-primary" type="button"
 								:disabled="memoSaving || !memoDraftHasContent"
 								@click="saveMemo">
-								<span>Update</span>
+								<span>{{ t('form.commerce.shopify.common.update', undefined, 'Update') }}</span>
 							</button>
 						</div>
 					</div>
@@ -670,27 +670,27 @@ body {
 				<button v-if="isAssignedToMe || taskCompleted"
 					class="btn btn-secondary" type="button"
 					:disabled="!shopifyURL"
-					:title="shopifyURL || 'Shop domain or order ID is unavailable.'"
+					:title="shopifyURL || t('form.commerce.shopify.orderReview.shopifyUnavailable', undefined, 'Shop domain or order ID is unavailable.')"
 					@click="openShopify">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M9.5 2a.5.5 0 0 0 0 1h2.793L7.146 8.146a.5.5 0 1 0 .708.708L13 3.707V6.5a.5.5 0 0 0 1 0V2.5a.5.5 0 0 0-.5-.5h-4z"/><path d="M3.5 4A1.5 1.5 0 0 0 2 5.5v7A1.5 1.5 0 0 0 3.5 14h7a1.5 1.5 0 0 0 1.5-1.5v-3a.5.5 0 0 0-1 0v3a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1-.5-.5v-7a.5.5 0 0 1 .5-.5h3a.5.5 0 0 0 0-1h-3z"/></svg>
-					View on Shopify
+					{{ t('form.commerce.shopify.orderReview.viewOnShopify', undefined, 'View on Shopify') }}
 				</button>
 			</div>
 			<div class="action-area">
 				<!-- Already completed -->
 				<span v-if="taskCompleted" class="action-notice completed">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7 7a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.25 10.69l6.47-6.47a.75.75 0 0 1 1.06 0z"/></svg>
-					<span>This review has been completed.</span>
+					<span>{{ t('form.commerce.shopify.orderReview.completedNotice', undefined, 'This review has been completed.') }}</span>
 				</span>
 				<!-- Unassigned: prompt the user to use the host Tasks app's Claim button -->
 				<span v-else-if="!taskAssignee" class="action-notice">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 14.5a5 5 0 0 1 10 0 .5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5z"/></svg>
-					<span>Claim this task to review the order and approve it.</span>
+					<span>{{ t('form.commerce.shopify.orderReview.claimPrompt', undefined, 'Claim this task to review the order and approve it.') }}</span>
 				</span>
 				<!-- Assigned to someone else -->
 				<span v-else-if="!isAssignedToMe" class="action-notice">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 14.5a5 5 0 0 1 10 0 .5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5z"/></svg>
-					<span>This task is currently assigned to {{ assigneeDisplay || taskAssignee }}. View only.</span>
+					<span>{{ assignedNoticeText }}</span>
 				</span>
 				<!-- Assigned to me: Approve order -->
 				<button v-else
@@ -698,7 +698,7 @@ body {
 					:disabled="actionPending"
 					@click="onComplete">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7 7a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.25 10.69l6.47-6.47a.75.75 0 0 1 1.06 0z"/></svg>
-					<span>Approve order</span>
+					<span>{{ t('form.commerce.shopify.orderReview.approve', undefined, 'Approve order') }}</span>
 				</button>
 			</div>
 		</footer>
@@ -708,88 +708,29 @@ body {
 </main>
 
 <!-- ichigo.js (ESM, latest) -->
+<script src="./forms-sdk.js?v=2"></script>
 <script type="module">
-import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ichigo.esm.min.js';
+import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.71/dist/ichigo.esm.min.js';
 
-	// ============================================================
-	// JSON-RPC bridge with the Tasks parent app
-	// ============================================================
-	// `pending` and `nextID` are module-scoped because the RPC bridge survives
-	// any number of context updates from the parent.
-	const pending = new Map();
-	let nextID = 1;
+	// Namespace this form pulls from the host i18n bundle. Keys live in
+	// /etc/i18n/commerce-forms.*.json.
+	const I18N_PREFIX = 'form.commerce.shopify.';
 
-	function rpcCall(method, params) {
-		return new Promise((resolve, reject) => {
-			const id = String(nextID++);
-			pending.set(id, { resolve, reject });
-			try {
-				window.parent.postMessage({
-					__tasksRpc: 'call',
-					id: id,
-					method: method,
-					params: params || {},
-				}, '*');
-			} catch (err) {
-				pending.delete(id);
-				reject(err);
-			}
-		});
-	}
+	// The Tasks Form SDK hides the postMessage RPC bridge, owns the ICU engine
+	// (intl-messageformat is loaded inside it), and routes host events. Created
+	// at module scope — it holds transport, not reactive UI state.
+	const sdk = window.createTasksForm();
 
 	// ============================================================
 	// Pure helpers
 	// ============================================================
-	function getProp(node, name) {
-		if (!node || !Array.isArray(node.properties)) return undefined;
-		const p = node.properties.find(x => x && x.name === name);
-		if (!p) return undefined;
-		const v = p.propertyValue;
-		if (!v) return undefined;
-		if ('value' in v) return v.value;
-		if ('values' in v) return v.values;
-		return undefined;
-	}
+	// Node property reads (sdk.getProp / sdk.getStringProp) and simple-YAML
+	// scalar extraction (sdk.readYamlScalar) are node-contract concerns owned
+	// by the Tasks Form SDK; forms call them straight off `sdk`.
 
-	function getStringProp(node, name) {
-		const v = getProp(node, name);
-		return v == null ? '' : String(v);
-	}
-
-	// Extract `shopDomain: "example.myshopify.com"` from the YAML config.
-	// Robust enough for the simple key/value structure of shopify.yml; not a
-	// full YAML parser.
-	function extractShopDomain(yamlText) {
-		if (!yamlText) return '';
-		const m = yamlText.match(/^[ \t]*shopDomain[ \t]*:[ \t]*["']?([^"'#\r\n]+?)["']?[ \t]*(?:#.*)?$/m);
-		return m ? m[1].trim() : '';
-	}
-
-	function formatMoney(amount, currency) {
-		if (amount == null || amount === '') return '—';
-		const n = Number(amount);
-		const num = Number.isFinite(n)
-			? n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-			: String(amount);
-		return currency ? num + ' ' + currency : num;
-	}
-
-	function formatNumber(n) {
-		if (n == null || n === '') return '—';
-		const num = Number(n);
-		if (Number.isFinite(num)) return num.toLocaleString();
-		return String(n);
-	}
-
-	function formatDate(value) {
-		if (!value) return '';
-		const d = new Date(value);
-		if (Number.isNaN(d.getTime())) return '';
-		return d.toLocaleString([], {
-			year: 'numeric', month: 'numeric', day: 'numeric',
-			hour: 'numeric', minute: '2-digit',
-		});
-	}
+	// Money / number / date formatting is locale-aware and therefore lives on
+	// the component (methods read `this.localization`, so bindings repaint when
+	// the user switches language / zone). See the methods of the same name.
 
 	// Build a multi-line address string from a Shopify address object.
 	function formatAddress(addr) {
@@ -818,6 +759,18 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				toastMessage: '',
 				actionPending: false,
 
+				// Effective localization pushed by the host (inside the context
+				// payload and on every 'localization-changed' event). Read by t()
+				// and the format* methods so the whole form repaints on a locale
+				// or time-zone switch.
+				localization: { locale: '', timeZone: '', numberFormat: '', currency: '' },
+
+				// i18n message map for this form's namespace, resolved by the host
+				// for the effective locale (fallback chain merged). `revision` is
+				// bumped on every (re)load so t() bindings repaint even when the
+				// locale string is unchanged (e.g. a bundle hot-reload).
+				i18n: { messages: {}, revision: 0 },
+
 				// Context (refreshed on every 'context' event from the parent)
 				currentUserID: '',
 				currentUserDisplay: '',
@@ -840,8 +793,6 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				memoSaving: false,
 
 				// Internal handles (kept unreactive via the underscore convention)
-				_messageListener: null,
-				_standaloneTimer: null,
 				_toastTimer: null,
 				_assigneeDisplayCache: {},
 			};
@@ -857,25 +808,27 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 					if (o.name) return String(o.name);
 					if (o.order_number != null) return '#' + o.order_number;
 				}
-				const num = getStringProp(this.node, 'commerce:order_number');
+				const num = sdk.getStringProp(this.node, 'commerce:order_number');
 				if (num) return '#' + num;
-				return this.orderID ? 'Order ' + this.orderID : '(order)';
+				return this.orderID
+					? this.t('form.commerce.shopify.orderReview.orderFallback', { id: this.orderID }, 'Order {id}')
+					: this.t('form.commerce.shopify.common.untitledOrder', undefined, '(order)');
 			},
 			totalText() {
 				const o = this.order;
-				const amount = o && o.total_price != null ? o.total_price : getStringProp(this.node, 'commerce:total_price');
-				return formatMoney(amount, this.currency);
+				const amount = o && o.total_price != null ? o.total_price : sdk.getStringProp(this.node, 'commerce:total_price');
+				return this.formatMoney(amount, this.currency);
 			},
 			financialStatus() {
 				return (this.order && this.order.financial_status)
 					? String(this.order.financial_status)
-					: getStringProp(this.node, 'commerce:source_status');
+					: sdk.getStringProp(this.node, 'commerce:source_status');
 			},
 			financialStatusClass() {
 				return this.financialStatus ? String(this.financialStatus).toLowerCase() : '';
 			},
 			createdAtText() {
-				return this.order ? formatDate(this.order.created_at) : '';
+				return this.order ? this.formatDate(this.order.created_at) : '';
 			},
 			customerLine() {
 				const o = this.order;
@@ -886,7 +839,10 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				const parts = [];
 				if (name) parts.push(name);
 				if (email) parts.push(email);
-				if (c.orders_count != null) parts.push('orders: ' + c.orders_count);
+				if (c.orders_count != null) {
+					parts.push(this.t('form.commerce.shopify.orderReview.customerOrders',
+						{ count: c.orders_count }, 'orders: {count}'));
+				}
 				return parts.join('\n');
 			},
 			shippingAddressText() {
@@ -899,7 +855,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				const list = (this.order && Array.isArray(this.order.line_items)) ? this.order.line_items : [];
 				return list.map((li, i) => {
 					const id = li && li.id != null ? String(li.id) : '';
-					const title = (li && li.title) || '(item)';
+					const title = (li && li.title) || this.t('form.commerce.shopify.common.untitledItem', undefined, '(item)');
 					const variant = (li && li.variant_title && li.variant_title !== 'Default Title') ? String(li.variant_title) : '';
 					const sku = (li && li.sku) || '';
 					const qty = li && li.quantity != null ? Number(li.quantity) : null;
@@ -909,13 +865,20 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 						title,
 						variant,
 						sku,
-						qtyText: formatNumber(qty),
-						priceText: formatMoney(price, this.currency),
+						qtyText: this.formatNumber(qty),
+						priceText: this.formatMoney(price, this.currency),
 					};
 				});
 			},
 			itemCount() {
 				return this.itemRows.length;
+			},
+			// Pluralized "N item(s)" label. Kept out of the template because its
+			// ICU fallback ends in `}}`, which would collide with ichigojs's
+			// `{{ }}` mustache delimiter and truncate the expression.
+			itemCountText() {
+				return this.t('form.commerce.shopify.orderReview.itemCount',
+					{ count: this.itemCount }, '{count, plural, one {# item} other {# items}}');
 			},
 			taskAssignee() {
 				return (this.task && this.task.assignee) || '';
@@ -933,108 +896,173 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 			},
 			memoTimestampText() {
 				if (!this.memo || !this.memo.at) return '';
-				const d = new Date(this.memo.at);
-				if (Number.isNaN(d.getTime())) return this.memo.at;
-				return d.toLocaleString([], {
-					year: 'numeric', month: 'numeric', day: 'numeric',
-					hour: 'numeric', minute: '2-digit',
-				});
+				return this.formatDate(this.memo.at) || this.memo.at;
 			},
 			memoDraftHasContent() {
 				return !!(this.memoDraft && this.memoDraft.trim());
+			},
+			// "Assigned to X. View only." Built in JS (not the template) so the
+			// parameterized t() call stays clear of mustache brace parsing.
+			assignedNoticeText() {
+				const name = this.assigneeDisplay || this.taskAssignee;
+				return this.t('form.commerce.shopify.orderReview.assignedToOther',
+					{ name }, 'This task is currently assigned to {name}. View only.');
 			},
 		},
 
 		methods: {
 			// ----------------------------------------------------------
+			// i18n & locale-aware formatting
+			// ----------------------------------------------------------
+			// Translate a message id against the host-provided bundle for the
+			// effective locale. Reads `localization.locale` and `i18n.revision`
+			// so every binding repaints when the language switches or the bundle
+			// hot-reloads. Falls back to `fallback` (then the id) when the key is
+			// absent — both the resolved template and the fallback are run
+			// through ICU so placeholders / plurals work either way.
+			t(id, params, fallback) {
+				// Touch revision so a bundle hot-reload (same locale) still repaints.
+				void this.i18n.revision;
+				return sdk.translate(this.i18n.messages, this.localization.locale, id, params, fallback);
+			},
+
+			// Format a monetary amount. The currency is intrinsic to the order
+			// (Shopify's transaction currency), so it is NOT overridden by the
+			// user's preference; only the grouping/symbol placement follows the
+			// user's locale. Degrades to a plain number + code when the currency
+			// is unknown or invalid.
+			formatMoney(amount, currency) {
+				if (amount == null || amount === '') return '—';
+				const n = Number(amount);
+				if (!Number.isFinite(n)) return String(amount);
+				const locale = this.localization.numberFormat || this.localization.locale || undefined;
+				if (currency) {
+					try {
+						return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(n);
+					} catch (_) {
+						// Unknown currency code — fall through to plain number + code.
+					}
+				}
+				const num = n.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+				return currency ? num + ' ' + currency : num;
+			},
+
+			formatNumber(n) {
+				if (n == null || n === '') return '—';
+				const num = Number(n);
+				if (!Number.isFinite(num)) return String(n);
+				const locale = this.localization.numberFormat || this.localization.locale || undefined;
+				return num.toLocaleString(locale);
+			},
+
+			formatDate(value) {
+				if (!value) return '';
+				const d = new Date(value);
+				if (Number.isNaN(d.getTime())) return '';
+				const locale = this.localization.locale || undefined;
+				const opts = {
+					year: 'numeric', month: 'numeric', day: 'numeric',
+					hour: 'numeric', minute: '2-digit',
+				};
+				if (this.localization.timeZone) opts.timeZone = this.localization.timeZone;
+				try {
+					return d.toLocaleString(locale, opts);
+				} catch (_) {
+					return d.toLocaleString(locale);
+				}
+			},
+
+			// Render a screening reason descriptor ({ code, params }) to localized
+			// text. screenOrder.groovy emits raw values (numbers, currency code,
+			// status) rather than pre-built text, so money/numbers follow the
+			// reviewer's locale and the wording comes from the i18n bundle. A bare
+			// string is a legacy reason from an in-flight task — passed through.
+			reasonText(reason) {
+				if (reason == null) return '';
+				if (typeof reason === 'string') return reason;
+				const code = reason.code;
+				const p = reason.params || {};
+				const K = 'form.commerce.shopify.orderReview.reason.';
+				switch (code) {
+					case 'highValue':
+						return this.t(K + 'highValue',
+							{ total: this.formatMoney(p.total, p.currency), threshold: this.formatMoney(p.threshold, p.currency) },
+							'High-value order: {total} ≥ {threshold}');
+					case 'flaggedFinancialStatus':
+						return this.t(K + 'flaggedFinancialStatus',
+							{ status: p.status }, 'Financial status needs review: {status}');
+					case 'largeQuantity':
+						return this.t(K + 'largeQuantity',
+							{ title: p.title || this.t('form.commerce.shopify.common.untitledItem', undefined, '(item)'), quantity: p.quantity, max: p.max },
+							'Large quantity: {title} ×{quantity} (≥ {max})');
+					case 'newCustomer':
+						return this.t(K + 'newCustomer',
+							{ count: p.count, max: p.max },
+							'New customer: {count, plural, one {# order} other {# orders}} (≤ {max})');
+					case 'addressMismatch':
+						return this.t(K + 'addressMismatch',
+							{ billing: p.billing, shipping: p.shipping },
+							'Billing/shipping country mismatch: {billing} → {shipping}');
+					default:
+						// Unknown code: show a free-text param if present, else a
+						// generic flagged label rather than a raw code.
+						return p.text ? String(p.text)
+							: this.t('form.commerce.shopify.orderReview.flaggedForReview', undefined, 'Flagged for review');
+				}
+			},
+
+			// Apply an effective-localization snapshot pushed by the host. Mirrors
+			// the value onto <html lang> for correct typography/hyphenation, then
+			// (re)loads the message bundle for the new locale.
+			applyLocalization(loc) {
+				if (!loc || typeof loc !== 'object') return;
+				this.localization.locale = loc.locale || '';
+				this.localization.timeZone = loc.timeZone || '';
+				this.localization.numberFormat = loc.numberFormat || '';
+				this.localization.currency = loc.currency || '';
+				if (this.localization.locale) {
+					document.documentElement.setAttribute('lang', this.localization.locale);
+				}
+				this.loadMessages();
+				this.updateDocumentTitle();
+			},
+
+			// Pull this form's namespace from the host for the effective locale.
+			// Best-effort: an older host without the RPC leaves messages empty,
+			// so t() degrades to its English fallbacks.
+			async loadMessages() {
+				try {
+					const res = await sdk.getI18nMessages(I18N_PREFIX);
+					const messages = (res && res.messages && typeof res.messages === 'object') ? res.messages : {};
+					// Trust the host's resolved locale when present (it knows the
+					// effective preference even if the context lagged).
+					if (res && res.locale) this.localization.locale = res.locale;
+					this.i18n.messages = messages;
+					this.i18n.revision++;
+				} catch (_) {
+					// Leave existing messages in place; fall back to literals.
+				}
+			},
+
+			updateDocumentTitle() {
+				const title = this.t('form.commerce.shopify.orderReview.title', undefined, 'Order Review');
+				document.title = this.order ? (title + ' — ' + this.orderTitle) : title;
+			},
+
+			// ----------------------------------------------------------
 			// Lifecycle
 			// ----------------------------------------------------------
 			onMounted() {
-				this._messageListener = (ev) => this.onMessage(ev);
-				window.addEventListener('message', this._messageListener);
-
-				// If no context arrives within 3s, the form is probably running
-				// standalone (opened directly in the browser).
-				this._standaloneTimer = setTimeout(() => {
-					if (this.view === 'loading') this.view = 'standalone';
-				}, 3000);
-
-				this.notifyReady();
+				sdk
+					.on('context', (payload) => this.handleContext(payload))
+					.on('localization', (loc) => this.applyLocalization(loc))
+					.on('standalone', () => { if (this.view === 'loading') this.view = 'standalone'; })
+					.on('ready', () => { this.i18n.revision++; })
+					.start();
 			},
-
 			onUnmount() {
-				if (this._messageListener) {
-					window.removeEventListener('message', this._messageListener);
-					this._messageListener = null;
-				}
-				if (this._standaloneTimer) {
-					clearTimeout(this._standaloneTimer);
-					this._standaloneTimer = null;
-				}
-				if (this._toastTimer) {
-					clearTimeout(this._toastTimer);
-					this._toastTimer = null;
-				}
-			},
-
-			notifyReady() {
-				try {
-					window.parent.postMessage({ __tasksRpc: 'ready' }, '*');
-				} catch (_) {
-					// ignore — running outside the Tasks app
-				}
-			},
-
-			// ----------------------------------------------------------
-			// Parent message bridge
-			// ----------------------------------------------------------
-			onMessage(ev) {
-				const data = ev.data;
-				if (!data || typeof data !== 'object') return;
-
-				// RPC reply
-				if (data.__tasksRpc === 'result') {
-					const id = String(data.id);
-					const p = pending.get(id);
-					if (!p) return;
-					pending.delete(id);
-					if (data.ok) p.resolve(data.data);
-					else p.reject(new Error(data.error || 'RPC error'));
-					return;
-				}
-
-				// Context push from parent — fires on initial frame ready AND whenever
-				// the host's task selection/assignment changes (claim, unclaim,
-				// reassign). The form must re-render in response, so we always
-				// process it and let computed properties refresh derived UI.
-				if (data.__tasksRpc === 'event' && data.type === 'context') {
-					if (this._standaloneTimer) {
-						clearTimeout(this._standaloneTimer);
-						this._standaloneTimer = null;
-					}
-					const payload = data.payload || {};
-					if (payload.theme !== undefined) this.applyTheme(payload.theme);
-					this.handleContext(payload);
-					return;
-				}
-
-				// Live theme update pushed by the host when the user toggles
-				// the Webtop theme.
-				if (data.__tasksRpc === 'event' && data.type === 'theme-changed') {
-					this.applyTheme(data.theme);
-					return;
-				}
-			},
-
-			// Apply a host-provided theme. Pass 'light' or 'dark' to force,
-			// or '' / null to release control back to the OS preference.
-			applyTheme(theme) {
-				const root = document.documentElement;
-				if (theme === 'light' || theme === 'dark') {
-					root.dataset.theme = theme;
-				} else {
-					delete root.dataset.theme;
-				}
+				sdk.stop();
+				if (this._toastTimer) clearTimeout(this._toastTimer);
 			},
 
 			showToast(message) {
@@ -1044,7 +1072,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 			},
 
 			showError(message) {
-				this.errorMessage = message || 'An unexpected error occurred.';
+				this.errorMessage = message || this.t('form.commerce.shopify.common.unexpectedError', undefined, 'An unexpected error occurred.');
 				this.view = 'error';
 			},
 
@@ -1058,7 +1086,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 			async handleContext(ctx) {
 				if (!ctx || ctx.mode !== 'task' || !ctx.task) {
 					if (!this.orderLoaded) {
-						this.showError('This form must be opened from a Task.');
+						this.showError(this.t('form.commerce.shopify.orderReview.mustOpenFromTask', undefined, 'This form must be opened from a Task.'));
 					}
 					return;
 				}
@@ -1082,7 +1110,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 			},
 
 			async loadOrder() {
-				const taskInfo = await rpcCall('getTaskWithVariables');
+				const taskInfo = await sdk.getTaskWithVariables();
 				const variables = (taskInfo && Array.isArray(taskInfo.variables)) ? taskInfo.variables : [];
 				const variableMap = {};
 				for (const v of variables) {
@@ -1093,34 +1121,37 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				const orderID = String(variableMap.order_id || '');
 
 				if (!orderPath) {
-					throw new Error('Process variable "orderPath" is not set on this task.');
+					throw new Error(this.t('form.commerce.shopify.orderReview.noOrderPath', undefined, 'Process variable "orderPath" is not set on this task.'));
 				}
 
-				// Reasons produced by screenOrder.groovy, carried on the process variable.
+				// Reason descriptors produced by screenOrder.groovy, carried on the
+				// process variable. Kept as { code, params } objects (or, for
+				// in-flight tasks predating the descriptor format, plain strings);
+				// rendered to localized text by reasonText().
 				let reasons = [];
 				try {
 					const raw = variableMap.reviewReasons;
 					if (raw) {
 						const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-						if (Array.isArray(parsed)) reasons = parsed.map(String);
+						if (Array.isArray(parsed)) reasons = parsed;
 					}
 				} catch (_) {
 					reasons = [];
 				}
 
 				const [node, orderJSONText, configText] = await Promise.all([
-					rpcCall('getNode', { path: orderPath }),
-					rpcCall('readNodeText', { path: orderPath }),
-					rpcCall('readNodeText', { path: '/etc/commerce/config/shopify.yml' }).catch(() => ''),
+					sdk.getNode(orderPath),
+					sdk.readNodeText(orderPath),
+					sdk.readNodeText('/etc/commerce/config/shopify.yml').catch(() => ''),
 				]);
 
-				if (!node) throw new Error('Order not found: ' + orderPath);
+				if (!node) throw new Error(this.t('form.commerce.shopify.orderReview.orderNotFound', { path: orderPath }, 'Order not found: {path}'));
 
 				let order;
 				try {
 					order = JSON.parse(orderJSONText);
 				} catch (err) {
-					throw new Error('Failed to parse order JSON: ' + (err && err.message ? err.message : String(err)));
+					throw new Error(this.t('form.commerce.shopify.orderReview.orderParseFailed', { detail: (err && err.message ? err.message : String(err)) }, 'Failed to parse order JSON: {detail}'));
 				}
 
 				this.node = node;
@@ -1131,12 +1162,12 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				this.loadMemoFromNode();
 
 				// "View on Shopify" link
-				const shopDomain = extractShopDomain(configText);
+				const shopDomain = sdk.readYamlScalar(configText, 'shopDomain');
 				this.shopifyURL = (shopDomain && this.orderID)
 					? 'https://' + shopDomain + '/admin/orders/' + encodeURIComponent(this.orderID)
 					: '';
 
-				document.title = 'Order Review — ' + this.orderTitle;
+				this.updateDocumentTitle();
 			},
 
 			// ----------------------------------------------------------
@@ -1162,7 +1193,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 					return;
 				}
 				try {
-					const user = await rpcCall('getUser', { username: assignee });
+					const user = await sdk.getUser(assignee);
 					const display = (user && user.displayName) || assignee;
 					this._assigneeDisplayCache[assignee] = display;
 					if (this.taskAssignee === assignee) {
@@ -1180,7 +1211,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 			// `internal_memo` string property)
 			// ----------------------------------------------------------
 			loadMemoFromNode() {
-				const raw = getStringProp(this.node, 'internal_memo');
+				const raw = sdk.getStringProp(this.node, 'internal_memo');
 				if (!raw) {
 					this.memo = null;
 					return;
@@ -1220,7 +1251,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				const content = (this.memoDraft || '').trim();
 				if (!content) return;
 				if (!this.orderPath) {
-					this.showToast('Cannot save memo: order path is unknown.');
+					this.showToast(this.t('form.commerce.shopify.orderReview.memoNoPath', undefined, 'Cannot save memo: order path is unknown.'));
 					return;
 				}
 				this.memoSaving = true;
@@ -1231,14 +1262,10 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 						at: new Date().toISOString(),
 						content: content,
 					};
-					await rpcCall('setNodeProperty', {
-						path: this.orderPath,
-						name: 'internal_memo',
-						value: JSON.stringify(payload),
-					});
+					await sdk.setNodeProperty(this.orderPath, 'internal_memo', JSON.stringify(payload));
 					// Re-read the node so a future edit starts from the persisted
 					// state, and so the displayed timestamp matches what's saved.
-					const refreshed = await rpcCall('getNode', { path: this.orderPath });
+					const refreshed = await sdk.getNode(this.orderPath);
 					if (refreshed) this.node = refreshed;
 					this.loadMemoFromNode();
 					this.memoMode = 'view';
@@ -1254,7 +1281,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				if (this.actionPending) return;
 				this.actionPending = true;
 				try {
-					await rpcCall('completeTask', { variables: [] });
+					await sdk.completeTask([]);
 					// The parent typically clears the form after completion. If we
 					// remain visible, fall back to the completed notice.
 					this.task = Object.assign({}, this.task, { completed: true });

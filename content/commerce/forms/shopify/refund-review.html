@@ -378,7 +378,7 @@ body {
 
 	<div v-if="view === 'loading'" class="state-pane">
 		<div class="spinner"></div>
-		<p>Loading refund…</p>
+		<p>{{ t('form.commerce.shopify.refundReview.loading', undefined, 'Loading refund…') }}</p>
 	</div>
 
 	<div v-else-if="view === 'error'" class="state-pane error-pane">
@@ -388,7 +388,7 @@ body {
 
 	<div v-else-if="view === 'standalone'" class="state-pane">
 		<svg class="state-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM7.25 5a.75.75 0 0 1 1.5 0v3.5a.75.75 0 0 1-1.5 0V5zM8 11.25a.875.875 0 1 1 0-1.75.875.875 0 0 1 0 1.75z"/></svg>
-		<p>This form must be opened from the Tasks application.</p>
+		<p>{{ t('form.commerce.shopify.refundReview.standaloneNotice', undefined, 'This form must be opened from the Tasks application.') }}</p>
 	</div>
 
 	<template v-else>
@@ -401,7 +401,7 @@ body {
 				<div class="order-tagline">
 					<span v-if="restockedBadge" class="status-badge" :class="restockedBadge.cls">{{ restockedBadge.label }}</span>
 					<span v-if="processedAtText">{{ processedAtText }}</span>
-					<span v-if="lineItemCount">{{ lineItemCount }} {{ lineItemCount === 1 ? 'item' : 'items' }}</span>
+					<span v-if="lineItemCount">{{ lineItemCountText }}</span>
 				</div>
 			</header>
 
@@ -409,33 +409,33 @@ body {
 			<section v-if="reasons.length > 0" class="reasons">
 				<div class="reasons-title">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1.5a.75.75 0 0 1 .67.418l6.5 13a.75.75 0 0 1-.67 1.082h-13a.75.75 0 0 1-.67-1.082l6.5-13A.75.75 0 0 1 8 1.5zm0 4.75a.75.75 0 0 0-.75.75v3a.75.75 0 0 0 1.5 0v-3A.75.75 0 0 0 8 6.25zm0 6.25a.875.875 0 1 0 0-1.75.875.875 0 0 0 0 1.75z"/></svg>
-					<span>Flagged for review</span>
+					<span>{{ t('form.commerce.shopify.refundReview.flaggedForReview', undefined, 'Flagged for review') }}</span>
 				</div>
 				<ul>
-					<li v-for="(reason, i) in reasons" :key="i">{{ reason }}</li>
+					<li v-for="(reason, i) in reasons" :key="i">{{ reasonText(reason) }}</li>
 				</ul>
 			</section>
 
 			<!-- Refund details -->
 			<section class="card">
-				<h2 class="section-title">Refund</h2>
+				<h2 class="section-title">{{ t('form.commerce.shopify.refundReview.refund', undefined, 'Refund') }}</h2>
 				<div class="card-body">
 					<div class="info-grid">
 						<div class="info-block">
-							<div class="info-label">Order</div>
-							<div class="info-value" :class="{ empty: !orderID }">{{ orderID ? ('#' + orderID) : 'Unknown' }}</div>
+							<div class="info-label">{{ t('form.commerce.shopify.refundReview.order', undefined, 'Order') }}</div>
+							<div class="info-value" :class="{ empty: !orderID }">{{ orderID ? ('#' + orderID) : t('form.commerce.shopify.common.unknown', undefined, 'Unknown') }}</div>
 						</div>
 						<div class="info-block">
-							<div class="info-label">Refund ID</div>
+							<div class="info-label">{{ t('form.commerce.shopify.refundReview.refundId', undefined, 'Refund ID') }}</div>
 							<div class="info-value" :class="{ empty: !refundID }">{{ refundID || '—' }}</div>
 						</div>
 						<div class="info-block">
-							<div class="info-label">Amount</div>
+							<div class="info-label">{{ t('form.commerce.shopify.refundReview.amount', undefined, 'Amount') }}</div>
 							<div class="info-value">{{ refundAmountText }}</div>
 						</div>
 						<div class="info-block">
-							<div class="info-label">Reason / note</div>
-							<div class="info-value" :class="{ empty: !refundNote }">{{ refundNote || 'No note provided' }}</div>
+							<div class="info-label">{{ t('form.commerce.shopify.refundReview.reasonNote', undefined, 'Reason / note') }}</div>
+							<div class="info-value" :class="{ empty: !refundNote }">{{ refundNote || t('form.commerce.shopify.refundReview.noNote', undefined, 'No note provided') }}</div>
 						</div>
 					</div>
 				</div>
@@ -443,20 +443,20 @@ body {
 
 			<!-- Refunded line items -->
 			<section class="card">
-				<h2 class="section-title">Refunded items</h2>
+				<h2 class="section-title">{{ t('form.commerce.shopify.refundReview.refundedItems', undefined, 'Refunded items') }}</h2>
 				<div class="table-wrap">
 					<table class="items-table">
 						<thead>
 							<tr>
-								<th>Item</th>
-								<th>SKU</th>
-								<th class="align-right">Qty</th>
-								<th class="align-right">Subtotal</th>
+								<th>{{ t('form.commerce.shopify.refundReview.colItem', undefined, 'Item') }}</th>
+								<th>{{ t('form.commerce.shopify.refundReview.colSku', undefined, 'SKU') }}</th>
+								<th class="align-right">{{ t('form.commerce.shopify.refundReview.colQty', undefined, 'Qty') }}</th>
+								<th class="align-right">{{ t('form.commerce.shopify.refundReview.colSubtotal', undefined, 'Subtotal') }}</th>
 							</tr>
 						</thead>
 						<tbody>
 							<tr v-if="itemRows.length === 0">
-								<td class="empty-cell" colspan="4">No line items refunded (monetary adjustment only).</td>
+								<td class="empty-cell" colspan="4">{{ t('form.commerce.shopify.refundReview.noLineItems', undefined, 'No line items refunded (monetary adjustment only).') }}</td>
 							</tr>
 							<tr v-for="(row, i) in itemRows" :key="row.id || i">
 								<td>
@@ -473,21 +473,21 @@ body {
 			</section>
 
 			<section class="card">
-				<h2 class="section-title">Memo</h2>
+				<h2 class="section-title">{{ t('form.commerce.shopify.refundReview.memo', undefined, 'Memo') }}</h2>
 				<div class="memo-body">
 					<div v-if="memo" class="memo-card">
 						<div class="memo-header">
-							<span class="memo-author">{{ memo.name || memo.id || 'Unknown' }}</span>
+							<span class="memo-author">{{ memo.name || memo.id || t('form.commerce.shopify.common.unknown', undefined, 'Unknown') }}</span>
 							<span class="memo-time" v-if="memoTimestampText">{{ memoTimestampText }}</span>
 						</div>
 						<div class="memo-content">{{ memo.content }}</div>
 					</div>
-					<div v-else class="memo-empty">No memo yet.</div>
+					<div v-else class="memo-empty">{{ t('form.commerce.shopify.refundReview.noMemo', undefined, 'No memo yet.') }}</div>
 
 					<div v-if="canEditMemo && memoMode === 'view'" class="memo-edit-trigger">
 						<button class="btn btn-secondary" type="button" @click="enterMemoEdit">
 							<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25a1.75 1.75 0 0 1 .445-.755l8.61-8.612zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086zM11.189 6.25 9.75 4.81l-6.286 6.287a.25.25 0 0 0-.064.108l-.558 1.953 1.953-.558a.25.25 0 0 0 .108-.064l6.286-6.286z"/></svg>
-							<span>{{ memo ? 'Edit memo' : 'Add memo' }}</span>
+							<span>{{ memo ? t('form.commerce.shopify.refundReview.editMemo', undefined, 'Edit memo') : t('form.commerce.shopify.refundReview.addMemo', undefined, 'Add memo') }}</span>
 						</button>
 					</div>
 
@@ -495,16 +495,16 @@ body {
 						<textarea v-model="memoDraft"
 							class="memo-textarea"
 							rows="4"
-							placeholder="Write a memo for the record..."
+							:placeholder="t('form.commerce.shopify.refundReview.memoPlaceholder', undefined, 'Write a memo for the record...')"
 							:disabled="memoSaving"></textarea>
 						<div class="memo-editor-actions">
 							<button class="btn btn-secondary" type="button"
 								:disabled="memoSaving"
-								@click="cancelMemoEdit">Cancel</button>
+								@click="cancelMemoEdit">{{ t('form.commerce.shopify.common.cancel', undefined, 'Cancel') }}</button>
 							<button class="btn btn-primary" type="button"
 								:disabled="memoSaving || !memoDraftHasContent"
 								@click="saveMemo">
-								<span>Update</span>
+								<span>{{ t('form.commerce.shopify.common.update', undefined, 'Update') }}</span>
 							</button>
 						</div>
 					</div>
@@ -517,31 +517,31 @@ body {
 				<button v-if="isAssignedToMe || taskCompleted"
 					class="btn btn-secondary" type="button"
 					:disabled="!shopifyURL"
-					:title="shopifyURL || 'Shop domain or order ID is unavailable.'"
+					:title="shopifyURL || t('form.commerce.shopify.refundReview.shopifyUnavailable', undefined, 'Shop domain or order ID is unavailable.')"
 					@click="openShopify">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M9.5 2a.5.5 0 0 0 0 1h2.793L7.146 8.146a.5.5 0 1 0 .708.708L13 3.707V6.5a.5.5 0 0 0 1 0V2.5a.5.5 0 0 0-.5-.5h-4z"/><path d="M3.5 4A1.5 1.5 0 0 0 2 5.5v7A1.5 1.5 0 0 0 3.5 14h7a1.5 1.5 0 0 0 1.5-1.5v-3a.5.5 0 0 0-1 0v3a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1-.5-.5v-7a.5.5 0 0 1 .5-.5h3a.5.5 0 0 0 0-1h-3z"/></svg>
-					View on Shopify
+					{{ t('form.commerce.shopify.refundReview.viewOnShopify', undefined, 'View on Shopify') }}
 				</button>
 			</div>
 			<div class="action-area">
 				<span v-if="taskCompleted" class="action-notice completed">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7 7a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.25 10.69l6.47-6.47a.75.75 0 0 1 1.06 0z"/></svg>
-					<span>This refund has been reviewed.</span>
+					<span>{{ t('form.commerce.shopify.refundReview.completedNotice', undefined, 'This refund has been reviewed.') }}</span>
 				</span>
 				<span v-else-if="!taskAssignee" class="action-notice">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 14.5a5 5 0 0 1 10 0 .5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5z"/></svg>
-					<span>Claim this task to review the refund and acknowledge it.</span>
+					<span>{{ t('form.commerce.shopify.refundReview.claimPrompt', undefined, 'Claim this task to review the refund and acknowledge it.') }}</span>
 				</span>
 				<span v-else-if="!isAssignedToMe" class="action-notice">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 14.5a5 5 0 0 1 10 0 .5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5z"/></svg>
-					<span>This task is currently assigned to {{ assigneeDisplay || taskAssignee }}. View only.</span>
+					<span>{{ assignedNoticeText }}</span>
 				</span>
 				<button v-else
 					class="btn btn-primary" type="button"
 					:disabled="actionPending"
 					@click="onComplete">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7 7a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.25 10.69l6.47-6.47a.75.75 0 0 1 1.06 0z"/></svg>
-					<span>Acknowledge refund</span>
+					<span>{{ t('form.commerce.shopify.refundReview.acknowledge', undefined, 'Acknowledge refund') }}</span>
 				</button>
 			</div>
 		</footer>
@@ -550,69 +550,26 @@ body {
 	</template>
 </main>
 
+<script src="./forms-sdk.js?v=2"></script>
 <script type="module">
-import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ichigo.esm.min.js';
+import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.71/dist/ichigo.esm.min.js';
 
-	const pending = new Map();
-	let nextID = 1;
+	// Namespace this form pulls from the host i18n bundle. Keys live in
+	// /etc/i18n/commerce-forms.*.json.
+	const I18N_PREFIX = 'form.commerce.shopify.';
 
-	function rpcCall(method, params) {
-		return new Promise((resolve, reject) => {
-			const id = String(nextID++);
-			pending.set(id, { resolve, reject });
-			try {
-				window.parent.postMessage({ __tasksRpc: 'call', id, method, params: params || {} }, '*');
-			} catch (err) {
-				pending.delete(id);
-				reject(err);
-			}
-		});
-	}
+	// The Tasks Form SDK hides the postMessage RPC bridge, owns the ICU engine
+	// (intl-messageformat is loaded inside it), and routes host events. Created
+	// at module scope — it holds transport, not reactive UI state.
+	const sdk = window.createTasksForm();
 
-	function getProp(node, name) {
-		if (!node || !Array.isArray(node.properties)) return undefined;
-		const p = node.properties.find(x => x && x.name === name);
-		if (!p) return undefined;
-		const v = p.propertyValue;
-		if (!v) return undefined;
-		if ('value' in v) return v.value;
-		if ('values' in v) return v.values;
-		return undefined;
-	}
+	// Node property reads (sdk.getProp / sdk.getStringProp) and simple-YAML
+	// scalar extraction (sdk.readYamlScalar) are node-contract concerns owned
+	// by the Tasks Form SDK; forms call them straight off `sdk`.
 
-	function getStringProp(node, name) {
-		const v = getProp(node, name);
-		return v == null ? '' : String(v);
-	}
-
-	function extractShopDomain(yamlText) {
-		if (!yamlText) return '';
-		const m = yamlText.match(/^[ \t]*shopDomain[ \t]*:[ \t]*["']?([^"'#\r\n]+?)["']?[ \t]*(?:#.*)?$/m);
-		return m ? m[1].trim() : '';
-	}
-
-	function formatMoney(amount, currency) {
-		if (amount == null || amount === '') return '—';
-		const n = Number(amount);
-		const num = Number.isFinite(n)
-			? n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-			: String(amount);
-		return currency ? num + ' ' + currency : num;
-	}
-
-	function formatNumber(n) {
-		if (n == null || n === '') return '—';
-		const num = Number(n);
-		if (Number.isFinite(num)) return num.toLocaleString();
-		return String(n);
-	}
-
-	function formatDate(value) {
-		if (!value) return '';
-		const d = new Date(value);
-		if (Number.isNaN(d.getTime())) return '';
-		return d.toLocaleString([], { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-	}
+	// Money / number / date formatting is locale-aware and therefore lives on
+	// the component (methods read `this.localization`, so bindings repaint when
+	// the user switches language / zone). See the methods of the same name.
 
 	// Sum successful refund transactions to get the money actually returned.
 	function computeRefund(refund) {
@@ -645,6 +602,18 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				toastMessage: '',
 				actionPending: false,
 
+				// Effective localization pushed by the host (inside the context
+				// payload and on every 'localization-changed' event). Read by t()
+				// and the format* methods so the whole form repaints on a locale
+				// or time-zone switch.
+				localization: { locale: '', timeZone: '', numberFormat: '', currency: '' },
+
+				// i18n message map for this form's namespace, resolved by the host
+				// for the effective locale (fallback chain merged). `revision` is
+				// bumped on every (re)load so t() bindings repaint even when the
+				// locale string is unchanged (e.g. a bundle hot-reload).
+				i18n: { messages: {}, revision: 0 },
+
 				currentUserID: '',
 				currentUserDisplay: '',
 				task: null,
@@ -664,8 +633,6 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				memoDraft: '',
 				memoSaving: false,
 
-				_messageListener: null,
-				_standaloneTimer: null,
 				_toastTimer: null,
 				_assigneeDisplayCache: {},
 			};
@@ -676,31 +643,33 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 			currency() {
 				const c = this.refundComputed.currency;
 				if (c) return c;
-				return getStringProp(this.node, 'commerce:currency');
+				return sdk.getStringProp(this.node, 'commerce:currency');
 			},
 			refundAmountText() {
 				const amt = this.refundComputed.amount;
-				if (amt != null) return formatMoney(amt, this.currency);
-				const fromNode = getStringProp(this.node, 'commerce:refund_amount');
-				return fromNode ? formatMoney(fromNode, this.currency) : '—';
+				if (amt != null) return this.formatMoney(amt, this.currency);
+				const fromNode = sdk.getStringProp(this.node, 'commerce:refund_amount');
+				return fromNode ? this.formatMoney(fromNode, this.currency) : '—';
 			},
 			title() {
-				return this.orderID ? ('Refund · Order #' + this.orderID) : 'Refund';
+				return this.orderID
+					? this.t('form.commerce.shopify.refundReview.refundForOrder', { id: this.orderID }, 'Refund · Order #{id}')
+					: this.t('form.commerce.shopify.refundReview.refund', undefined, 'Refund');
 			},
 			refundNote() {
 				const n = this.refund && this.refund.note ? String(this.refund.note) : '';
-				return n || getStringProp(this.node, 'commerce:refund_note');
+				return n || sdk.getStringProp(this.node, 'commerce:refund_note');
 			},
 			processedAtText() {
 				const r = this.refund;
-				return r ? formatDate(r.processed_at || r.created_at) : '';
+				return r ? this.formatDate(r.processed_at || r.created_at) : '';
 			},
 			itemRows() {
 				const list = (this.refund && Array.isArray(this.refund.refund_line_items)) ? this.refund.refund_line_items : [];
 				return list.map((rli, i) => {
 					const li = (rli && rli.line_item) || {};
 					const id = rli && rli.id != null ? String(rli.id) : '';
-					const title = li.title || '(item)';
+					const title = li.title || this.t('form.commerce.shopify.common.untitledItem', undefined, '(item)');
 					const variant = (li.variant_title && li.variant_title !== 'Default Title') ? String(li.variant_title) : '';
 					const sku = li.sku || '';
 					const qty = rli && rli.quantity != null ? Number(rli.quantity) : null;
@@ -708,19 +677,26 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 					return {
 						id: id || ('row-' + i),
 						title, variant, sku,
-						qtyText: formatNumber(qty),
-						subtotalText: formatMoney(subtotal, this.currency),
+						qtyText: this.formatNumber(qty),
+						subtotalText: this.formatMoney(subtotal, this.currency),
 					};
 				});
 			},
 			lineItemCount() { return this.itemRows.length; },
+			// Pluralized "N item(s)" label. Kept out of the template because its
+			// ICU fallback ends in `}}`, which would collide with ichigojs's
+			// `{{ }}` mustache delimiter and truncate the expression.
+			lineItemCountText() {
+				return this.t('form.commerce.shopify.refundReview.itemCount',
+					{ count: this.lineItemCount }, '{count, plural, one {# item} other {# items}}');
+			},
 			restockedBadge() {
 				if (this.lineItemCount === 0) return null;
 				const list = (this.refund && Array.isArray(this.refund.refund_line_items)) ? this.refund.refund_line_items : [];
 				const any = list.some(isRestocked);
 				return any
-					? { cls: 'restocked', label: 'Restocked' }
-					: { cls: 'no-restock', label: 'Not restocked' };
+					? { cls: 'restocked', label: this.t('form.commerce.shopify.refundReview.restocked', undefined, 'Restocked') }
+					: { cls: 'no-restock', label: this.t('form.commerce.shopify.refundReview.notRestocked', undefined, 'Not restocked') };
 			},
 			taskAssignee() { return (this.task && this.task.assignee) || ''; },
 			taskCompleted() { return !!(this.task && this.task.completed); },
@@ -728,65 +704,159 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 			canEditMemo() { return this.isAssignedToMe && !this.taskCompleted; },
 			memoTimestampText() {
 				if (!this.memo || !this.memo.at) return '';
-				const d = new Date(this.memo.at);
-				if (Number.isNaN(d.getTime())) return this.memo.at;
-				return d.toLocaleString([], { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+				return this.formatDate(this.memo.at) || this.memo.at;
 			},
 			memoDraftHasContent() { return !!(this.memoDraft && this.memoDraft.trim()); },
+			// "Assigned to X. View only." Built in JS (not the template) so the
+			// parameterized t() call stays clear of mustache brace parsing.
+			assignedNoticeText() {
+				const name = this.assigneeDisplay || this.taskAssignee;
+				return this.t('form.commerce.shopify.refundReview.assignedToOther',
+					{ name }, 'This task is currently assigned to {name}. View only.');
+			},
 		},
 
 		methods: {
+			// ----------------------------------------------------------
+			// i18n & locale-aware formatting
+			// ----------------------------------------------------------
+			// Translate a message id against the host-provided bundle for the
+			// effective locale. Reads `localization.locale` and `i18n.revision`
+			// so every binding repaints when the language switches or the bundle
+			// hot-reloads. Falls back to `fallback` (then the id) when the key is
+			// absent — both the resolved template and the fallback are run
+			// through ICU so placeholders / plurals work either way.
+			t(id, params, fallback) {
+				// Touch revision so a bundle hot-reload (same locale) still repaints.
+				void this.i18n.revision;
+				return sdk.translate(this.i18n.messages, this.localization.locale, id, params, fallback);
+			},
+
+			// Format a monetary amount. The currency is intrinsic to the order
+			// (Shopify's transaction currency), so it is NOT overridden by the
+			// user's preference; only the grouping/symbol placement follows the
+			// user's locale. Degrades to a plain number + code when the currency
+			// is unknown or invalid.
+			formatMoney(amount, currency) {
+				if (amount == null || amount === '') return '—';
+				const n = Number(amount);
+				if (!Number.isFinite(n)) return String(amount);
+				const locale = this.localization.numberFormat || this.localization.locale || undefined;
+				if (currency) {
+					try {
+						return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(n);
+					} catch (_) {
+						// Unknown currency code — fall through to plain number + code.
+					}
+				}
+				const num = n.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+				return currency ? num + ' ' + currency : num;
+			},
+
+			formatNumber(n) {
+				if (n == null || n === '') return '—';
+				const num = Number(n);
+				if (!Number.isFinite(num)) return String(n);
+				const locale = this.localization.numberFormat || this.localization.locale || undefined;
+				return num.toLocaleString(locale);
+			},
+
+			formatDate(value) {
+				if (!value) return '';
+				const d = new Date(value);
+				if (Number.isNaN(d.getTime())) return '';
+				const locale = this.localization.locale || undefined;
+				const opts = {
+					year: 'numeric', month: 'numeric', day: 'numeric',
+					hour: 'numeric', minute: '2-digit',
+				};
+				if (this.localization.timeZone) opts.timeZone = this.localization.timeZone;
+				try {
+					return d.toLocaleString(locale, opts);
+				} catch (_) {
+					return d.toLocaleString(locale);
+				}
+			},
+
+			// Render a screening reason descriptor ({ code, params }) to localized
+			// text. screenRefund.groovy emits raw values (numbers, currency code)
+			// rather than pre-built text, so money/numbers follow the reviewer's
+			// locale and the wording comes from the i18n bundle. A bare string is a
+			// legacy reason from an in-flight task — passed through.
+			reasonText(reason) {
+				if (reason == null) return '';
+				if (typeof reason === 'string') return reason;
+				const code = reason.code;
+				const p = reason.params || {};
+				const K = 'form.commerce.shopify.refundReview.reason.';
+				switch (code) {
+					case 'highRefundValue':
+						return this.t(K + 'highRefundValue',
+							{ amount: this.formatMoney(p.amount, p.currency), threshold: this.formatMoney(p.threshold, p.currency) },
+							'High-value refund: {amount} ≥ {threshold}');
+					case 'fullRefund':
+						return this.t(K + 'fullRefund',
+							{ amount: this.formatMoney(p.amount, p.currency), orderTotal: this.formatMoney(p.orderTotal, p.currency) },
+							'Full refund: {amount} of {orderTotal}');
+					case 'noRestock':
+						return this.t(K + 'noRestock',
+							{ count: p.count },
+							'{count, plural, one {# item} other {# items}} refunded without restocking');
+					default:
+						return p.text ? String(p.text)
+							: this.t('form.commerce.shopify.refundReview.flaggedForReview', undefined, 'Flagged for review');
+				}
+			},
+
+			// Apply an effective-localization snapshot pushed by the host. Mirrors
+			// the value onto <html lang> for correct typography/hyphenation, then
+			// (re)loads the message bundle for the new locale.
+			applyLocalization(loc) {
+				if (!loc || typeof loc !== 'object') return;
+				this.localization.locale = loc.locale || '';
+				this.localization.timeZone = loc.timeZone || '';
+				this.localization.numberFormat = loc.numberFormat || '';
+				this.localization.currency = loc.currency || '';
+				if (this.localization.locale) {
+					document.documentElement.setAttribute('lang', this.localization.locale);
+				}
+				this.loadMessages();
+				this.updateDocumentTitle();
+			},
+
+			// Pull this form's namespace from the host for the effective locale.
+			// Best-effort: an older host without the RPC leaves messages empty,
+			// so t() degrades to its English fallbacks.
+			async loadMessages() {
+				try {
+					const res = await sdk.getI18nMessages(I18N_PREFIX);
+					const messages = (res && res.messages && typeof res.messages === 'object') ? res.messages : {};
+					// Trust the host's resolved locale when present (it knows the
+					// effective preference even if the context lagged).
+					if (res && res.locale) this.localization.locale = res.locale;
+					this.i18n.messages = messages;
+					this.i18n.revision++;
+				} catch (_) {
+					// Leave existing messages in place; fall back to literals.
+				}
+			},
+
+			updateDocumentTitle() {
+				const title = this.t('form.commerce.shopify.refundReview.title', undefined, 'Refund Review');
+				document.title = (this.refund || this.orderID) ? (title + ' — ' + this.title) : title;
+			},
+
 			onMounted() {
-				this._messageListener = (ev) => this.onMessage(ev);
-				window.addEventListener('message', this._messageListener);
-				this._standaloneTimer = setTimeout(() => {
-					if (this.view === 'loading') this.view = 'standalone';
-				}, 3000);
-				this.notifyReady();
+				sdk
+					.on('context', (payload) => this.handleContext(payload))
+					.on('localization', (loc) => this.applyLocalization(loc))
+					.on('standalone', () => { if (this.view === 'loading') this.view = 'standalone'; })
+					.on('ready', () => { this.i18n.revision++; })
+					.start();
 			},
-
 			onUnmount() {
-				if (this._messageListener) { window.removeEventListener('message', this._messageListener); this._messageListener = null; }
-				if (this._standaloneTimer) { clearTimeout(this._standaloneTimer); this._standaloneTimer = null; }
-				if (this._toastTimer) { clearTimeout(this._toastTimer); this._toastTimer = null; }
-			},
-
-			notifyReady() {
-				try { window.parent.postMessage({ __tasksRpc: 'ready' }, '*'); } catch (_) {}
-			},
-
-			onMessage(ev) {
-				const data = ev.data;
-				if (!data || typeof data !== 'object') return;
-
-				if (data.__tasksRpc === 'result') {
-					const id = String(data.id);
-					const p = pending.get(id);
-					if (!p) return;
-					pending.delete(id);
-					if (data.ok) p.resolve(data.data);
-					else p.reject(new Error(data.error || 'RPC error'));
-					return;
-				}
-
-				if (data.__tasksRpc === 'event' && data.type === 'context') {
-					if (this._standaloneTimer) { clearTimeout(this._standaloneTimer); this._standaloneTimer = null; }
-					const payload = data.payload || {};
-					if (payload.theme !== undefined) this.applyTheme(payload.theme);
-					this.handleContext(payload);
-					return;
-				}
-
-				if (data.__tasksRpc === 'event' && data.type === 'theme-changed') {
-					this.applyTheme(data.theme);
-					return;
-				}
-			},
-
-			applyTheme(theme) {
-				const root = document.documentElement;
-				if (theme === 'light' || theme === 'dark') root.dataset.theme = theme;
-				else delete root.dataset.theme;
+				sdk.stop();
+				if (this._toastTimer) clearTimeout(this._toastTimer);
 			},
 
 			showToast(message) {
@@ -796,13 +866,13 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 			},
 
 			showError(message) {
-				this.errorMessage = message || 'An unexpected error occurred.';
+				this.errorMessage = message || this.t('form.commerce.shopify.common.unexpectedError', undefined, 'An unexpected error occurred.');
 				this.view = 'error';
 			},
 
 			async handleContext(ctx) {
 				if (!ctx || ctx.mode !== 'task' || !ctx.task) {
-					if (!this.refundLoaded) this.showError('This form must be opened from a Task.');
+					if (!this.refundLoaded) this.showError(this.t('form.commerce.shopify.refundReview.mustOpenFromTask', undefined, 'This form must be opened from a Task.'));
 					return;
 				}
 
@@ -823,7 +893,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 			},
 
 			async loadRefund() {
-				const taskInfo = await rpcCall('getTaskWithVariables');
+				const taskInfo = await sdk.getTaskWithVariables();
 				const variables = (taskInfo && Array.isArray(taskInfo.variables)) ? taskInfo.variables : [];
 				const variableMap = {};
 				for (const v of variables) { if (v && v.name) variableMap[v.name] = v.value; }
@@ -831,30 +901,33 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				const refundPath = String(variableMap.refundPath || '');
 				const orderID = String(variableMap.order_id || '');
 				const refundID = String(variableMap.refund_id || '');
-				if (!refundPath) throw new Error('Process variable "refundPath" is not set on this task.');
+				if (!refundPath) throw new Error(this.t('form.commerce.shopify.refundReview.noRefundPath', undefined, 'Process variable "refundPath" is not set on this task.'));
 
+				// Reason descriptors ({ code, params }) from screenRefund.groovy;
+				// rendered to localized text by reasonText(). Plain strings are
+				// legacy reasons from in-flight tasks — passed through.
 				let reasons = [];
 				try {
 					const raw = variableMap.reviewReasons;
 					if (raw) {
 						const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-						if (Array.isArray(parsed)) reasons = parsed.map(String);
+						if (Array.isArray(parsed)) reasons = parsed;
 					}
 				} catch (_) { reasons = []; }
 
 				const [node, refundJSONText, configText] = await Promise.all([
-					rpcCall('getNode', { path: refundPath }),
-					rpcCall('readNodeText', { path: refundPath }),
-					rpcCall('readNodeText', { path: '/etc/commerce/config/shopify.yml' }).catch(() => ''),
+					sdk.getNode(refundPath),
+					sdk.readNodeText(refundPath),
+					sdk.readNodeText('/etc/commerce/config/shopify.yml').catch(() => ''),
 				]);
 
-				if (!node) throw new Error('Refund not found: ' + refundPath);
+				if (!node) throw new Error(this.t('form.commerce.shopify.refundReview.refundNotFound', { path: refundPath }, 'Refund not found: {path}'));
 
 				let refund;
 				try {
 					refund = JSON.parse(refundJSONText);
 				} catch (err) {
-					throw new Error('Failed to parse refund JSON: ' + (err && err.message ? err.message : String(err)));
+					throw new Error(this.t('form.commerce.shopify.refundReview.refundParseFailed', { detail: (err && err.message ? err.message : String(err)) }, 'Failed to parse refund JSON: {detail}'));
 				}
 
 				this.node = node;
@@ -865,12 +938,12 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				this.reasons = reasons;
 				this.loadMemoFromNode();
 
-				const shopDomain = extractShopDomain(configText);
+				const shopDomain = sdk.readYamlScalar(configText, 'shopDomain');
 				this.shopifyURL = (shopDomain && this.orderID)
 					? 'https://' + shopDomain + '/admin/orders/' + encodeURIComponent(this.orderID)
 					: '';
 
-				document.title = 'Refund Review — ' + this.title;
+				this.updateDocumentTitle();
 			},
 
 			openShopify() {
@@ -884,7 +957,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				const cached = this._assigneeDisplayCache[assignee];
 				if (cached) { this.assigneeDisplay = cached; return; }
 				try {
-					const user = await rpcCall('getUser', { username: assignee });
+					const user = await sdk.getUser(assignee);
 					const display = (user && user.displayName) || assignee;
 					this._assigneeDisplayCache[assignee] = display;
 					if (this.taskAssignee === assignee) this.assigneeDisplay = display;
@@ -894,7 +967,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 			},
 
 			loadMemoFromNode() {
-				const raw = getStringProp(this.node, 'internal_memo');
+				const raw = sdk.getStringProp(this.node, 'internal_memo');
 				if (!raw) { this.memo = null; return; }
 				try {
 					const obj = JSON.parse(raw);
@@ -922,7 +995,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				if (this.memoSaving || !this.canEditMemo) return;
 				const content = (this.memoDraft || '').trim();
 				if (!content) return;
-				if (!this.refundPath) { this.showToast('Cannot save memo: refund path is unknown.'); return; }
+				if (!this.refundPath) { this.showToast(this.t('form.commerce.shopify.refundReview.memoNoPath', undefined, 'Cannot save memo: refund path is unknown.')); return; }
 				this.memoSaving = true;
 				try {
 					const payload = {
@@ -931,8 +1004,8 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 						at: new Date().toISOString(),
 						content,
 					};
-					await rpcCall('setNodeProperty', { path: this.refundPath, name: 'internal_memo', value: JSON.stringify(payload) });
-					const refreshed = await rpcCall('getNode', { path: this.refundPath });
+					await sdk.setNodeProperty(this.refundPath, 'internal_memo', JSON.stringify(payload));
+					const refreshed = await sdk.getNode(this.refundPath);
 					if (refreshed) this.node = refreshed;
 					this.loadMemoFromNode();
 					this.memoMode = 'view';
@@ -948,7 +1021,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				if (this.actionPending) return;
 				this.actionPending = true;
 				try {
-					await rpcCall('completeTask', { variables: [] });
+					await sdk.completeTask([]);
 					this.task = Object.assign({}, this.task, { completed: true });
 				} catch (err) {
 					this.showToast(err && err.message ? err.message : String(err));

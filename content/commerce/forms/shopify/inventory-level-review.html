@@ -564,7 +564,7 @@ body {
 	<!-- Loading state -->
 	<div v-if="view === 'loading'" class="state-pane">
 		<div class="spinner"></div>
-		<p>Loading product…</p>
+		<p>{{ t('form.commerce.shopify.inventoryLevelReview.loading', undefined, 'Loading product…') }}</p>
 	</div>
 
 	<!-- Error state -->
@@ -576,7 +576,7 @@ body {
 	<!-- Standalone notice (form opened outside Tasks app) -->
 	<div v-else-if="view === 'standalone'" class="state-pane">
 		<svg class="state-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM7.25 5a.75.75 0 0 1 1.5 0v3.5a.75.75 0 0 1-1.5 0V5zM8 11.25a.875.875 0 1 1 0-1.75.875.875 0 0 1 0 1.75z"/></svg>
-		<p>This form must be opened from the Tasks application.</p>
+		<p>{{ t('form.commerce.shopify.inventoryLevelReview.standaloneNotice', undefined, 'This form must be opened from the Tasks application.') }}</p>
 	</div>
 
 	<!-- Main content -->
@@ -590,7 +590,7 @@ body {
 						@error="imageFailed = true">
 					<div v-else class="image-fallback">
 						<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M2.5 2A1.5 1.5 0 0 0 1 3.5v9A1.5 1.5 0 0 0 2.5 14h11a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 13.5 2h-11zM5 5a1.25 1.25 0 1 1 0 2.5A1.25 1.25 0 0 1 5 5zM2.5 12.5l3-3 1.75 1.75L10 8.25l3.5 4.25h-11z"/></svg>
-						<span>No image</span>
+						<span>{{ t('form.commerce.shopify.inventoryLevelReview.noImage', undefined, 'No image') }}</span>
 					</div>
 				</div>
 				<div class="product-meta">
@@ -601,32 +601,32 @@ body {
 					</div>
 					<div class="product-description"
 						:class="{ empty: !descriptionHTML }"
-						v-html="descriptionHTML || 'No description.'"></div>
+						v-html="descriptionHTML || t('form.commerce.shopify.inventoryLevelReview.noDescription', undefined, 'No description.')"></div>
 				</div>
 			</header>
 
 			<section class="variants-section">
 				<h2 class="section-title">
-					Variants
+					{{ t('form.commerce.shopify.inventoryLevelReview.variants', undefined, 'Variants') }}
 					<span v-if="alertCount > 0" class="alert-pill">
 						<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1.5a.75.75 0 0 1 .67.418l6.5 13a.75.75 0 0 1-.67 1.082h-13a.75.75 0 0 1-.67-1.082l6.5-13A.75.75 0 0 1 8 1.5zm0 4.75a.75.75 0 0 0-.75.75v3a.75.75 0 0 0 1.5 0v-3A.75.75 0 0 0 8 6.25zm0 6.25a.875.875 0 1 0 0-1.75.875.875 0 0 0 0 1.75z"/></svg>
-						<span>{{ alertCount }} {{ alertCount === 1 ? 'variant' : 'variants' }} below threshold</span>
+						<span>{{ alertCountText }}</span>
 					</span>
 				</h2>
 				<div class="table-wrap">
 					<table class="variants-table">
 						<thead>
 							<tr>
-								<th>Variant</th>
-								<th>SKU</th>
-								<th class="align-right">Price</th>
-								<th class="align-right">Available</th>
-								<th class="align-right">Threshold</th>
+								<th>{{ t('form.commerce.shopify.inventoryLevelReview.colVariant', undefined, 'Variant') }}</th>
+								<th>{{ t('form.commerce.shopify.inventoryLevelReview.colSku', undefined, 'SKU') }}</th>
+								<th class="align-right">{{ t('form.commerce.shopify.inventoryLevelReview.colPrice', undefined, 'Price') }}</th>
+								<th class="align-right">{{ t('form.commerce.shopify.inventoryLevelReview.colAvailable', undefined, 'Available') }}</th>
+								<th class="align-right">{{ t('form.commerce.shopify.inventoryLevelReview.colThreshold', undefined, 'Threshold') }}</th>
 							</tr>
 						</thead>
 						<tbody>
 							<tr v-if="variantRows.length === 0">
-								<td class="empty-cell" colspan="5">No variants.</td>
+								<td class="empty-cell" colspan="5">{{ t('form.commerce.shopify.inventoryLevelReview.noVariants', undefined, 'No variants.') }}</td>
 							</tr>
 							<tr v-for="row in variantRows"
 								:key="row.id || row.title"
@@ -642,7 +642,7 @@ body {
 									</span>
 								</td>
 								<td class="align-right">
-									<span v-if="row.threshold == null" class="threshold-empty">not set</span>
+									<span v-if="row.threshold == null" class="threshold-empty">{{ t('form.commerce.shopify.inventoryLevelReview.notSet', undefined, 'not set') }}</span>
 									<template v-else>{{ row.thresholdText }}</template>
 								</td>
 							</tr>
@@ -652,21 +652,21 @@ body {
 			</section>
 
 			<section class="memo-section">
-				<h2 class="section-title">Memo</h2>
+				<h2 class="section-title">{{ t('form.commerce.shopify.inventoryLevelReview.memo', undefined, 'Memo') }}</h2>
 				<div class="memo-body">
 					<div v-if="memo" class="memo-card">
 						<div class="memo-header">
-							<span class="memo-author">{{ memo.name || memo.id || 'Unknown' }}</span>
+							<span class="memo-author">{{ memo.name || memo.id || t('form.commerce.shopify.common.unknown', undefined, 'Unknown') }}</span>
 							<span class="memo-time" v-if="memoTimestampText">{{ memoTimestampText }}</span>
 						</div>
 						<div class="memo-content">{{ memo.content }}</div>
 					</div>
-					<div v-else class="memo-empty">No memo yet.</div>
+					<div v-else class="memo-empty">{{ t('form.commerce.shopify.inventoryLevelReview.noMemo', undefined, 'No memo yet.') }}</div>
 
 					<div v-if="canEditMemo && memoMode === 'view'" class="memo-edit-trigger">
 						<button class="btn btn-secondary" type="button" @click="enterMemoEdit">
 							<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25a1.75 1.75 0 0 1 .445-.755l8.61-8.612zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086zM11.189 6.25 9.75 4.81l-6.286 6.287a.25.25 0 0 0-.064.108l-.558 1.953 1.953-.558a.25.25 0 0 0 .108-.064l6.286-6.286z"/></svg>
-							<span>{{ memo ? 'Edit memo' : 'Add memo' }}</span>
+							<span>{{ memo ? t('form.commerce.shopify.inventoryLevelReview.editMemo', undefined, 'Edit memo') : t('form.commerce.shopify.inventoryLevelReview.addMemo', undefined, 'Add memo') }}</span>
 						</button>
 					</div>
 
@@ -674,16 +674,16 @@ body {
 						<textarea v-model="memoDraft"
 							class="memo-textarea"
 							rows="4"
-							placeholder="Write a memo for the next reviewer..."
+							:placeholder="t('form.commerce.shopify.inventoryLevelReview.memoPlaceholder', undefined, 'Write a memo for the next reviewer...')"
 							:disabled="memoSaving"></textarea>
 						<div class="memo-editor-actions">
 							<button class="btn btn-secondary" type="button"
 								:disabled="memoSaving"
-								@click="cancelMemoEdit">Cancel</button>
+								@click="cancelMemoEdit">{{ t('form.commerce.shopify.common.cancel', undefined, 'Cancel') }}</button>
 							<button class="btn btn-primary" type="button"
 								:disabled="memoSaving || !memoDraftHasContent"
 								@click="saveMemo">
-								<span>Update</span>
+								<span>{{ t('form.commerce.shopify.common.update', undefined, 'Update') }}</span>
 							</button>
 						</div>
 					</div>
@@ -699,27 +699,27 @@ body {
 				<button v-if="isAssignedToMe || taskCompleted"
 					class="btn btn-secondary" type="button"
 					:disabled="!shopifyURL"
-					:title="shopifyURL || 'Shop domain or product ID is unavailable.'"
+					:title="shopifyURL || t('form.commerce.shopify.inventoryLevelReview.shopifyUnavailable', undefined, 'Shop domain or product ID is unavailable.')"
 					@click="openShopify">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M9.5 2a.5.5 0 0 0 0 1h2.793L7.146 8.146a.5.5 0 1 0 .708.708L13 3.707V6.5a.5.5 0 0 0 1 0V2.5a.5.5 0 0 0-.5-.5h-4z"/><path d="M3.5 4A1.5 1.5 0 0 0 2 5.5v7A1.5 1.5 0 0 0 3.5 14h7a1.5 1.5 0 0 0 1.5-1.5v-3a.5.5 0 0 0-1 0v3a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1-.5-.5v-7a.5.5 0 0 1 .5-.5h3a.5.5 0 0 0 0-1h-3z"/></svg>
-					View on Shopify
+					{{ t('form.commerce.shopify.inventoryLevelReview.viewOnShopify', undefined, 'View on Shopify') }}
 				</button>
 			</div>
 			<div class="action-area">
 				<!-- Already completed -->
 				<span v-if="taskCompleted" class="action-notice completed">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7 7a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.25 10.69l6.47-6.47a.75.75 0 0 1 1.06 0z"/></svg>
-					<span>This review has been completed.</span>
+					<span>{{ t('form.commerce.shopify.inventoryLevelReview.completedNotice', undefined, 'This review has been completed.') }}</span>
 				</span>
 				<!-- Unassigned: prompt the user to use the host Tasks app's Claim button -->
 				<span v-else-if="!taskAssignee" class="action-notice">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 14.5a5 5 0 0 1 10 0 .5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5z"/></svg>
-					<span>Claim this task to view details and take review actions.</span>
+					<span>{{ t('form.commerce.shopify.inventoryLevelReview.claimPrompt', undefined, 'Claim this task to view details and take review actions.') }}</span>
 				</span>
 				<!-- Assigned to someone else -->
 				<span v-else-if="!isAssignedToMe" class="action-notice">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 14.5a5 5 0 0 1 10 0 .5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5z"/></svg>
-					<span>This task is currently assigned to {{ assigneeDisplay || taskAssignee }}. View only.</span>
+					<span>{{ assignedNoticeText }}</span>
 				</span>
 				<!-- Assigned to me: Mark as reviewed -->
 				<button v-else
@@ -727,7 +727,7 @@ body {
 					:disabled="actionPending"
 					@click="onComplete">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7 7a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.25 10.69l6.47-6.47a.75.75 0 0 1 1.06 0z"/></svg>
-					<span>Mark as reviewed</span>
+					<span>{{ t('form.commerce.shopify.inventoryLevelReview.markReviewed', undefined, 'Mark as reviewed') }}</span>
 				</button>
 			</div>
 		</footer>
@@ -737,53 +737,25 @@ body {
 </main>
 
 <!-- ichigo.js (ESM, latest) -->
+<script src="./forms-sdk.js?v=2"></script>
 <script type="module">
-import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ichigo.esm.min.js';
+import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.71/dist/ichigo.esm.min.js';
 
-	// ============================================================
-	// JSON-RPC bridge with the Tasks parent app
-	// ============================================================
-	// `pending` and `nextID` are module-scoped because the RPC bridge survives
-	// any number of context updates from the parent.
-	const pending = new Map();
-	let nextID = 1;
+	// Namespace this form pulls from the host i18n bundle. Keys live in
+	// /etc/i18n/commerce-forms.*.json.
+	const I18N_PREFIX = 'form.commerce.shopify.';
 
-	function rpcCall(method, params) {
-		return new Promise((resolve, reject) => {
-			const id = String(nextID++);
-			pending.set(id, { resolve, reject });
-			try {
-				window.parent.postMessage({
-					__tasksRpc: 'call',
-					id: id,
-					method: method,
-					params: params || {},
-				}, '*');
-			} catch (err) {
-				pending.delete(id);
-				reject(err);
-			}
-		});
-	}
+	// The Tasks Form SDK hides the postMessage RPC bridge, owns the ICU engine
+	// (intl-messageformat is loaded inside it), and routes host events. Created
+	// at module scope — it holds transport, not reactive UI state.
+	const sdk = window.createTasksForm();
 
 	// ============================================================
 	// Pure helpers
 	// ============================================================
-	function getProp(node, name) {
-		if (!node || !Array.isArray(node.properties)) return undefined;
-		const p = node.properties.find(x => x && x.name === name);
-		if (!p) return undefined;
-		const v = p.propertyValue;
-		if (!v) return undefined;
-		if ('value' in v) return v.value;
-		if ('values' in v) return v.values;
-		return undefined;
-	}
-
-	function getStringProp(node, name) {
-		const v = getProp(node, name);
-		return v == null ? '' : String(v);
-	}
+	// Node property reads (sdk.getProp / sdk.getStringProp) and simple-YAML
+	// scalar extraction (sdk.readYamlScalar) are node-contract concerns owned
+	// by the Tasks Form SDK; forms call them straight off `sdk`.
 
 	function parseThresholds(thresholdJsonStr) {
 		if (!thresholdJsonStr) return {};
@@ -803,15 +775,6 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 		} catch (_) {
 			return {};
 		}
-	}
-
-	// Extract `shopDomain: "example.myshopify.com"` from the YAML config.
-	// Robust enough for the simple key/value structure of shopify.yml; not a
-	// full YAML parser.
-	function extractShopDomain(yamlText) {
-		if (!yamlText) return '';
-		const m = yamlText.match(/^[ \t]*shopDomain[ \t]*:[ \t]*["']?([^"'#\r\n]+?)["']?[ \t]*(?:#.*)?$/m);
-		return m ? m[1].trim() : '';
 	}
 
 	// Strip scripts, event handlers, and javascript: URLs from product
@@ -841,24 +804,9 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 		return tpl.innerHTML;
 	}
 
-	function formatPrice(price) {
-		if (price == null || price === '') return '—';
-		const n = Number(price);
-		if (Number.isFinite(n)) {
-			return n.toLocaleString(undefined, {
-				minimumFractionDigits: 2,
-				maximumFractionDigits: 2,
-			});
-		}
-		return String(price);
-	}
-
-	function formatNumber(n) {
-		if (n == null || n === '') return '—';
-		const num = Number(n);
-		if (Number.isFinite(num)) return num.toLocaleString();
-		return String(n);
-	}
+	// Money / number / date formatting is locale-aware and therefore lives on
+	// the component (methods read `this.localization`, so bindings repaint when
+	// the user switches language / zone). See the methods of the same name.
 
 	// ============================================================
 	// Application
@@ -872,6 +820,18 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				toastMessage: '',
 				imageFailed: false,
 				actionPending: false,
+
+				// Effective localization pushed by the host (inside the context
+				// payload and on every 'localization-changed' event). Read by t()
+				// and the format* methods so the whole form repaints on a locale
+				// or time-zone switch.
+				localization: { locale: '', timeZone: '', numberFormat: '', currency: '' },
+
+				// i18n message map for this form's namespace, resolved by the host
+				// for the effective locale (fallback chain merged). `revision` is
+				// bumped on every (re)load so t() bindings repaint even when the
+				// locale string is unchanged (e.g. a bundle hot-reload).
+				i18n: { messages: {}, revision: 0 },
 
 				// Context (refreshed on every 'context' event from the parent)
 				currentUserID: '',
@@ -894,8 +854,6 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				memoSaving: false,
 
 				// Internal handles (kept unreactive via the underscore convention)
-				_messageListener: null,
-				_standaloneTimer: null,
 				_toastTimer: null,
 				_assigneeDisplayCache: {},
 			};
@@ -904,16 +862,16 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 		computed: {
 			productTitle() {
 				return (this.product && this.product.title)
-					|| getStringProp(this.node, 'title')
-					|| '(untitled)';
+					|| sdk.getStringProp(this.node, 'title')
+					|| this.t('form.commerce.shopify.common.untitledItem', undefined, '(item)');
 			},
 			vendor() {
 				return (this.product && this.product.vendor)
-					|| getStringProp(this.node, 'vendor');
+					|| sdk.getStringProp(this.node, 'vendor');
 			},
 			productType() {
 				return (this.product && this.product.product_type)
-					|| getStringProp(this.node, 'product_type');
+					|| sdk.getStringProp(this.node, 'product_type');
 			},
 			descriptionHTML() {
 				const html = (this.product && this.product.body_html) || '';
@@ -932,7 +890,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				const list = (this.product && Array.isArray(this.product.variants)) ? this.product.variants : [];
 				return list.map(v => {
 					const id = v && v.id != null ? String(v.id) : '';
-					const title = (v && (v.title || v.option1)) || '(default)';
+					const title = (v && (v.title || v.option1)) || this.t('form.commerce.shopify.inventoryLevelReview.variantDefault', undefined, '(default)');
 					const sku = (v && v.sku) || '';
 					const price = v ? v.price : null;
 					const qty = v && v.inventory_quantity != null ? Number(v.inventory_quantity) : null;
@@ -944,17 +902,25 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 						id,
 						title,
 						sku,
-						priceText: formatPrice(price),
+						priceText: this.formatPrice(price),
 						qty,
-						qtyText: formatNumber(qty),
+						qtyText: this.formatNumber(qty),
 						threshold,
-						thresholdText: formatNumber(threshold),
+						thresholdText: this.formatNumber(threshold),
 						isAlert,
 					};
 				});
 			},
 			alertCount() {
 				return this.variantRows.reduce((n, r) => n + (r.isAlert ? 1 : 0), 0);
+			},
+			// Pluralized "N variant(s) below threshold" label. Kept out of the
+			// template because its ICU fallback ends in `}}`, which would collide
+			// with ichigojs's `{{ }}` mustache delimiter and truncate the
+			// expression.
+			alertCountText() {
+				return this.t('form.commerce.shopify.inventoryLevelReview.alertCount',
+					{ count: this.alertCount }, '{count, plural, one {# variant below threshold} other {# variants below threshold}}');
 			},
 			taskAssignee() {
 				return (this.task && this.task.assignee) || '';
@@ -972,113 +938,124 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 			},
 			memoTimestampText() {
 				if (!this.memo || !this.memo.at) return '';
-				const d = new Date(this.memo.at);
-				if (Number.isNaN(d.getTime())) return this.memo.at;
-				return d.toLocaleString([], {
-					year: 'numeric',
-					month: 'numeric',
-					day: 'numeric',
-					hour: 'numeric',
-					minute: '2-digit',
-				});
+				return this.formatDate(this.memo.at) || this.memo.at;
 			},
 			memoDraftHasContent() {
 				return !!(this.memoDraft && this.memoDraft.trim());
+			},
+			// "Assigned to X. View only." Built in JS (not the template) so the
+			// parameterized t() call stays clear of mustache brace parsing.
+			assignedNoticeText() {
+				const name = this.assigneeDisplay || this.taskAssignee;
+				return this.t('form.commerce.shopify.inventoryLevelReview.assignedToOther',
+					{ name }, 'This task is currently assigned to {name}. View only.');
 			},
 		},
 
 		methods: {
 			// ----------------------------------------------------------
+			// i18n & locale-aware formatting
+			// ----------------------------------------------------------
+			// Translate a message id against the host-provided bundle for the
+			// effective locale. Reads `localization.locale` and `i18n.revision`
+			// so every binding repaints when the language switches or the bundle
+			// hot-reloads. Falls back to `fallback` (then the id) when the key is
+			// absent — both the resolved template and the fallback are run
+			// through ICU so placeholders / plurals work either way.
+			t(id, params, fallback) {
+				// Touch revision so a bundle hot-reload (same locale) still repaints.
+				void this.i18n.revision;
+				return sdk.translate(this.i18n.messages, this.localization.locale, id, params, fallback);
+			},
+
+			// Format a price amount. Shopify variant prices carry no currency
+			// code, so only the grouping / fraction digits follow the user's
+			// locale.
+			formatPrice(price) {
+				if (price == null || price === '') return '—';
+				const n = Number(price);
+				if (!Number.isFinite(n)) return String(price);
+				const locale = this.localization.numberFormat || this.localization.locale || undefined;
+				return n.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+			},
+
+			formatNumber(n) {
+				if (n == null || n === '') return '—';
+				const num = Number(n);
+				if (!Number.isFinite(num)) return String(n);
+				const locale = this.localization.numberFormat || this.localization.locale || undefined;
+				return num.toLocaleString(locale);
+			},
+
+			formatDate(value) {
+				if (!value) return '';
+				const d = new Date(value);
+				if (Number.isNaN(d.getTime())) return '';
+				const locale = this.localization.locale || undefined;
+				const opts = {
+					year: 'numeric', month: 'numeric', day: 'numeric',
+					hour: 'numeric', minute: '2-digit',
+				};
+				if (this.localization.timeZone) opts.timeZone = this.localization.timeZone;
+				try {
+					return d.toLocaleString(locale, opts);
+				} catch (_) {
+					return d.toLocaleString(locale);
+				}
+			},
+
+			// Apply an effective-localization snapshot pushed by the host. Mirrors
+			// the value onto <html lang> for correct typography/hyphenation, then
+			// (re)loads the message bundle for the new locale.
+			applyLocalization(loc) {
+				if (!loc || typeof loc !== 'object') return;
+				this.localization.locale = loc.locale || '';
+				this.localization.timeZone = loc.timeZone || '';
+				this.localization.numberFormat = loc.numberFormat || '';
+				this.localization.currency = loc.currency || '';
+				if (this.localization.locale) {
+					document.documentElement.setAttribute('lang', this.localization.locale);
+				}
+				this.loadMessages();
+				this.updateDocumentTitle();
+			},
+
+			// Pull this form's namespace from the host for the effective locale.
+			// Best-effort: an older host without the RPC leaves messages empty,
+			// so t() degrades to its English fallbacks.
+			async loadMessages() {
+				try {
+					const res = await sdk.getI18nMessages(I18N_PREFIX);
+					const messages = (res && res.messages && typeof res.messages === 'object') ? res.messages : {};
+					// Trust the host's resolved locale when present (it knows the
+					// effective preference even if the context lagged).
+					if (res && res.locale) this.localization.locale = res.locale;
+					this.i18n.messages = messages;
+					this.i18n.revision++;
+				} catch (_) {
+					// Leave existing messages in place; fall back to literals.
+				}
+			},
+
+			updateDocumentTitle() {
+				const title = this.t('form.commerce.shopify.inventoryLevelReview.title', undefined, 'Inventory Level Review');
+				document.title = (this.product && this.product.title) ? (title + ' — ' + this.productTitle) : title;
+			},
+
+			// ----------------------------------------------------------
 			// Lifecycle
 			// ----------------------------------------------------------
 			onMounted() {
-				this._messageListener = (ev) => this.onMessage(ev);
-				window.addEventListener('message', this._messageListener);
-
-				// If no context arrives within 3s, the form is probably running
-				// standalone (opened directly in the browser).
-				this._standaloneTimer = setTimeout(() => {
-					if (this.view === 'loading') this.view = 'standalone';
-				}, 3000);
-
-				this.notifyReady();
+				sdk
+					.on('context', (payload) => this.handleContext(payload))
+					.on('localization', (loc) => this.applyLocalization(loc))
+					.on('standalone', () => { if (this.view === 'loading') this.view = 'standalone'; })
+					.on('ready', () => { this.i18n.revision++; })
+					.start();
 			},
-
 			onUnmount() {
-				if (this._messageListener) {
-					window.removeEventListener('message', this._messageListener);
-					this._messageListener = null;
-				}
-				if (this._standaloneTimer) {
-					clearTimeout(this._standaloneTimer);
-					this._standaloneTimer = null;
-				}
-				if (this._toastTimer) {
-					clearTimeout(this._toastTimer);
-					this._toastTimer = null;
-				}
-			},
-
-			notifyReady() {
-				try {
-					window.parent.postMessage({ __tasksRpc: 'ready' }, '*');
-				} catch (_) {
-					// ignore — running outside the Tasks app
-				}
-			},
-
-			// ----------------------------------------------------------
-			// Parent message bridge
-			// ----------------------------------------------------------
-			onMessage(ev) {
-				const data = ev.data;
-				if (!data || typeof data !== 'object') return;
-
-				// RPC reply
-				if (data.__tasksRpc === 'result') {
-					const id = String(data.id);
-					const p = pending.get(id);
-					if (!p) return;
-					pending.delete(id);
-					if (data.ok) p.resolve(data.data);
-					else p.reject(new Error(data.error || 'RPC error'));
-					return;
-				}
-
-				// Context push from parent — fires on initial frame ready AND whenever
-				// the host's task selection/assignment changes (claim, unclaim,
-				// reassign). The form must re-render in response, so we always
-				// process it and let computed properties refresh derived UI.
-				if (data.__tasksRpc === 'event' && data.type === 'context') {
-					if (this._standaloneTimer) {
-						clearTimeout(this._standaloneTimer);
-						this._standaloneTimer = null;
-					}
-					const payload = data.payload || {};
-					if (payload.theme !== undefined) this.applyTheme(payload.theme);
-					this.handleContext(payload);
-					return;
-				}
-
-				// Live theme update pushed by the host when the user toggles
-				// the Webtop theme. The iframe is sandboxed without
-				// allow-same-origin, so postMessage is the only channel by
-				// which we can learn about an in-app theme change.
-				if (data.__tasksRpc === 'event' && data.type === 'theme-changed') {
-					this.applyTheme(data.theme);
-					return;
-				}
-			},
-
-			// Apply a host-provided theme. Pass 'light' or 'dark' to force,
-			// or '' / null to release control back to the OS preference.
-			applyTheme(theme) {
-				const root = document.documentElement;
-				if (theme === 'light' || theme === 'dark') {
-					root.dataset.theme = theme;
-				} else {
-					delete root.dataset.theme;
-				}
+				sdk.stop();
+				if (this._toastTimer) clearTimeout(this._toastTimer);
 			},
 
 			showToast(message) {
@@ -1088,7 +1065,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 			},
 
 			showError(message) {
-				this.errorMessage = message || 'An unexpected error occurred.';
+				this.errorMessage = message || this.t('form.commerce.shopify.common.unexpectedError', undefined, 'An unexpected error occurred.');
 				this.view = 'error';
 			},
 
@@ -1104,7 +1081,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 			async handleContext(ctx) {
 				if (!ctx || ctx.mode !== 'task' || !ctx.task) {
 					if (!this.productLoaded) {
-						this.showError('This form must be opened from a Task.');
+						this.showError(this.t('form.commerce.shopify.inventoryLevelReview.mustOpenFromTask', undefined, 'This form must be opened from a Task.'));
 					}
 					return;
 				}
@@ -1128,7 +1105,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 			},
 
 			async loadProduct() {
-				const taskInfo = await rpcCall('getTaskWithVariables');
+				const taskInfo = await sdk.getTaskWithVariables();
 				const variables = (taskInfo && Array.isArray(taskInfo.variables)) ? taskInfo.variables : [];
 				const variableMap = {};
 				for (const v of variables) {
@@ -1139,41 +1116,39 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				const productID = String(variableMap.productID || '');
 
 				if (!productPath) {
-					throw new Error('Process variable "productPath" is not set on this task.');
+					throw new Error(this.t('form.commerce.shopify.inventoryLevelReview.noProductPath', undefined, 'Process variable "productPath" is not set on this task.'));
 				}
 
 				const [node, productJSONText, configText] = await Promise.all([
-					rpcCall('getNode', { path: productPath }),
-					rpcCall('readNodeText', { path: productPath }),
-					rpcCall('readNodeText', { path: '/etc/commerce/config/shopify.yml' }).catch(() => ''),
+					sdk.getNode(productPath),
+					sdk.readNodeText(productPath),
+					sdk.readNodeText('/etc/commerce/config/shopify.yml').catch(() => ''),
 				]);
 
-				if (!node) throw new Error('Product not found: ' + productPath);
+				if (!node) throw new Error(this.t('form.commerce.shopify.inventoryLevelReview.productNotFound', { path: productPath }, 'Product not found: {path}'));
 
 				let product;
 				try {
 					product = JSON.parse(productJSONText);
 				} catch (err) {
-					throw new Error('Failed to parse product JSON: ' + (err && err.message ? err.message : String(err)));
+					throw new Error(this.t('form.commerce.shopify.inventoryLevelReview.productParseFailed', { detail: (err && err.message ? err.message : String(err)) }, 'Failed to parse product JSON: {detail}'));
 				}
 
 				this.node = node;
 				this.product = product;
 				this.productPath = productPath;
-				this.thresholdMap = parseThresholds(getStringProp(node, 'inventory_level_config'));
+				this.thresholdMap = parseThresholds(sdk.getStringProp(node, 'inventory_level_config'));
 				this.loadMemoFromNode();
 				this.imageFailed = false;
 
 				// "View on Shopify" link
-				const shopDomain = extractShopDomain(configText);
+				const shopDomain = sdk.readYamlScalar(configText, 'shopDomain');
 				const idForURL = productID || (product && product.id != null ? String(product.id) : '');
 				this.shopifyURL = (shopDomain && idForURL)
 					? 'https://' + shopDomain + '/admin/products/' + encodeURIComponent(idForURL)
 					: '';
 
-				if (product && product.title) {
-					document.title = 'Inventory Alert — ' + product.title;
-				}
+				this.updateDocumentTitle();
 			},
 
 			// ----------------------------------------------------------
@@ -1199,7 +1174,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 					return;
 				}
 				try {
-					const user = await rpcCall('getUser', { username: assignee });
+					const user = await sdk.getUser(assignee);
 					const display = (user && user.displayName) || assignee;
 					this._assigneeDisplayCache[assignee] = display;
 					// Drop the result if the assignee changed while we were waiting.
@@ -1218,7 +1193,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 			// `internal_memo` string property)
 			// ----------------------------------------------------------
 			loadMemoFromNode() {
-				const raw = getStringProp(this.node, 'internal_memo');
+				const raw = sdk.getStringProp(this.node, 'internal_memo');
 				if (!raw) {
 					this.memo = null;
 					return;
@@ -1258,7 +1233,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				const content = (this.memoDraft || '').trim();
 				if (!content) return;
 				if (!this.productPath) {
-					this.showToast('Cannot save memo: product path is unknown.');
+					this.showToast(this.t('form.commerce.shopify.inventoryLevelReview.memoNoPath', undefined, 'Cannot save memo: product path is unknown.'));
 					return;
 				}
 				this.memoSaving = true;
@@ -1269,14 +1244,10 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 						at: new Date().toISOString(),
 						content: content,
 					};
-					await rpcCall('setNodeProperty', {
-						path: this.productPath,
-						name: 'internal_memo',
-						value: JSON.stringify(payload),
-					});
+					await sdk.setNodeProperty(this.productPath, 'internal_memo', JSON.stringify(payload));
 					// Re-read the node so a future edit starts from the persisted
 					// state, and so the displayed timestamp matches what's saved.
-					const refreshed = await rpcCall('getNode', { path: this.productPath });
+					const refreshed = await sdk.getNode(this.productPath);
 					if (refreshed) this.node = refreshed;
 					this.loadMemoFromNode();
 					this.memoMode = 'view';
@@ -1292,7 +1263,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				if (this.actionPending) return;
 				this.actionPending = true;
 				try {
-					await rpcCall('completeTask', { variables: [] });
+					await sdk.completeTask([]);
 					// The parent typically clears the form after completion. If we
 					// remain visible, fall back to the completed notice.
 					this.task = Object.assign({}, this.task, { completed: true });

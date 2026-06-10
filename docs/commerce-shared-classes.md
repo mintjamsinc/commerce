@@ -57,6 +57,35 @@ Numeric / money helpers. Pure.
 | `BigDecimal toNumber(Object value)` | Parse String/Number/null to BigDecimal; null if absent/unparseable. |
 | `String format(Number n)` | Thousands separators; whole numbers drop decimals (`100000` → `100,000`), fractions keep two places. `""` for null. |
 
+### `commerce.ReviewReasons`
+Structured "review reason" message descriptors shared by the order/refund
+screening workflow. Pure.
+
+A reason is emitted as a descriptor — a stable `code` plus raw `params`
+(numbers, currency code, status) — *not* pre-rendered text:
+
+```json
+{ "code": "highValue", "params": { "total": 133000, "currency": "JPY", "threshold": 100000 } }
+```
+
+This lets each consumer render it in its own context: the review forms map the
+`code` to an i18n key and format money/numbers in the reviewer's locale, while
+the notifications render operational English server-side via `render`. It is
+the intended contract for any future server-produced, user-facing message
+(e.g. form validation errors), so codes/params live in exactly one place.
+
+| Method | Purpose |
+|---|---|
+| `Map highValue / flaggedFinancialStatus / largeQuantity / newCustomer / addressMismatch(...)` | Build an order-screening descriptor `[code, params]` (used by `screenOrder`). |
+| `Map highRefundValue / fullRefund / noRestock(...)` | Build a refund-screening descriptor (used by `screenRefund`). |
+| `Map descriptor(String code, Map params)` | Generic descriptor builder. |
+| `List<String> renderAll(List reasons)` | Render descriptors to operational English, dropping empties; passes legacy plain-string reasons through. |
+| `String render(Object reason)` | Render one descriptor (or legacy string) to English. |
+
+> The forms do **not** call `render`; they localize each descriptor via their
+> i18n bundle. `render` exists for the notifications, which have no per-user
+> locale.
+
 ### `commerce.Refunds`
 Interpret a parsed Shopify refund payload. Pure.
 

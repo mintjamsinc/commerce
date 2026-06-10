@@ -18,7 +18,10 @@
 //
 // Sets process variables (declared via the service task's `outputs` field):
 //   - requiresReview: true if at least one enabled rule matched
-//   - reviewReasons : JSON array string of human-readable reasons
+//   - reviewReasons : JSON array string of structured reason descriptors
+//                     ({code, params}); each consumer (review form / notification)
+//                     renders them in its own locale context, so we deliberately
+//                     do NOT pre-render text here. See commerce.ReviewReasons.
 //
 // Screening is fail-open: a missing/unparseable config or refund is logged and
 // treated as "no review required" rather than blocking or flooding operators.
@@ -27,6 +30,7 @@
 import commerce.Money
 import commerce.Refunds
 import commerce.Orders
+import commerce.ReviewReasons
 
 if (!refundPath) {
     throw new IllegalArgumentException("Required variable 'refundPath' is missing")
@@ -86,7 +90,7 @@ def highValue = rules.highRefundValue
 if (ruleEnabled(highValue)) {
     def threshold = resolveThreshold(highValue, currency)
     if (refundAmount != null && threshold != null && refundAmount >= threshold) {
-        reasons << "High-value refund: ${Money.format(refundAmount)} ${currency ?: ''}".trim() + " >= ${Money.format(threshold)}"
+        reasons << ReviewReasons.highRefundValue(refundAmount, currency, threshold)
     }
 }
 
@@ -98,7 +102,7 @@ def fullRefund = rules.fullRefund
 if (ruleEnabled(fullRefund) && refundAmount != null) {
     def orderTotal = orderTotalPrice(orderId)
     if (orderTotal != null && orderTotal > 0 && refundAmount >= orderTotal) {
-        reasons << "Full refund: ${Money.format(refundAmount)} of ${Money.format(orderTotal)} ${currency ?: ''}".trim()
+        reasons << ReviewReasons.fullRefund(refundAmount, orderTotal, currency)
     }
 }
 
@@ -107,7 +111,7 @@ def noRestock = rules.noRestock
 if (ruleEnabled(noRestock)) {
     def lineItems = refund.refund_line_items ?: []
     if (!lineItems.isEmpty() && !lineItems.any { Refunds.isRestocked(it) }) {
-        reasons << "Items refunded without restocking: ${lineItems.size()} line item(s)"
+        reasons << ReviewReasons.noRestock(lineItems.size())
     }
 }
 

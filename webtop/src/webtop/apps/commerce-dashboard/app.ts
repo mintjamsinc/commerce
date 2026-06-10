@@ -13,6 +13,14 @@
 // BPMN engine, not JCR).
 
 import { VDOM } from '@mintjamsinc/ichigojs';
+import {
+	createLocalizationSnapshot,
+	refreshLocalization,
+	handleLocalizationMessage,
+	translate,
+	formatNumber,
+	formatDate,
+} from '../../composables/use-localization.js';
 
 // Type-only: the shell passes a fully-featured ApplicationInstance at launch.
 type AnyInstance = any;
@@ -29,18 +37,6 @@ const WATCH_DEBOUNCE_MS = 800;
 function humanizeStatus(key: string): string {
 	const s = String(key || '').replace(/_/g, ' ');
 	return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-function formatAmount(value: string): string {
-	const n = Number(value);
-	if (!Number.isFinite(n)) return String(value);
-	return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(n);
-}
-
-function formatLatency(ms: number): string {
-	if (!Number.isFinite(ms) || ms <= 0) return '—';
-	if (ms < 1000) return `${Math.round(ms)} ms`;
-	return `${(ms / 1000).toFixed(1)} s`;
 }
 
 function ratePill(rate: number): string {
@@ -81,10 +77,14 @@ const App = {
 	data() {
 		return {
 			instance: null as AnyInstance,
+			// Reactive Localization snapshot — drives every t() / format*() binding
+			// so the app repaints when the user switches language or a bundle is
+			// hot-reloaded. See composables/use-localization.ts.
+			localization: createLocalizationSnapshot(),
 			view: 'loading' as 'loading' | 'error' | 'ready',
 			errorMessage: '',
 			snapshot: null as any,
-			lastUpdated: '',
+			lastUpdated: null as Date | null,
 			refreshing: false,
 			connected: false,
 			salesDays: 30,
@@ -101,7 +101,7 @@ const App = {
 		sales(): any {
 			const s = (this.snapshot && this.snapshot.sales) || {};
 			const rev = s.revenue || {};
-			const revenueRows = Object.keys(rev).map((cur) => ({ label: cur, value: formatAmount(rev[cur]) }));
+			const revenueRows = Object.keys(rev).map((cur) => ({ label: cur, value: this.fmtAmount(rev[cur]) }));
 			return {
 				orders: Number(s.orders) || 0,
 				days: Number(s.days) || 0,
@@ -124,8 +124,9 @@ const App = {
 			const f = (this.snapshot && this.snapshot.forecast) || {};
 			const top = (f.top || []).map((t: any) => {
 				const named = t.variantTitle && t.variantTitle !== 'Default Title';
+				const variantFallback = this.t('app.commerce-dashboard.variantFallback', undefined, 'Variant');
 				return {
-					label: named ? `${t.title} — ${t.variantTitle}` : (t.title || 'Variant'),
+					label: named ? `${t.title} — ${t.variantTitle}` : (t.title || variantFallback),
 					days: Math.round(Number(t.days) || 0),
 				};
 			});
@@ -183,15 +184,15 @@ const App = {
 			return {
 				days: Number(s.days) || 0,
 				currency: cur,
-				totalRevenue: formatAmount(String(s.totalRevenue ?? 0)),
+				totalRevenue: this.fmtAmount(String(s.totalRevenue ?? 0)),
 				totalOrders: Number(s.totalOrders) || 0,
-				aov: formatAmount(String(s.aov ?? 0)),
+				aov: this.fmtAmount(String(s.aov ?? 0)),
 				hasData: n > 0 && max > 0,
 				W, H, line, area,
 				topProducts: (s.topProducts || []).map((t: any) => ({
-					title: t.title || t.sku || t.key || 'item',
+					title: t.title || t.sku || t.key || this.t('app.commerce-dashboard.itemFallback', undefined, 'item'),
 					qty: Number(t.quantity) || 0,
-					revenue: formatAmount(String(t.revenue ?? 0)),
+					revenue: this.fmtAmount(String(t.revenue ?? 0)),
 					currency: t.currency || cur,
 				})),
 			};
@@ -202,7 +203,7 @@ const App = {
 				drift: Number(r.productsWithDrift) || 0,
 				diffs: Number(r.totalDiffs) || 0,
 				healed: Number(r.healed) || 0,
-				lastRunAt: r.lastRunAt ? new Date(r.lastRunAt).toLocaleString() : '',
+				lastRunAt: r.lastRunAt ? this.fmtDateTime(r.lastRunAt) : '',
 			};
 		},
 		outboundSync(): any {
@@ -246,18 +247,48 @@ const App = {
 				apiPill: ratePill(api.rate),
 				routeErrorRate: formatPct(route.rate),
 				routePill: ratePill(route.rate),
-				avgLatency: formatLatency(route.latency),
+				avgLatency: this.fmtLatency(route.latency),
 			};
 		},
 	},
 
 	methods: {
+		// ---- i18n / locale-aware formatting ---------------------------------
+		// Reactive i18n lookup: reading the localization snapshot inside
+		// translate() subscribes every `{{ t(...) }}` binding, so the UI repaints
+		// the instant the user switches language or a bundle hot-reloads.
+		t(messageId: string, params?: Record<string, any>, fallback?: string): string {
+			return translate(this.localization, this.instance, messageId, params, fallback);
+		},
+		// Locale-aware money amount (up to 2 fraction digits). The dashboard shows
+		// the currency code separately, so this formats the number only.
+		fmtAmount(value: string | number): string {
+			return formatNumber(this.localization, value, { maximumFractionDigits: 2 });
+		},
+		// Processing latency, locale-aware units. Returns an em dash when unknown.
+		fmtLatency(ms: number): string {
+			if (!Number.isFinite(ms) || ms <= 0) return '—';
+			if (ms < 1000) {
+				return this.t('app.commerce-dashboard.unit.ms', { value: Math.round(ms) }, '{value} ms');
+			}
+			return this.t('app.commerce-dashboard.unit.seconds', { value: (ms / 1000).toFixed(1) }, '{value} s');
+		},
+		fmtDateTime(value: any): string {
+			return formatDate(this.localization, value, { format: 'datetime' });
+		},
+		fmtTime(value: any): string {
+			return formatDate(this.localization, value, { format: 'time' });
+		},
+
 		onMounted() {
 			const vm = this;
 
 			// Mirror shell theme changes onto <html data-theme>, like the built-in apps.
 			vm._messageListener = (event: MessageEvent) => {
 				const data: any = event.data || {};
+				// Fold locale / time-zone / currency changes and i18n bundle
+				// hot-reloads into the reactive snapshot so the UI re-localizes live.
+				if (handleLocalizationMessage(data.type, vm.localization, vm.instance)) return;
 				if (data.type === 'theme-changed' && data.theme) {
 					document.documentElement.dataset.theme = data.theme;
 				}
@@ -272,7 +303,11 @@ const App = {
 					document.documentElement.dataset.theme = theme;
 				} catch (_) { /* theme service unavailable */ }
 
-				try { instance.windowTitle = 'Commerce Dashboard'; } catch (_) {}
+				// Snapshot the effective Localization preference so the first paint
+				// is already in the user's language / region.
+				refreshLocalization(vm.localization, vm.instance);
+
+				try { instance.windowTitle = vm.t('app.commerce-dashboard.title', undefined, 'Commerce Dashboard'); } catch (_) {}
 
 				await vm.resolveBase();
 				await vm.load();
@@ -333,7 +368,7 @@ const App = {
 			try {
 				const data = await this.fetchSnapshot();
 				this.snapshot = this.$markRaw ? this.$markRaw(data) : data;
-				this.lastUpdated = new Date().toLocaleTimeString();
+				this.lastUpdated = new Date();
 				this.view = 'ready';
 			} catch (e: any) {
 				this.errorMessage = (e && e.message) ? e.message : String(e);
@@ -347,7 +382,7 @@ const App = {
 			try {
 				const data = await this.fetchSnapshot();
 				this.snapshot = this.$markRaw ? this.$markRaw(data) : data;
-				this.lastUpdated = new Date().toLocaleTimeString();
+				this.lastUpdated = new Date();
 				if (this.view !== 'ready') this.view = 'ready';
 			} catch (e: any) {
 				// Keep the last good data on a transient refresh failure; only show

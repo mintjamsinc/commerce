@@ -381,7 +381,7 @@ body {
 
 	<div v-if="view === 'loading'" class="state-pane">
 		<div class="spinner"></div>
-		<p>Loading order…</p>
+		<p>{{ t('form.commerce.shopify.orderFulfillment.loading', undefined, 'Loading order…') }}</p>
 	</div>
 
 	<div v-else-if="view === 'error'" class="state-pane error-pane">
@@ -391,7 +391,7 @@ body {
 
 	<div v-else-if="view === 'standalone'" class="state-pane">
 		<svg class="state-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM7.25 5a.75.75 0 0 1 1.5 0v3.5a.75.75 0 0 1-1.5 0V5zM8 11.25a.875.875 0 1 1 0-1.75.875.875 0 0 1 0 1.75z"/></svg>
-		<p>This form must be opened from the Tasks application.</p>
+		<p>{{ t('form.commerce.shopify.orderFulfillment.standaloneNotice', undefined, 'This form must be opened from the Tasks application.') }}</p>
 	</div>
 
 	<template v-else>
@@ -403,22 +403,22 @@ body {
 				</div>
 				<div class="order-tagline">
 					<span v-if="createdAtText">{{ createdAtText }}</span>
-					<span v-if="itemCount">{{ itemCount }} {{ itemCount === 1 ? 'item' : 'items' }}</span>
+					<span v-if="itemCount">{{ itemCountText }}</span>
 				</div>
 			</header>
 
 			<!-- Ship to -->
 			<section class="card">
-				<h2 class="section-title">Ship to</h2>
+				<h2 class="section-title">{{ t('form.commerce.shopify.orderFulfillment.shipTo', undefined, 'Ship to') }}</h2>
 				<div class="card-body">
 					<div class="info-grid">
 						<div class="info-block">
-							<div class="info-label">Shipping address</div>
-							<div class="info-value" :class="{ empty: !shippingAddressText }">{{ shippingAddressText || 'Not provided' }}</div>
+							<div class="info-label">{{ t('form.commerce.shopify.orderFulfillment.shippingAddress', undefined, 'Shipping address') }}</div>
+							<div class="info-value" :class="{ empty: !shippingAddressText }">{{ shippingAddressText || t('form.commerce.shopify.common.notProvided', undefined, 'Not provided') }}</div>
 						</div>
 						<div class="info-block">
-							<div class="info-label">Contact</div>
-							<div class="info-value" :class="{ empty: !customerLine }">{{ customerLine || 'Unknown' }}</div>
+							<div class="info-label">{{ t('form.commerce.shopify.orderFulfillment.contact', undefined, 'Contact') }}</div>
+							<div class="info-value" :class="{ empty: !customerLine }">{{ customerLine || t('form.commerce.shopify.common.unknown', undefined, 'Unknown') }}</div>
 						</div>
 					</div>
 				</div>
@@ -426,19 +426,19 @@ body {
 
 			<!-- Items to pick -->
 			<section class="card">
-				<h2 class="section-title">Items</h2>
+				<h2 class="section-title">{{ t('form.commerce.shopify.orderFulfillment.items', undefined, 'Items') }}</h2>
 				<div class="table-wrap">
 					<table class="items-table">
 						<thead>
 							<tr>
-								<th>Item</th>
-								<th>SKU</th>
-								<th class="align-right">Qty</th>
+								<th>{{ t('form.commerce.shopify.orderFulfillment.colItem', undefined, 'Item') }}</th>
+								<th>{{ t('form.commerce.shopify.orderFulfillment.colSku', undefined, 'SKU') }}</th>
+								<th class="align-right">{{ t('form.commerce.shopify.orderFulfillment.colQty', undefined, 'Qty') }}</th>
 							</tr>
 						</thead>
 						<tbody>
 							<tr v-if="itemRows.length === 0">
-								<td class="empty-cell" colspan="3">No line items.</td>
+								<td class="empty-cell" colspan="3">{{ t('form.commerce.shopify.orderFulfillment.noLineItems', undefined, 'No line items.') }}</td>
 							</tr>
 							<tr v-for="(row, i) in itemRows" :key="row.id || i">
 								<td>
@@ -455,37 +455,37 @@ body {
 
 			<!-- Tracking -->
 			<section class="card">
-				<h2 class="section-title">Tracking</h2>
+				<h2 class="section-title">{{ t('form.commerce.shopify.orderFulfillment.tracking', undefined, 'Tracking') }}</h2>
 				<div class="card-body">
 					<!-- Editable when the current user owns the task -->
 					<div v-if="canEdit" class="fields">
 						<div class="field">
-							<label for="trk-no">Tracking number</label>
-							<input id="trk-no" type="text" v-model="trackingNumber" :disabled="actionPending" placeholder="e.g. 1Z999AA10123456784">
+							<label for="trk-no">{{ t('form.commerce.shopify.orderFulfillment.trackingNumber', undefined, 'Tracking number') }}</label>
+							<input id="trk-no" type="text" v-model="trackingNumber" :disabled="actionPending" :placeholder="t('form.commerce.shopify.orderFulfillment.trackingNumberPlaceholder', undefined, 'e.g. 1Z999AA10123456784')">
 						</div>
 						<div class="field">
-							<label for="trk-co">Carrier</label>
-							<input id="trk-co" type="text" v-model="trackingCompany" :disabled="actionPending" placeholder="e.g. Yamato, UPS, FedEx">
+							<label for="trk-co">{{ t('form.commerce.shopify.orderFulfillment.carrier', undefined, 'Carrier') }}</label>
+							<input id="trk-co" type="text" v-model="trackingCompany" :disabled="actionPending" :placeholder="t('form.commerce.shopify.orderFulfillment.carrierPlaceholder', undefined, 'e.g. Yamato, UPS, FedEx')">
 						</div>
 						<div class="field">
-							<label for="trk-url">Tracking URL</label>
-							<input id="trk-url" type="text" v-model="trackingUrl" :disabled="actionPending" placeholder="https://…">
+							<label for="trk-url">{{ t('form.commerce.shopify.orderFulfillment.trackingUrl', undefined, 'Tracking URL') }}</label>
+							<input id="trk-url" type="text" v-model="trackingUrl" :disabled="actionPending" :placeholder="t('form.commerce.shopify.orderFulfillment.trackingUrlPlaceholder', undefined, 'https://…')">
 						</div>
 					</div>
-					<p v-if="canEdit" class="field-hint">Tracking is optional. Leave blank to fulfill without tracking details.</p>
+					<p v-if="canEdit" class="field-hint">{{ t('form.commerce.shopify.orderFulfillment.trackingHint', undefined, 'Tracking is optional. Leave blank to fulfill without tracking details.') }}</p>
 
 					<!-- Read-only when not the assignee / completed -->
 					<div v-else class="fields">
 						<div class="field">
-							<div class="info-label">Tracking number</div>
+							<div class="info-label">{{ t('form.commerce.shopify.orderFulfillment.trackingNumber', undefined, 'Tracking number') }}</div>
 							<div class="field-value" :class="{ empty: !trackingNumber }">{{ trackingNumber || '—' }}</div>
 						</div>
 						<div class="field">
-							<div class="info-label">Carrier</div>
+							<div class="info-label">{{ t('form.commerce.shopify.orderFulfillment.carrier', undefined, 'Carrier') }}</div>
 							<div class="field-value" :class="{ empty: !trackingCompany }">{{ trackingCompany || '—' }}</div>
 						</div>
 						<div class="field">
-							<div class="info-label">Tracking URL</div>
+							<div class="info-label">{{ t('form.commerce.shopify.orderFulfillment.trackingUrl', undefined, 'Tracking URL') }}</div>
 							<div class="field-value" :class="{ empty: !trackingUrl }">{{ trackingUrl || '—' }}</div>
 						</div>
 					</div>
@@ -493,21 +493,21 @@ body {
 			</section>
 
 			<section class="card">
-				<h2 class="section-title">Memo</h2>
+				<h2 class="section-title">{{ t('form.commerce.shopify.orderFulfillment.memo', undefined, 'Memo') }}</h2>
 				<div class="memo-body">
 					<div v-if="memo" class="memo-card">
 						<div class="memo-header">
-							<span class="memo-author">{{ memo.name || memo.id || 'Unknown' }}</span>
+							<span class="memo-author">{{ memo.name || memo.id || t('form.commerce.shopify.common.unknown', undefined, 'Unknown') }}</span>
 							<span class="memo-time" v-if="memoTimestampText">{{ memoTimestampText }}</span>
 						</div>
 						<div class="memo-content">{{ memo.content }}</div>
 					</div>
-					<div v-else class="memo-empty">No memo yet.</div>
+					<div v-else class="memo-empty">{{ t('form.commerce.shopify.orderFulfillment.noMemo', undefined, 'No memo yet.') }}</div>
 
 					<div v-if="canEdit && memoMode === 'view'" class="memo-edit-trigger">
 						<button class="btn btn-secondary" type="button" @click="enterMemoEdit">
 							<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25a1.75 1.75 0 0 1 .445-.755l8.61-8.612zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086zM11.189 6.25 9.75 4.81l-6.286 6.287a.25.25 0 0 0-.064.108l-.558 1.953 1.953-.558a.25.25 0 0 0 .108-.064l6.286-6.286z"/></svg>
-							<span>{{ memo ? 'Edit memo' : 'Add memo' }}</span>
+							<span>{{ memo ? t('form.commerce.shopify.orderFulfillment.editMemo', undefined, 'Edit memo') : t('form.commerce.shopify.orderFulfillment.addMemo', undefined, 'Add memo') }}</span>
 						</button>
 					</div>
 
@@ -515,16 +515,16 @@ body {
 						<textarea v-model="memoDraft"
 							class="memo-textarea"
 							rows="4"
-							placeholder="Write a memo for the record..."
+							:placeholder="t('form.commerce.shopify.orderFulfillment.memoPlaceholder', undefined, 'Write a memo for the record...')"
 							:disabled="memoSaving"></textarea>
 						<div class="memo-editor-actions">
 							<button class="btn btn-secondary" type="button"
 								:disabled="memoSaving"
-								@click="cancelMemoEdit">Cancel</button>
+								@click="cancelMemoEdit">{{ t('form.commerce.shopify.common.cancel', undefined, 'Cancel') }}</button>
 							<button class="btn btn-primary" type="button"
 								:disabled="memoSaving || !memoDraftHasContent"
 								@click="saveMemo">
-								<span>Update</span>
+								<span>{{ t('form.commerce.shopify.common.update', undefined, 'Update') }}</span>
 							</button>
 						</div>
 					</div>
@@ -537,31 +537,31 @@ body {
 				<button v-if="isAssignedToMe || taskCompleted"
 					class="btn btn-secondary" type="button"
 					:disabled="!shopifyURL"
-					:title="shopifyURL || 'Shop domain or order ID is unavailable.'"
+					:title="shopifyURL || t('form.commerce.shopify.orderFulfillment.shopifyUnavailable', undefined, 'Shop domain or order ID is unavailable.')"
 					@click="openShopify">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M9.5 2a.5.5 0 0 0 0 1h2.793L7.146 8.146a.5.5 0 1 0 .708.708L13 3.707V6.5a.5.5 0 0 0 1 0V2.5a.5.5 0 0 0-.5-.5h-4z"/><path d="M3.5 4A1.5 1.5 0 0 0 2 5.5v7A1.5 1.5 0 0 0 3.5 14h7a1.5 1.5 0 0 0 1.5-1.5v-3a.5.5 0 0 0-1 0v3a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1-.5-.5v-7a.5.5 0 0 1 .5-.5h3a.5.5 0 0 0 0-1h-3z"/></svg>
-					View on Shopify
+					{{ t('form.commerce.shopify.orderFulfillment.viewOnShopify', undefined, 'View on Shopify') }}
 				</button>
 			</div>
 			<div class="action-area">
 				<span v-if="taskCompleted" class="action-notice completed">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7 7a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.25 10.69l6.47-6.47a.75.75 0 0 1 1.06 0z"/></svg>
-					<span>This order has been fulfilled.</span>
+					<span>{{ t('form.commerce.shopify.orderFulfillment.completedNotice', undefined, 'This order has been fulfilled.') }}</span>
 				</span>
 				<span v-else-if="!taskAssignee" class="action-notice">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 14.5a5 5 0 0 1 10 0 .5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5z"/></svg>
-					<span>Claim this task to record tracking and fulfill the order.</span>
+					<span>{{ t('form.commerce.shopify.orderFulfillment.claimPrompt', undefined, 'Claim this task to record tracking and fulfill the order.') }}</span>
 				</span>
 				<span v-else-if="!isAssignedToMe" class="action-notice">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 14.5a5 5 0 0 1 10 0 .5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5z"/></svg>
-					<span>This task is currently assigned to {{ assigneeDisplay || taskAssignee }}. View only.</span>
+					<span>{{ assignedNoticeText }}</span>
 				</span>
 				<button v-else
 					class="btn btn-primary" type="button"
 					:disabled="actionPending"
 					@click="onComplete">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7 7a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.25 10.69l6.47-6.47a.75.75 0 0 1 1.06 0z"/></svg>
-					<span>Mark as fulfilled</span>
+					<span>{{ t('form.commerce.shopify.orderFulfillment.markFulfilled', undefined, 'Mark as fulfilled') }}</span>
 				</button>
 			</div>
 		</footer>
@@ -570,69 +570,26 @@ body {
 	</template>
 </main>
 
+<script src="./forms-sdk.js?v=2"></script>
 <script type="module">
-import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ichigo.esm.min.js';
+import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.71/dist/ichigo.esm.min.js';
 
-	const pending = new Map();
-	let nextID = 1;
+	// Namespace this form pulls from the host i18n bundle. Keys live in
+	// /etc/i18n/commerce-forms.*.json.
+	const I18N_PREFIX = 'form.commerce.shopify.';
 
-	function rpcCall(method, params) {
-		return new Promise((resolve, reject) => {
-			const id = String(nextID++);
-			pending.set(id, { resolve, reject });
-			try {
-				window.parent.postMessage({ __tasksRpc: 'call', id, method, params: params || {} }, '*');
-			} catch (err) {
-				pending.delete(id);
-				reject(err);
-			}
-		});
-	}
+	// The Tasks Form SDK hides the postMessage RPC bridge, owns the ICU engine
+	// (intl-messageformat is loaded inside it), and routes host events. Created
+	// at module scope — it holds transport, not reactive UI state.
+	const sdk = window.createTasksForm();
 
-	function getProp(node, name) {
-		if (!node || !Array.isArray(node.properties)) return undefined;
-		const p = node.properties.find(x => x && x.name === name);
-		if (!p) return undefined;
-		const v = p.propertyValue;
-		if (!v) return undefined;
-		if ('value' in v) return v.value;
-		if ('values' in v) return v.values;
-		return undefined;
-	}
+	// Node property reads (sdk.getProp / sdk.getStringProp) and simple-YAML
+	// scalar extraction (sdk.readYamlScalar) are node-contract concerns owned
+	// by the Tasks Form SDK; forms call them straight off `sdk`.
 
-	function getStringProp(node, name) {
-		const v = getProp(node, name);
-		return v == null ? '' : String(v);
-	}
-
-	function extractShopDomain(yamlText) {
-		if (!yamlText) return '';
-		const m = yamlText.match(/^[ \t]*shopDomain[ \t]*:[ \t]*["']?([^"'#\r\n]+?)["']?[ \t]*(?:#.*)?$/m);
-		return m ? m[1].trim() : '';
-	}
-
-	function formatMoney(amount, currency) {
-		if (amount == null || amount === '') return '—';
-		const n = Number(amount);
-		const num = Number.isFinite(n)
-			? n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-			: String(amount);
-		return currency ? num + ' ' + currency : num;
-	}
-
-	function formatNumber(n) {
-		if (n == null || n === '') return '—';
-		const num = Number(n);
-		if (Number.isFinite(num)) return num.toLocaleString();
-		return String(n);
-	}
-
-	function formatDate(value) {
-		if (!value) return '';
-		const d = new Date(value);
-		if (Number.isNaN(d.getTime())) return '';
-		return d.toLocaleString([], { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-	}
+	// Money / number / date formatting is locale-aware and therefore lives on
+	// the component (methods read `this.localization`, so bindings repaint when
+	// the user switches language / zone). See the methods of the same name.
 
 	function formatAddress(addr) {
 		if (!addr || typeof addr !== 'object') return '';
@@ -656,6 +613,18 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				toastMessage: '',
 				actionPending: false,
 
+				// Effective localization pushed by the host (inside the context
+				// payload and on every 'localization-changed' event). Read by t()
+				// and the format* methods so the whole form repaints on a locale
+				// or time-zone switch.
+				localization: { locale: '', timeZone: '', numberFormat: '', currency: '' },
+
+				// i18n message map for this form's namespace, resolved by the host
+				// for the effective locale (fallback chain merged). `revision` is
+				// bumped on every (re)load so t() bindings repaint even when the
+				// locale string is unchanged (e.g. a bundle hot-reload).
+				i18n: { messages: {}, revision: 0 },
+
 				currentUserID: '',
 				currentUserDisplay: '',
 				task: null,
@@ -678,8 +647,6 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				memoDraft: '',
 				memoSaving: false,
 
-				_messageListener: null,
-				_standaloneTimer: null,
 				_toastTimer: null,
 				_assigneeDisplayCache: {},
 			};
@@ -695,16 +662,18 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 					if (o.name) return String(o.name);
 					if (o.order_number != null) return '#' + o.order_number;
 				}
-				const num = getStringProp(this.node, 'commerce:order_number');
+				const num = sdk.getStringProp(this.node, 'commerce:order_number');
 				if (num) return '#' + num;
-				return this.orderID ? 'Order ' + this.orderID : '(order)';
+				return this.orderID
+					? this.t('form.commerce.shopify.orderFulfillment.orderFallback', { id: this.orderID }, 'Order {id}')
+					: this.t('form.commerce.shopify.common.untitledOrder', undefined, '(order)');
 			},
 			totalText() {
 				const o = this.order;
-				const amount = o && o.total_price != null ? o.total_price : getStringProp(this.node, 'commerce:total_price');
-				return formatMoney(amount, this.currency);
+				const amount = o && o.total_price != null ? o.total_price : sdk.getStringProp(this.node, 'commerce:total_price');
+				return this.formatMoney(amount, this.currency);
 			},
-			createdAtText() { return this.order ? formatDate(this.order.created_at) : ''; },
+			createdAtText() { return this.order ? this.formatDate(this.order.created_at) : ''; },
 			customerLine() {
 				const o = this.order;
 				if (!o) return '';
@@ -721,79 +690,150 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				const list = (this.order && Array.isArray(this.order.line_items)) ? this.order.line_items : [];
 				return list.map((li, i) => {
 					const id = li && li.id != null ? String(li.id) : '';
-					const title = (li && li.title) || '(item)';
+					const title = (li && li.title) || this.t('form.commerce.shopify.common.untitledItem', undefined, '(item)');
 					const variant = (li && li.variant_title && li.variant_title !== 'Default Title') ? String(li.variant_title) : '';
 					const sku = (li && li.sku) || '';
 					const qty = li && li.quantity != null ? Number(li.quantity) : null;
-					return { id: id || ('row-' + i), title, variant, sku, qtyText: formatNumber(qty) };
+					return { id: id || ('row-' + i), title, variant, sku, qtyText: this.formatNumber(qty) };
 				});
 			},
 			itemCount() { return this.itemRows.length; },
+			// Pluralized "N item(s)" label. Kept out of the template because its
+			// ICU fallback ends in `}}`, which would collide with ichigojs's
+			// `{{ }}` mustache delimiter and truncate the expression.
+			itemCountText() {
+				return this.t('form.commerce.shopify.orderFulfillment.itemCount',
+					{ count: this.itemCount }, '{count, plural, one {# item} other {# items}}');
+			},
 			taskAssignee() { return (this.task && this.task.assignee) || ''; },
 			taskCompleted() { return !!(this.task && this.task.completed); },
 			isAssignedToMe() { return !!this.taskAssignee && this.taskAssignee === this.currentUserID; },
 			canEdit() { return this.isAssignedToMe && !this.taskCompleted; },
 			memoTimestampText() {
 				if (!this.memo || !this.memo.at) return '';
-				const d = new Date(this.memo.at);
-				if (Number.isNaN(d.getTime())) return this.memo.at;
-				return d.toLocaleString([], { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+				return this.formatDate(this.memo.at) || this.memo.at;
 			},
 			memoDraftHasContent() { return !!(this.memoDraft && this.memoDraft.trim()); },
+			// "Assigned to X. View only." Built in JS (not the template) so the
+			// parameterized t() call stays clear of mustache brace parsing.
+			assignedNoticeText() {
+				const name = this.assigneeDisplay || this.taskAssignee;
+				return this.t('form.commerce.shopify.orderFulfillment.assignedToOther',
+					{ name }, 'This task is currently assigned to {name}. View only.');
+			},
 		},
 
 		methods: {
+			// ----------------------------------------------------------
+			// i18n & locale-aware formatting
+			// ----------------------------------------------------------
+			// Translate a message id against the host-provided bundle for the
+			// effective locale. Reads `localization.locale` and `i18n.revision`
+			// so every binding repaints when the language switches or the bundle
+			// hot-reloads. Falls back to `fallback` (then the id) when the key is
+			// absent — both the resolved template and the fallback are run
+			// through ICU so placeholders / plurals work either way.
+			t(id, params, fallback) {
+				// Touch revision so a bundle hot-reload (same locale) still repaints.
+				void this.i18n.revision;
+				return sdk.translate(this.i18n.messages, this.localization.locale, id, params, fallback);
+			},
+
+			// Format a monetary amount. The currency is intrinsic to the order
+			// (Shopify's transaction currency), so it is NOT overridden by the
+			// user's preference; only the grouping/symbol placement follows the
+			// user's locale. Degrades to a plain number + code when the currency
+			// is unknown or invalid.
+			formatMoney(amount, currency) {
+				if (amount == null || amount === '') return '—';
+				const n = Number(amount);
+				if (!Number.isFinite(n)) return String(amount);
+				const locale = this.localization.numberFormat || this.localization.locale || undefined;
+				if (currency) {
+					try {
+						return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(n);
+					} catch (_) {
+						// Unknown currency code — fall through to plain number + code.
+					}
+				}
+				const num = n.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+				return currency ? num + ' ' + currency : num;
+			},
+
+			formatNumber(n) {
+				if (n == null || n === '') return '—';
+				const num = Number(n);
+				if (!Number.isFinite(num)) return String(n);
+				const locale = this.localization.numberFormat || this.localization.locale || undefined;
+				return num.toLocaleString(locale);
+			},
+
+			formatDate(value) {
+				if (!value) return '';
+				const d = new Date(value);
+				if (Number.isNaN(d.getTime())) return '';
+				const locale = this.localization.locale || undefined;
+				const opts = {
+					year: 'numeric', month: 'numeric', day: 'numeric',
+					hour: 'numeric', minute: '2-digit',
+				};
+				if (this.localization.timeZone) opts.timeZone = this.localization.timeZone;
+				try {
+					return d.toLocaleString(locale, opts);
+				} catch (_) {
+					return d.toLocaleString(locale);
+				}
+			},
+
+			// Apply an effective-localization snapshot pushed by the host. Mirrors
+			// the value onto <html lang> for correct typography/hyphenation, then
+			// (re)loads the message bundle for the new locale.
+			applyLocalization(loc) {
+				if (!loc || typeof loc !== 'object') return;
+				this.localization.locale = loc.locale || '';
+				this.localization.timeZone = loc.timeZone || '';
+				this.localization.numberFormat = loc.numberFormat || '';
+				this.localization.currency = loc.currency || '';
+				if (this.localization.locale) {
+					document.documentElement.setAttribute('lang', this.localization.locale);
+				}
+				this.loadMessages();
+				this.updateDocumentTitle();
+			},
+
+			// Pull this form's namespace from the host for the effective locale.
+			// Best-effort: an older host without the RPC leaves messages empty,
+			// so t() degrades to its English fallbacks.
+			async loadMessages() {
+				try {
+					const res = await sdk.getI18nMessages(I18N_PREFIX);
+					const messages = (res && res.messages && typeof res.messages === 'object') ? res.messages : {};
+					// Trust the host's resolved locale when present (it knows the
+					// effective preference even if the context lagged).
+					if (res && res.locale) this.localization.locale = res.locale;
+					this.i18n.messages = messages;
+					this.i18n.revision++;
+				} catch (_) {
+					// Leave existing messages in place; fall back to literals.
+				}
+			},
+
+			updateDocumentTitle() {
+				const title = this.t('form.commerce.shopify.orderFulfillment.title', undefined, 'Order Fulfillment');
+				document.title = this.order ? (title + ' — ' + this.orderTitle) : title;
+			},
+
 			onMounted() {
-				this._messageListener = (ev) => this.onMessage(ev);
-				window.addEventListener('message', this._messageListener);
-				this._standaloneTimer = setTimeout(() => {
-					if (this.view === 'loading') this.view = 'standalone';
-				}, 3000);
-				this.notifyReady();
+				sdk
+					.on('context', (payload) => this.handleContext(payload))
+					.on('localization', (loc) => this.applyLocalization(loc))
+					.on('standalone', () => { if (this.view === 'loading') this.view = 'standalone'; })
+					.on('ready', () => { this.i18n.revision++; })
+					.start();
 			},
-
 			onUnmount() {
-				if (this._messageListener) { window.removeEventListener('message', this._messageListener); this._messageListener = null; }
-				if (this._standaloneTimer) { clearTimeout(this._standaloneTimer); this._standaloneTimer = null; }
-				if (this._toastTimer) { clearTimeout(this._toastTimer); this._toastTimer = null; }
-			},
-
-			notifyReady() {
-				try { window.parent.postMessage({ __tasksRpc: 'ready' }, '*'); } catch (_) {}
-			},
-
-			onMessage(ev) {
-				const data = ev.data;
-				if (!data || typeof data !== 'object') return;
-
-				if (data.__tasksRpc === 'result') {
-					const id = String(data.id);
-					const p = pending.get(id);
-					if (!p) return;
-					pending.delete(id);
-					if (data.ok) p.resolve(data.data);
-					else p.reject(new Error(data.error || 'RPC error'));
-					return;
-				}
-
-				if (data.__tasksRpc === 'event' && data.type === 'context') {
-					if (this._standaloneTimer) { clearTimeout(this._standaloneTimer); this._standaloneTimer = null; }
-					const payload = data.payload || {};
-					if (payload.theme !== undefined) this.applyTheme(payload.theme);
-					this.handleContext(payload);
-					return;
-				}
-
-				if (data.__tasksRpc === 'event' && data.type === 'theme-changed') {
-					this.applyTheme(data.theme);
-					return;
-				}
-			},
-
-			applyTheme(theme) {
-				const root = document.documentElement;
-				if (theme === 'light' || theme === 'dark') root.dataset.theme = theme;
-				else delete root.dataset.theme;
+				sdk.stop();
+				if (this._toastTimer) clearTimeout(this._toastTimer);
 			},
 
 			showToast(message) {
@@ -803,13 +843,13 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 			},
 
 			showError(message) {
-				this.errorMessage = message || 'An unexpected error occurred.';
+				this.errorMessage = message || this.t('form.commerce.shopify.common.unexpectedError', undefined, 'An unexpected error occurred.');
 				this.view = 'error';
 			},
 
 			async handleContext(ctx) {
 				if (!ctx || ctx.mode !== 'task' || !ctx.task) {
-					if (!this.orderLoaded) this.showError('This form must be opened from a Task.');
+					if (!this.orderLoaded) this.showError(this.t('form.commerce.shopify.orderFulfillment.mustOpenFromTask', undefined, 'This form must be opened from a Task.'));
 					return;
 				}
 
@@ -830,28 +870,28 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 			},
 
 			async loadOrder() {
-				const taskInfo = await rpcCall('getTaskWithVariables');
+				const taskInfo = await sdk.getTaskWithVariables();
 				const variables = (taskInfo && Array.isArray(taskInfo.variables)) ? taskInfo.variables : [];
 				const variableMap = {};
 				for (const v of variables) { if (v && v.name) variableMap[v.name] = v.value; }
 
 				const orderPath = String(variableMap.orderPath || '');
 				const orderID = String(variableMap.order_id || '');
-				if (!orderPath) throw new Error('Process variable "orderPath" is not set on this task.');
+				if (!orderPath) throw new Error(this.t('form.commerce.shopify.orderFulfillment.noOrderPath', undefined, 'Process variable "orderPath" is not set on this task.'));
 
 				const [node, orderJSONText, configText] = await Promise.all([
-					rpcCall('getNode', { path: orderPath }),
-					rpcCall('readNodeText', { path: orderPath }),
-					rpcCall('readNodeText', { path: '/etc/commerce/config/shopify.yml' }).catch(() => ''),
+					sdk.getNode(orderPath),
+					sdk.readNodeText(orderPath),
+					sdk.readNodeText('/etc/commerce/config/shopify.yml').catch(() => ''),
 				]);
 
-				if (!node) throw new Error('Order not found: ' + orderPath);
+				if (!node) throw new Error(this.t('form.commerce.shopify.orderFulfillment.orderNotFound', { path: orderPath }, 'Order not found: {path}'));
 
 				let order;
 				try {
 					order = JSON.parse(orderJSONText);
 				} catch (err) {
-					throw new Error('Failed to parse order JSON: ' + (err && err.message ? err.message : String(err)));
+					throw new Error(this.t('form.commerce.shopify.orderFulfillment.orderParseFailed', { detail: (err && err.message ? err.message : String(err)) }, 'Failed to parse order JSON: {detail}'));
 				}
 
 				this.node = node;
@@ -861,16 +901,16 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				this.loadFulfillmentFromNode();
 				this.loadMemoFromNode();
 
-				const shopDomain = extractShopDomain(configText);
+				const shopDomain = sdk.readYamlScalar(configText, 'shopDomain');
 				this.shopifyURL = (shopDomain && this.orderID)
 					? 'https://' + shopDomain + '/admin/orders/' + encodeURIComponent(this.orderID)
 					: '';
 
-				document.title = 'Order Fulfillment — ' + this.orderTitle;
+				this.updateDocumentTitle();
 			},
 
 			loadFulfillmentFromNode() {
-				const raw = getStringProp(this.node, 'fulfillment');
+				const raw = sdk.getStringProp(this.node, 'fulfillment');
 				if (!raw) return;
 				try {
 					const f = JSON.parse(raw);
@@ -893,7 +933,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				const cached = this._assigneeDisplayCache[assignee];
 				if (cached) { this.assigneeDisplay = cached; return; }
 				try {
-					const user = await rpcCall('getUser', { username: assignee });
+					const user = await sdk.getUser(assignee);
 					const display = (user && user.displayName) || assignee;
 					this._assigneeDisplayCache[assignee] = display;
 					if (this.taskAssignee === assignee) this.assigneeDisplay = display;
@@ -903,7 +943,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 			},
 
 			loadMemoFromNode() {
-				const raw = getStringProp(this.node, 'internal_memo');
+				const raw = sdk.getStringProp(this.node, 'internal_memo');
 				if (!raw) { this.memo = null; return; }
 				try {
 					const obj = JSON.parse(raw);
@@ -931,7 +971,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				if (this.memoSaving || !this.canEdit) return;
 				const content = (this.memoDraft || '').trim();
 				if (!content) return;
-				if (!this.orderPath) { this.showToast('Cannot save memo: order path is unknown.'); return; }
+				if (!this.orderPath) { this.showToast(this.t('form.commerce.shopify.orderFulfillment.memoNoPath', undefined, 'Cannot save memo: order path is unknown.')); return; }
 				this.memoSaving = true;
 				try {
 					const payload = {
@@ -940,8 +980,8 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 						at: new Date().toISOString(),
 						content,
 					};
-					await rpcCall('setNodeProperty', { path: this.orderPath, name: 'internal_memo', value: JSON.stringify(payload) });
-					const refreshed = await rpcCall('getNode', { path: this.orderPath });
+					await sdk.setNodeProperty(this.orderPath, 'internal_memo', JSON.stringify(payload));
+					const refreshed = await sdk.getNode(this.orderPath);
 					if (refreshed) this.node = refreshed;
 					this.loadMemoFromNode();
 					this.memoMode = 'view';
@@ -959,7 +999,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 			// service task reads the `fulfillment` property afterwards.
 			async onComplete() {
 				if (this.actionPending) return;
-				if (!this.orderPath) { this.showToast('Cannot fulfill: order path is unknown.'); return; }
+				if (!this.orderPath) { this.showToast(this.t('form.commerce.shopify.orderFulfillment.fulfillNoPath', undefined, 'Cannot fulfill: order path is unknown.')); return; }
 				this.actionPending = true;
 				try {
 					const fulfillment = {
@@ -968,8 +1008,8 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 						trackingUrl: (this.trackingUrl || '').trim(),
 						at: new Date().toISOString(),
 					};
-					await rpcCall('setNodeProperty', { path: this.orderPath, name: 'fulfillment', value: JSON.stringify(fulfillment) });
-					await rpcCall('completeTask', { variables: [] });
+					await sdk.setNodeProperty(this.orderPath, 'fulfillment', JSON.stringify(fulfillment));
+					await sdk.completeTask([]);
 					this.task = Object.assign({}, this.task, { completed: true });
 				} catch (err) {
 					this.showToast(err && err.message ? err.message : String(err));

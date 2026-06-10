@@ -12,6 +12,13 @@
 // only the overlay is editable.
 
 import { VDOM } from '@mintjamsinc/ichigojs';
+import {
+	createLocalizationSnapshot,
+	refreshLocalization,
+	handleLocalizationMessage,
+	translate,
+	formatDate,
+} from '../../composables/use-localization.js';
 
 // Type-only: the shell passes a fully-featured ApplicationInstance at launch.
 type AnyInstance = any;
@@ -30,6 +37,10 @@ const App = {
 	data() {
 		return {
 			instance: null as AnyInstance,
+			// Reactive localization snapshot — drives every t() / fmtDateTime()
+			// binding so the app repaints when the user switches language or a bundle
+			// is hot-reloaded. See composables/use-localization.ts.
+			localization: createLocalizationSnapshot(),
 
 			// Search
 			searchQuery: '',
@@ -46,7 +57,10 @@ const App = {
 			localized: [] as LocaleRow[],
 			attributes: [] as AttrRow[],
 			metafields: [] as MetafieldRow[],
-			overlayStamp: '',
+			// Date of last overlay save (stored as Date so fmtDateTime can reformat
+			// when the user switches locale/timezone rather than a frozen string).
+			overlayStampDate: null as Date | null,
+			overlayStampUser: '' as string,
 
 			// Capabilities / state
 			adminApiEnabled: false,
@@ -78,11 +92,25 @@ const App = {
 	},
 
 	methods: {
+		// ---- i18n / locale-aware formatting ---------------------------------
+		// Reactive i18n lookup: reading the localization snapshot inside
+		// translate() subscribes every `{{ t(...) }}` binding, so the UI repaints
+		// the instant the user switches language or a bundle hot-reloads.
+		t(messageId: string, params?: Record<string, any>, fallback?: string): string {
+			return translate(this.localization, this.instance, messageId, params, fallback);
+		},
+		fmtDateTime(value: any): string {
+			return formatDate(this.localization, value, { format: 'datetime' });
+		},
+
 		onMounted() {
 			const vm = this;
 
 			vm._messageListener = (event: MessageEvent) => {
 				const data: any = event.data || {};
+				// Fold locale / time-zone / currency changes and i18n bundle
+				// hot-reloads into the reactive snapshot so the UI re-localizes live.
+				if (handleLocalizationMessage(data.type, vm.localization, vm.instance)) return;
 				if (data.type === 'theme-changed' && data.theme) {
 					document.documentElement.dataset.theme = data.theme;
 				}
@@ -97,7 +125,11 @@ const App = {
 					document.documentElement.dataset.theme = theme;
 				} catch (_) { /* theme service unavailable */ }
 
-				try { instance.windowTitle = 'Commerce PIM'; } catch (_) {}
+				// Snapshot the effective Localization preference so the first paint
+				// is already in the user's language / region.
+				refreshLocalization(vm.localization, vm.instance);
+
+				try { instance.windowTitle = vm.t('app.commerce-pim.title', undefined, 'Commerce PIM'); } catch (_) {}
 
 				// Warn before discarding unsaved edits on window close.
 				if (typeof instance.setBeforeCloseCallback === 'function') {
@@ -146,7 +178,7 @@ const App = {
 		async search() {
 			const q = (this.searchQuery || '').trim();
 			if (!q) { this.results = []; this.searched = false; return; }
-			if (!this._base) { this.showToast('Could not resolve the workspace.', true); return; }
+			if (!this._base) { this.showToast(this.t('app.commerce-pim.err.noWorkspace', undefined, 'Could not resolve the workspace.'), true); return; }
 			this.searching = true;
 			try {
 				const res = await fetch(`${this._base}${PIM_SCRIPT}?q=${encodeURIComponent(q)}&limit=100`, { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
@@ -155,7 +187,7 @@ const App = {
 				this.results = this.$markRaw(Array.isArray(j.results) ? j.results : []);
 				this.searched = true;
 			} catch (e: any) {
-				this.showToast(e?.message || 'Search failed.', true);
+				this.showToast(e?.message || this.t('app.commerce-pim.err.searchFailed', undefined, 'Search failed.'), true);
 			} finally {
 				this.searching = false;
 			}
@@ -180,11 +212,11 @@ const App = {
 		},
 
 		async loadProduct(productId: string) {
-			if (!this._base) { this.showToast('Could not resolve the workspace.', true); return; }
+			if (!this._base) { this.showToast(this.t('app.commerce-pim.err.noWorkspace', undefined, 'Could not resolve the workspace.'), true); return; }
 			this.loading = true;
 			try {
 				const res = await fetch(`${this._base}${PIM_SCRIPT}?productId=${encodeURIComponent(productId)}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
-				if (res.status === 404) { this.showToast('Product not found.', true); this.loading = false; return; }
+				if (res.status === 404) { this.showToast(this.t('app.commerce-pim.err.productNotFound', undefined, 'Product not found.'), true); this.loading = false; return; }
 				if (!res.ok) throw new Error(`Load failed (${res.status})`);
 				const view = await res.json();
 				this.product = this.$markRaw(view);
@@ -199,7 +231,7 @@ const App = {
 				this.populateFromOverlay();
 				this.setStatus('', '');
 			} catch (e: any) {
-				this.showToast(e?.message || 'Could not load product.', true);
+				this.showToast(e?.message || this.t('app.commerce-pim.err.loadFailed', undefined, 'Could not load product.'), true);
 			} finally {
 				this.loading = false;
 			}
@@ -226,9 +258,10 @@ const App = {
 			this.localized = loc;
 			this.attributes = attrs;
 			this.metafields = mfs;
-			this.overlayStamp = pim.updatedAt
-				? `${new Date(pim.updatedAt).toLocaleString()}${pim.updatedBy ? ' · ' + pim.updatedBy : ''}`
-				: '';
+			// Store the raw Date so fmtDateTime() can reformat reactively when the
+			// user switches locale or timezone, instead of freezing a string here.
+			this.overlayStampDate = pim.updatedAt ? new Date(pim.updatedAt) : null;
+			this.overlayStampUser = pim.updatedBy || '';
 			this._savedModelJson = JSON.stringify(this.modelSnapshot());
 		},
 
@@ -294,10 +327,10 @@ const App = {
 				if (!res.ok || j.ok === false) throw new Error(j.error || `Save failed (${res.status})`);
 				this._rawPim = j.pim && typeof j.pim === 'object' ? j.pim : overlay;
 				this.populateFromOverlay();
-				this.setStatus('ok', 'Saved');
+				this.setStatus('ok', this.t('app.commerce-pim.status.saved', undefined, 'Saved'));
 			} catch (e: any) {
-				this.showToast(e?.message || 'Save failed.', true);
-				this.setStatus('err', 'Save failed');
+				this.showToast(e?.message || this.t('app.commerce-pim.err.saveFailed', undefined, 'Save failed.'), true);
+				this.setStatus('err', this.t('app.commerce-pim.err.saveFailed', undefined, 'Save failed'));
 			} finally {
 				this.saving = false;
 			}
@@ -306,7 +339,7 @@ const App = {
 		// ---- Push metafields to Shopify --------------------------------------
 		async pushMetafields() {
 			if (!this.product || this.pushing) return;
-			if (this.hasChanges) { this.showToast('Save your changes before pushing.', true); return; }
+			if (this.hasChanges) { this.showToast(this.t('app.commerce-pim.err.saveFirst', undefined, 'Save your changes before pushing.'), true); return; }
 			this.pushing = true;
 			try {
 				const res = await fetch(`${this._base}${SYNC_SCRIPT}`, {
@@ -317,9 +350,9 @@ const App = {
 				});
 				const j = await res.json().catch(() => ({}));
 				if (!res.ok || j.ok === false) throw new Error(j.error || `Push failed (${res.status})`);
-				this.showToast('Metafields pushed to Shopify.', false);
+				this.showToast(this.t('app.commerce-pim.status.pushed', undefined, 'Metafields pushed to Shopify.'), false);
 			} catch (e: any) {
-				this.showToast(e?.message || 'Push failed.', true);
+				this.showToast(e?.message || this.t('app.commerce-pim.err.pushFailed', undefined, 'Push failed.'), true);
 			} finally {
 				this.pushing = false;
 			}

@@ -24,6 +24,7 @@
 // Delivery is shared and pluggable (see /content/WEB-INF/classes/commerce/Notifications.groovy).
 import commerce.Notifications
 import commerce.NotificationMessage
+import commerce.ReviewReasons
 
 // --- Resolve task / process context ------------------------------------------
 def taskName = task?.getName() ?: "Order Review"
@@ -32,14 +33,16 @@ def assignee = task?.getAssignee()
 def orderPath = Notifications.taskVar(task, "orderPath")
 def orderID = Notifications.taskVar(task, "order_id")
 
-// Reasons are a JSON array string set by screenOrder.groovy.
+// Reasons are a JSON array string of structured descriptors set by
+// screenOrder.groovy. Rendered to operational English here (notifications have
+// no per-user locale); the review form renders the same descriptors localized.
 def reasons = []
 try {
     def raw = Notifications.taskVar(task, "reviewReasons")
     if (raw) {
         def parsed = JSON.parse(raw)
         if (parsed instanceof List) {
-            reasons = parsed.collect { it?.toString() }.findAll { it }
+            reasons = ReviewReasons.renderAll(parsed)
         }
     }
 } catch (Exception e) {

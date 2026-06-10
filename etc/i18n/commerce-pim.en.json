@@ -1,0 +1,75 @@
+{
+	"app.commerce-pim.title": "Commerce PIM",
+
+	"app.commerce-pim.toolbar.save": "Save overlay",
+	"app.commerce-pim.toolbar.revert": "Revert changes",
+	"app.commerce-pim.toolbar.push": "Push metafields to Shopify",
+	"app.commerce-pim.toolbar.pushDisabled": "Admin API is disabled (see Commerce settings)",
+
+	"app.commerce-pim.search.placeholder": "Search products…",
+	"app.commerce-pim.search.clear": "Clear",
+	"app.commerce-pim.search.noResults": "No products found.",
+	"app.commerce-pim.search.hint": "Search the catalog to begin.",
+
+	"app.commerce-pim.state.loading": "Loading product…",
+	"app.commerce-pim.state.empty": "Select a product to edit its information overlay.",
+
+	"app.commerce-pim.product.idFallback": "Product #{id}",
+	"app.commerce-pim.product.overlayUpdated": "Overlay updated {time}{hasUser, select, yes { by {user}} other {}}",
+
+	"app.commerce-pim.base.summary": "Shopify base and variants ({count})",
+	"app.commerce-pim.base.tags": "Tags",
+	"app.commerce-pim.base.colVariant": "Variant",
+	"app.commerce-pim.base.colSku": "SKU",
+	"app.commerce-pim.base.colPrice": "Price",
+
+	"app.commerce-pim.section.localized": "Localized content",
+	"app.commerce-pim.action.addLocale": "Locale",
+	"app.commerce-pim.localized.empty": "No localized titles/descriptions yet.",
+	"app.commerce-pim.localized.labelLocale": "Locale",
+	"app.commerce-pim.localized.placeholderLocale": "ja, en, …",
+	"app.commerce-pim.localized.labelTitle": "Title",
+	"app.commerce-pim.localized.labelDescription": "Description (HTML)",
+	"app.commerce-pim.action.removeLocale": "Remove locale",
+
+	"app.commerce-pim.section.attributes": "Custom attributes",
+	"app.commerce-pim.action.addAttribute": "Attribute",
+	"app.commerce-pim.attributes.empty": "No custom attributes yet.",
+	"app.commerce-pim.attributes.placeholderKey": "material",
+	"app.commerce-pim.attributes.placeholderValue": "cotton",
+	"app.commerce-pim.action.removeAttribute": "Remove attribute",
+
+	"app.commerce-pim.section.metafields": "Metafields",
+	"app.commerce-pim.action.addMetafield": "Metafield",
+	"app.commerce-pim.metafields.hint": "CMS-authored metafields can be pushed to Shopify via the toolbar (requires the Admin API).",
+	"app.commerce-pim.metafields.labelNamespace": "Namespace",
+	"app.commerce-pim.metafields.placeholderNamespace": "custom",
+	"app.commerce-pim.metafields.placeholderKey": "care",
+	"app.commerce-pim.metafields.labelType": "Type",
+	"app.commerce-pim.metafields.placeholderType": "single_line_text_field",
+	"app.commerce-pim.action.removeMetafield": "Remove metafield",
+
+	"app.commerce-pim.field.key": "Key",
+	"app.commerce-pim.field.value": "Value",
+
+	"app.commerce-pim.statusbar.saving": "Saving…",
+	"app.commerce-pim.statusbar.pushing": "Pushing…",
+	"app.commerce-pim.statusbar.unsaved": "Unsaved changes",
+	"app.commerce-pim.statusbar.ready": "Ready",
+
+	"app.commerce-pim.status.saved": "Saved",
+	"app.commerce-pim.status.pushed": "Metafields pushed to Shopify.",
+
+	"app.commerce-pim.dialog.title": "Unsaved Changes",
+	"app.commerce-pim.dialog.body1": "You have unsaved changes to this product.",
+	"app.commerce-pim.dialog.body2": "Do you want to save them first?",
+	"app.commerce-pim.dialog.discard": "Don't Save",
+
+	"app.commerce-pim.err.noWorkspace": "Could not resolve the workspace.",
+	"app.commerce-pim.err.searchFailed": "Search failed.",
+	"app.commerce-pim.err.productNotFound": "Product not found.",
+	"app.commerce-pim.err.loadFailed": "Could not load product.",
+	"app.commerce-pim.err.saveFailed": "Save failed.",
+	"app.commerce-pim.err.saveFirst": "Save your changes before pushing.",
+	"app.commerce-pim.err.pushFailed": "Push failed."
+}

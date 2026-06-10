@@ -18,6 +18,12 @@
 //   • write : initiateMultipartUpload → appendMultipartUploadChunk → completeMultipartUpload (overwrite)
 
 import { VDOM } from '@mintjamsinc/ichigojs';
+import {
+	createLocalizationSnapshot,
+	refreshLocalization,
+	handleLocalizationMessage,
+	translate,
+} from '../../composables/use-localization.js';
 
 // Type-only: avoid a hard import so the source stays self-contained. The shell
 // passes a fully-featured ApplicationInstance at launch.
@@ -640,33 +646,34 @@ function toBase64(text: string): string {
 }
 
 // Grouped sidebar navigation. Each item key matches a section template + a dirty flag.
+// Labels are i18n keys resolved at render time via the navGroups computed (see below).
 const NAV_GROUPS = [
-	{ label: 'Connection', items: [
-		{ key: 'shop', label: 'Shop', icon: 'bi-shop' },
-		{ key: 'notifications', label: 'Notifications', icon: 'bi-bell' },
+	{ labelKey: 'app.commerce.nav.group.connection', items: [
+		{ key: 'shop', labelKey: 'app.commerce.nav.shop', icon: 'bi-shop' },
+		{ key: 'notifications', labelKey: 'app.commerce.nav.notifications', icon: 'bi-bell' },
 	] },
-	{ label: 'Intake & sync', items: [
-		{ key: 'ingestion', label: 'Ingestion', icon: 'bi-inbox' },
-		{ key: 'reconciliation', label: 'Reconciliation', icon: 'bi-arrow-left-right' },
+	{ labelKey: 'app.commerce.nav.group.intakeSync', items: [
+		{ key: 'ingestion', labelKey: 'app.commerce.nav.ingestion', icon: 'bi-inbox' },
+		{ key: 'reconciliation', labelKey: 'app.commerce.nav.reconciliation', icon: 'bi-arrow-left-right' },
 	] },
-	{ label: 'Inventory', items: [
-		{ key: 'locations', label: 'Locations', icon: 'bi-geo-alt' },
-		{ key: 'inventoryRules', label: 'Inventory rules', icon: 'bi-sliders' },
-		{ key: 'forecast', label: 'Forecast', icon: 'bi-graph-down-arrow' },
-		{ key: 'replenishment', label: 'Replenishment', icon: 'bi-cart-plus' },
-		{ key: 'backorders', label: 'Backorders', icon: 'bi-hourglass-split' },
+	{ labelKey: 'app.commerce.nav.group.inventory', items: [
+		{ key: 'locations', labelKey: 'app.commerce.nav.locations', icon: 'bi-geo-alt' },
+		{ key: 'inventoryRules', labelKey: 'app.commerce.nav.inventoryRules', icon: 'bi-sliders' },
+		{ key: 'forecast', labelKey: 'app.commerce.nav.forecast', icon: 'bi-graph-down-arrow' },
+		{ key: 'replenishment', labelKey: 'app.commerce.nav.replenishment', icon: 'bi-cart-plus' },
+		{ key: 'backorders', labelKey: 'app.commerce.nav.backorders', icon: 'bi-hourglass-split' },
 	] },
-	{ label: 'Workflows', items: [
-		{ key: 'orderReview', label: 'Order review', icon: 'bi-clipboard-check' },
-		{ key: 'refundReview', label: 'Refund review', icon: 'bi-receipt' },
-		{ key: 'tasks', label: 'Task SLA', icon: 'bi-list-check' },
+	{ labelKey: 'app.commerce.nav.group.workflows', items: [
+		{ key: 'orderReview', labelKey: 'app.commerce.nav.orderReview', icon: 'bi-clipboard-check' },
+		{ key: 'refundReview', labelKey: 'app.commerce.nav.refundReview', icon: 'bi-receipt' },
+		{ key: 'tasks', labelKey: 'app.commerce.nav.tasks', icon: 'bi-list-check' },
 	] },
-	{ label: 'Storefront', items: [
-		{ key: 'storefront', label: 'Storefront', icon: 'bi-shop-window' },
-		{ key: 'crm', label: 'Customers (CRM)', icon: 'bi-people' },
+	{ labelKey: 'app.commerce.nav.group.storefront', items: [
+		{ key: 'storefront', labelKey: 'app.commerce.nav.storefront', icon: 'bi-shop-window' },
+		{ key: 'crm', labelKey: 'app.commerce.nav.crm', icon: 'bi-people' },
 	] },
-	{ label: 'Monitoring', items: [
-		{ key: 'health', label: 'Integration health', icon: 'bi-heart-pulse' },
+	{ labelKey: 'app.commerce.nav.group.monitoring', items: [
+		{ key: 'health', labelKey: 'app.commerce.nav.health', icon: 'bi-heart-pulse' },
 	] },
 ];
 // Section key → the dirty computed that tracks it (for the nav unsaved markers).
@@ -683,6 +690,10 @@ const App = {
 		return {
 			instance: null as AnyInstance,
 			content: null as AnyInstance,
+			// Reactive localization snapshot — drives every t() binding so the app
+			// repaints when the user switches language or a bundle is hot-reloaded.
+			// See composables/use-localization.ts.
+			localization: createLocalizationSnapshot(),
 
 			section: 'shop' as string,
 			view: 'loading' as 'loading' | 'error' | 'ready',
@@ -701,8 +712,8 @@ const App = {
 			sidebarResizeStartWidth: 0,
 			_boundSidebarResizeMove: null as ((e: MouseEvent) => void) | null,
 			_boundSidebarResizeUp: null as (() => void) | null,
-			// Collapsible nav groups: group label → expanded. All open by default.
-			navGroupExpanded: NAV_GROUPS.reduce((acc, g) => { acc[g.label] = true; return acc; }, {} as Record<string, boolean>),
+			// Collapsible nav groups: group labelKey → expanded. All open by default.
+			navGroupExpanded: NAV_GROUPS.reduce((acc, g) => { acc[g.labelKey] = true; return acc; }, {} as Record<string, boolean>),
 
 			saving: false,
 			status: '',
@@ -902,18 +913,37 @@ const App = {
 			return false;
 		},
 		canSave(): boolean { return this.hasChanges && !this.adminApiInvalid && !this.notifInvalid && !this.saving; },
-		navGroups(): any { return NAV_GROUPS; },
+		// Expose the static nav structure to the template. Labels are NOT resolved
+		// here: the template renders them with `t(g.labelKey)` / `t(s.labelKey)`
+		// directly, so they repaint reactively on a language change like every
+		// other binding, and the expand-state map stays keyed by the stable,
+		// language-independent labelKey.
+		navGroups(): any {
+			return NAV_GROUPS;
+		},
 	},
 
 	methods: {
+		// ---- i18n ------------------------------------------------------------
+		// Reactive translation: reading the localization snapshot inside translate()
+		// subscribes every `{{ t(...) }}` binding so the UI repaints instantly when
+		// the user switches language or a bundle hot-reloads.
+		t(messageId: string, params?: Record<string, any>, fallback?: string): string {
+			return translate(this.localization, this.instance, messageId, params, fallback);
+		},
+
 		// ---- Lifecycle -------------------------------------------------------
 		onMounted() {
 			const vm = this;
 
-			// The shell pushes theme changes to the iframe via postMessage; mirror
-			// the value onto <html data-theme> exactly like the built-in apps.
+			// The shell pushes theme changes and localization events to the iframe via
+			// postMessage; fold locale/bundle changes into the snapshot first so the
+			// UI relocalizes live, then handle other messages.
 			vm._messageListener = (event: MessageEvent) => {
 				const data: any = event.data || {};
+				// Fold locale/timezone/currency changes and i18n bundle hot-reloads
+				// into the reactive snapshot so the UI re-localizes live.
+				if (handleLocalizationMessage(data.type, vm.localization, vm.instance)) return;
 				if (data.type === 'theme-changed' && data.theme) {
 					document.documentElement.dataset.theme = data.theme;
 				}
@@ -929,7 +959,11 @@ const App = {
 					document.documentElement.dataset.theme = theme;
 				} catch (_) { /* theme service unavailable */ }
 
-				try { instance.windowTitle = 'Commerce'; } catch (_) {}
+				// Snapshot the effective Localization preference so the first paint
+				// is already in the user's language / region.
+				refreshLocalization(vm.localization, vm.instance);
+
+				try { instance.windowTitle = vm.t('app.commerce.title', undefined, 'Commerce'); } catch (_) {}
 
 				// Warn before discarding unsaved edits on window close, using the
 				// shared Webtop dialog (same look as the cms0 text-editor).
@@ -959,8 +993,8 @@ const App = {
 			this.sidebarVisible = !this.sidebarVisible;
 			this.persistUiState();
 		},
-		toggleNavGroup(label: string) {
-			this.navGroupExpanded[label] = !this.navGroupExpanded[label];
+		toggleNavGroup(labelKey: string) {
+			this.navGroupExpanded[labelKey] = !this.navGroupExpanded[labelKey];
 			this.persistUiState();
 		},
 		onSidebarResizeStart(event: MouseEvent) {
@@ -1082,7 +1116,7 @@ const App = {
 		},
 
 		async writeText(dir: string, file: string, text: string): Promise<void> {
-			if (!this.content) throw new Error('Content service is unavailable.');
+			if (!this.content) throw new Error(this.t('app.commerce.error.contentUnavailable', undefined, 'Content service is unavailable.'));
 			const info: any = await this.content.initiateMultipartUpload();
 			const uploadID = info?.uploadId ?? info?.uploadID ?? info?.id ?? info;
 			await this.content.appendMultipartUploadChunk(uploadID, toBase64(text));
@@ -1376,7 +1410,7 @@ const App = {
 			// write an enabled-but-unconfigured integration.
 			if (this.adminApiInvalid) {
 				this.section = 'shop';
-				this.status = 'Enter the shop domain, API version, client ID and client secret, or turn off the Admin API.';
+				this.status = this.t('app.commerce.status.adminApiInvalid', undefined, 'Enter the shop domain, API version, client ID and client secret, or turn off the Admin API.');
 				this.statusKind = 'err';
 				this.showToast(this.status, true);
 				return;
@@ -1386,7 +1420,7 @@ const App = {
 			// channel that is missing its required connection fields.
 			if (this.notifInvalid) {
 				this.section = 'notifications';
-				this.status = 'Complete the required fields for each enabled channel, or turn it off.';
+				this.status = this.t('app.commerce.status.notifInvalid', undefined, 'Complete the required fields for each enabled channel, or turn it off.');
 				this.statusKind = 'err';
 				this.showToast(this.status, true);
 				return;
@@ -1442,10 +1476,11 @@ const App = {
 					await this.writeText(CONFIG_DIR, INVENTORY_RULES_FILE, serializeInventoryRules(this.inventoryRules));
 				}
 				this.snapshot();
-				this.status = 'All changes saved.';
+				this.status = this.t('app.commerce.status.saved', undefined, 'All changes saved.');
 				this.statusKind = 'ok';
 			} catch (e: any) {
-				this.status = 'Save failed: ' + ((e && e.message) ? e.message : String(e));
+				const msg = (e && e.message) ? e.message : String(e);
+				this.status = this.t('app.commerce.status.saveFailed', { message: msg }, 'Save failed: {message}');
 				this.statusKind = 'err';
 				this.showToast(this.status, true);
 			} finally {

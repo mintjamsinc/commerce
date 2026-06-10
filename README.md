@@ -514,6 +514,7 @@ etc/            Server-side integration assets
   commerce/scripts/shopify/ Groovy task/route helper scripts
   eip/routes/commerce/shopify/   EIP integration routes
   bpm/processes/commerce/shopify/  BPMN workflow processes
+  i18n/                     Webtop message bundles (EN/JA), one pair per app
 
 provisioning/   First-boot identity / group / ACL / namespace descriptor (commerce.yml)
 webtop/         Commerce Webtop app sources (TypeScript + Rollup)
@@ -549,6 +550,18 @@ npm run build:prod   # production:  minified JS + CSS, external sourcemaps
 The output mirrors the cms0 Webtop layout (`dist/webtop/apps/commerce/`), so
 `app.js` / `index.html` / `assets/` / `app.yml` can be dropped straight into a
 deployed Webtop's `apps/` directory.
+
+### Internationalization (EN/JA)
+
+Every Commerce Webtop app is fully localized in English and Japanese. UI text is
+resolved through the shell's i18n service at runtime; the translated strings live
+in per-app message bundles under [`etc/i18n/`](etc/i18n/)
+(`<appId>.en.json` / `<appId>.ja.json`), deployed to JCR `/etc/i18n/` and merged
+with the cms0 core bundle. The UI re-localizes live when the user changes their
+**Preferences → Localization** (language, time zone, number format, currency) or
+when a bundle is hot-reloaded. See [`docs/i18n.md`](docs/i18n.md) for the
+conventions, the localization composable, and how to add a string, locale, or
+app.
 
 ---
 

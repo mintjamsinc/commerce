@@ -20,30 +20,30 @@
 		<!-- Top toolbar -->
 		<nav class="nav-bar window-drag-region">
 			<div class="toolbar-group">
-				<button class="btn-icon" @click="refresh" :disabled="refreshing" title="Refresh">
+				<button class="btn-icon" @click="refresh" :disabled="refreshing" :title="t('app.commerce-dashboard.toolbar.refresh')">
 					<i class="bi bi-arrow-clockwise" :class="{ spin: refreshing }"></i>
 				</button>
 			</div>
 
-			<div class="dash-range" v-if="view === 'ready'" title="Sales window">
-				<button v-for="d in [7, 30, 90]" :key="d" :class="{ active: salesDays === d }" @click="setSalesDays(d)">{{ d }}d</button>
+			<div class="dash-range" v-if="view === 'ready'" :title="t('app.commerce-dashboard.toolbar.salesWindow')">
+				<button v-for="d in [7, 30, 90]" :key="d" :class="{ active: salesDays === d }" @click="setSalesDays(d)">{{ t('app.commerce-dashboard.toolbar.daysShort', { days: d }) }}</button>
 			</div>
 
-			<span class="dash-live" :class="{ connected }" :title="connected ? 'Live updates on' : 'Live updates off'">
-				<span class="dash-live-dot"></span>{{ connected ? 'Live' : 'Offline' }}
+			<span class="dash-live" :class="{ connected }" :title="connected ? t('app.commerce-dashboard.live.onTitle') : t('app.commerce-dashboard.live.offTitle')">
+				<span class="dash-live-dot"></span>{{ connected ? t('app.commerce-dashboard.live.on') : t('app.commerce-dashboard.live.off') }}
 			</span>
 
 			<span class="nav-spacer"></span>
 
 			<!-- Window controls -->
 			<div class="window-controls">
-				<button class="btn-icon" @click="onMinimizeWindow" title="Minimize">
+				<button class="btn-icon" @click="onMinimizeWindow" :title="t('common.minimize')">
 					<i class="bi bi-dash-lg"></i>
 				</button>
-				<button class="btn-icon" @click="onToggleMaximizeWindow" title="Maximize">
+				<button class="btn-icon" @click="onToggleMaximizeWindow" :title="t('common.maximize')">
 					<i class="bi bi-square"></i>
 				</button>
-				<button class="btn-icon window-control-close" @click="onCloseWindow" title="Close">
+				<button class="btn-icon window-control-close" @click="onCloseWindow" :title="t('common.close')">
 					<i class="bi bi-x-lg"></i>
 				</button>
 			</div>
@@ -52,14 +52,14 @@
 		<!-- Loading -->
 		<div v-if="view === 'loading'" class="dash-state">
 			<div class="spinner"></div>
-			<span>Loading dashboard&hellip;</span>
+			<span>{{ t('app.commerce-dashboard.state.loading') }}</span>
 		</div>
 
 		<!-- Error -->
 		<div v-else-if="view === 'error'" class="dash-state">
 			<i class="bi bi-exclamation-triangle-fill text-warning" style="font-size: 1.5rem;"></i>
 			<span>{{ errorMessage }}</span>
-			<button class="wt" @click="refresh">Retry</button>
+			<button class="wt" @click="refresh">{{ t('app.commerce-dashboard.action.retry') }}</button>
 		</div>
 
 		<!-- Ready -->
@@ -68,21 +68,21 @@
 
 				<!-- ===== Sales trend (hero, full width) ===== -->
 				<div class="island dash-card dash-card-wide">
-					<div class="dash-card-head"><i class="bi bi-graph-up"></i>Sales trend</div>
+					<div class="dash-card-head"><i class="bi bi-graph-up"></i>{{ t('app.commerce-dashboard.card.salesTrend') }}</div>
 					<div class="dash-wide-body">
 						<div>
 							<div class="dash-kpis">
 								<div class="dash-kpi">
 									<span class="dash-kpi-value">{{ salesTrend.totalRevenue }} {{ salesTrend.currency }}</span>
-									<span class="dash-kpi-label">Revenue / {{ salesTrend.days }}d</span>
+									<span class="dash-kpi-label">{{ t('app.commerce-dashboard.kpi.revenue', { days: salesTrend.days }) }}</span>
 								</div>
 								<div class="dash-kpi">
 									<span class="dash-kpi-value">{{ salesTrend.totalOrders }}</span>
-									<span class="dash-kpi-label">Orders</span>
+									<span class="dash-kpi-label">{{ t('app.commerce-dashboard.kpi.orders') }}</span>
 								</div>
 								<div class="dash-kpi">
 									<span class="dash-kpi-value">{{ salesTrend.aov }} {{ salesTrend.currency }}</span>
-									<span class="dash-kpi-label">Avg order value</span>
+									<span class="dash-kpi-label">{{ t('app.commerce-dashboard.kpi.aov') }}</span>
 								</div>
 							</div>
 							<svg v-if="salesTrend.hasData" class="spark" :viewBox="'0 0 ' + salesTrend.W + ' ' + salesTrend.H"
@@ -90,17 +90,17 @@
 								<polygon class="spark-area" :points="salesTrend.area"></polygon>
 								<polyline class="spark-line" :points="salesTrend.line"></polyline>
 							</svg>
-							<div v-else class="spark-empty">No sales in this window.</div>
+							<div v-else class="spark-empty">{{ t('app.commerce-dashboard.salesTrend.empty') }}</div>
 						</div>
 						<div>
-							<div class="dash-card-head" style="margin-bottom: 0.5rem;">Top products</div>
+							<div class="dash-card-head" style="margin-bottom: 0.5rem;">{{ t('app.commerce-dashboard.card.topProducts') }}</div>
 							<div class="dash-rows">
 								<div class="dash-row" v-for="(p, i) in salesTrend.topProducts" :key="i">
 									<span class="dash-row-label">{{ p.title }}</span>
 									<span class="dash-row-value">{{ p.revenue }} {{ p.currency }}</span>
 								</div>
 								<div class="dash-row" v-if="salesTrend.topProducts.length === 0">
-									<span class="dash-row-label">No products yet</span>
+									<span class="dash-row-label">{{ t('app.commerce-dashboard.salesTrend.noProducts') }}</span>
 								</div>
 							</div>
 						</div>
@@ -109,10 +109,10 @@
 
 				<!-- ===== Sales ===== -->
 				<div class="island dash-card">
-					<div class="dash-card-head"><i class="bi bi-receipt"></i>Sales</div>
+					<div class="dash-card-head"><i class="bi bi-receipt"></i>{{ t('app.commerce-dashboard.card.sales') }}</div>
 					<div class="dash-metric">
 						<span class="dash-metric-value">{{ sales.orders }}</span>
-						<span class="dash-metric-unit">orders / {{ sales.days }}d</span>
+						<span class="dash-metric-unit">{{ t('app.commerce-dashboard.unit.ordersDays', { days: sales.days }) }}</span>
 					</div>
 					<div class="dash-rows">
 						<div class="dash-row" v-for="r in sales.revenueRows">
@@ -128,14 +128,14 @@
 
 				<!-- ===== Inventory ===== -->
 				<div class="island dash-card">
-					<div class="dash-card-head"><i class="bi bi-box-seam"></i>Inventory</div>
+					<div class="dash-card-head"><i class="bi bi-box-seam"></i>{{ t('app.commerce-dashboard.card.inventory') }}</div>
 					<div class="dash-metric">
 						<span class="dash-metric-value">{{ inventory.total }}</span>
-						<span class="dash-metric-unit">products</span>
+						<span class="dash-metric-unit">{{ t('app.commerce-dashboard.unit.products') }}</span>
 					</div>
 					<div class="dash-rows">
 						<div class="dash-row">
-							<span class="dash-row-label"><i class="bi bi-exclamation-triangle"></i>Low stock</span>
+							<span class="dash-row-label"><i class="bi bi-exclamation-triangle"></i>{{ t('app.commerce-dashboard.row.lowStock') }}</span>
 							<span class="dash-row-value" :class="{ 'dash-value-warn': inventory.lowStock > 0 }">{{ inventory.lowStock }}</span>
 						</div>
 						<div class="dash-row" v-for="r in inventory.statusRows">
@@ -147,37 +147,37 @@
 
 				<!-- ===== Forecast ===== -->
 				<div class="island dash-card">
-					<div class="dash-card-head"><i class="bi bi-graph-down-arrow"></i>Forecast</div>
+					<div class="dash-card-head"><i class="bi bi-graph-down-arrow"></i>{{ t('app.commerce-dashboard.card.forecast') }}</div>
 					<div class="dash-metric">
 						<span class="dash-metric-value" :class="{ 'dash-value-danger': forecast.atRisk > 0 }">{{ forecast.atRisk }}</span>
-						<span class="dash-metric-unit">at risk / {{ forecast.warnDays }}d</span>
+						<span class="dash-metric-unit">{{ t('app.commerce-dashboard.unit.atRiskDays', { days: forecast.warnDays }) }}</span>
 					</div>
 					<div class="dash-rows">
 						<div class="dash-row" v-for="r in forecast.top">
 							<span class="dash-row-label"><i class="bi bi-hourglass-split"></i>{{ r.label }}</span>
-							<span class="dash-pill" :class="r.days <= 2 ? 'danger' : 'warn'">{{ r.days }}d left</span>
+							<span class="dash-pill" :class="r.days <= 2 ? 'danger' : 'warn'">{{ t('app.commerce-dashboard.pill.daysLeft', { days: r.days }) }}</span>
 						</div>
 						<div class="dash-row" v-if="forecast.atRisk === 0">
-							<span class="dash-row-label">No imminent stockouts</span>
-							<span class="dash-pill ok">OK</span>
+							<span class="dash-row-label">{{ t('app.commerce-dashboard.forecast.noStockouts') }}</span>
+							<span class="dash-pill ok">{{ t('common.ok') }}</span>
 						</div>
 					</div>
 				</div>
 
 				<!-- ===== Locations ===== -->
 				<div class="island dash-card">
-					<div class="dash-card-head"><i class="bi bi-geo-alt"></i>Locations</div>
+					<div class="dash-card-head"><i class="bi bi-geo-alt"></i>{{ t('app.commerce-dashboard.card.locations') }}</div>
 					<div class="dash-metric">
 						<span class="dash-metric-value">{{ locations.locations }}</span>
-						<span class="dash-metric-unit">locations</span>
+						<span class="dash-metric-unit">{{ t('app.commerce-dashboard.unit.locations') }}</span>
 					</div>
 					<div class="dash-rows">
 						<div class="dash-row">
-							<span class="dash-row-label"><i class="bi bi-box"></i>Tracked items</span>
+							<span class="dash-row-label"><i class="bi bi-box"></i>{{ t('app.commerce-dashboard.row.trackedItems') }}</span>
 							<span class="dash-row-value">{{ locations.trackedItems }}</span>
 						</div>
 						<div class="dash-row">
-							<span class="dash-row-label">Out at a location</span>
+							<span class="dash-row-label">{{ t('app.commerce-dashboard.row.outAtLocation') }}</span>
 							<span class="dash-row-value" :class="{ 'dash-value-warn': locations.lowLocations > 0 }">{{ locations.lowLocations }}</span>
 						</div>
 					</div>
@@ -185,14 +185,14 @@
 
 				<!-- ===== Reorders ===== -->
 				<div class="island dash-card">
-					<div class="dash-card-head"><i class="bi bi-cart-plus"></i>Reorders</div>
+					<div class="dash-card-head"><i class="bi bi-cart-plus"></i>{{ t('app.commerce-dashboard.card.reorders') }}</div>
 					<div class="dash-metric">
 						<span class="dash-metric-value" :class="{ 'dash-value-warn': reorders.pendingApproval > 0 }">{{ reorders.pendingApproval }}</span>
-						<span class="dash-metric-unit">to approve</span>
+						<span class="dash-metric-unit">{{ t('app.commerce-dashboard.unit.toApprove') }}</span>
 					</div>
 					<div class="dash-rows">
 						<div class="dash-row">
-							<span class="dash-row-label"><i class="bi bi-truck"></i>Ordered (this month)</span>
+							<span class="dash-row-label"><i class="bi bi-truck"></i>{{ t('app.commerce-dashboard.row.orderedThisMonth') }}</span>
 							<span class="dash-row-value">{{ reorders.ordered }}</span>
 						</div>
 					</div>
@@ -200,18 +200,18 @@
 
 				<!-- ===== Backorders ===== -->
 				<div class="island dash-card">
-					<div class="dash-card-head"><i class="bi bi-hourglass-split"></i>Backorders</div>
+					<div class="dash-card-head"><i class="bi bi-hourglass-split"></i>{{ t('app.commerce-dashboard.card.backorders') }}</div>
 					<div class="dash-metric">
 						<span class="dash-metric-value" :class="{ 'dash-value-warn': backorders.backordered > 0 }">{{ backorders.backordered }}</span>
-						<span class="dash-metric-unit">awaiting stock</span>
+						<span class="dash-metric-unit">{{ t('app.commerce-dashboard.unit.awaitingStock') }}</span>
 					</div>
 					<div class="dash-rows">
 						<div class="dash-row">
-							<span class="dash-row-label"><i class="bi bi-check2-circle"></i>Ready to release</span>
+							<span class="dash-row-label"><i class="bi bi-check2-circle"></i>{{ t('app.commerce-dashboard.row.readyToRelease') }}</span>
 							<span class="dash-pill" :class="backorders.ready > 0 ? 'warn' : 'ok'">{{ backorders.ready }}</span>
 						</div>
 						<div class="dash-row">
-							<span class="dash-row-label"><i class="bi bi-box"></i>Units awaited</span>
+							<span class="dash-row-label"><i class="bi bi-box"></i>{{ t('app.commerce-dashboard.row.unitsAwaited') }}</span>
 							<span class="dash-row-value">{{ backorders.openUnits }}</span>
 						</div>
 					</div>
@@ -219,26 +219,26 @@
 
 				<!-- ===== Customers (CRM) ===== -->
 				<div class="island dash-card">
-					<div class="dash-card-head"><i class="bi bi-people"></i>Customers</div>
+					<div class="dash-card-head"><i class="bi bi-people"></i>{{ t('app.commerce-dashboard.card.customers') }}</div>
 					<div class="dash-metric">
 						<span class="dash-metric-value">{{ crm.customers }}</span>
-						<span class="dash-metric-unit">customers</span>
+						<span class="dash-metric-unit">{{ t('app.commerce-dashboard.unit.customers') }}</span>
 					</div>
 					<div class="dash-rows">
 						<div class="dash-row">
-							<span class="dash-row-label"><i class="bi bi-gem"></i>VIP</span>
+							<span class="dash-row-label"><i class="bi bi-gem"></i>{{ t('app.commerce-dashboard.row.vip') }}</span>
 							<span class="dash-row-value">{{ crm.vip }}</span>
 						</div>
 						<div class="dash-row">
-							<span class="dash-row-label">At risk</span>
+							<span class="dash-row-label">{{ t('app.commerce-dashboard.row.atRisk') }}</span>
 							<span class="dash-pill" :class="crm.atRisk > 0 ? 'warn' : 'ok'">{{ crm.atRisk }}</span>
 						</div>
 						<div class="dash-row">
-							<span class="dash-row-label">Dormant</span>
+							<span class="dash-row-label">{{ t('app.commerce-dashboard.row.dormant') }}</span>
 							<span class="dash-pill" :class="crm.dormant > 0 ? 'warn' : 'ok'">{{ crm.dormant }}</span>
 						</div>
 						<div class="dash-row">
-							<span class="dash-row-label"><i class="bi bi-cart-x"></i>Abandoned carts</span>
+							<span class="dash-row-label"><i class="bi bi-cart-x"></i>{{ t('app.commerce-dashboard.row.abandonedCarts') }}</span>
 							<span class="dash-row-value" :class="{ 'dash-value-warn': crm.abandoned > 0 }">{{ crm.abandoned }}</span>
 						</div>
 					</div>
@@ -246,26 +246,26 @@
 
 				<!-- ===== Tasks ===== -->
 				<div class="island dash-card">
-					<div class="dash-card-head"><i class="bi bi-list-check"></i>Tasks</div>
+					<div class="dash-card-head"><i class="bi bi-list-check"></i>{{ t('app.commerce-dashboard.card.tasks') }}</div>
 					<div class="dash-metric">
 						<span class="dash-metric-value">{{ tasks.total }}</span>
-						<span class="dash-metric-unit">open</span>
+						<span class="dash-metric-unit">{{ t('app.commerce-dashboard.unit.open') }}</span>
 					</div>
 					<div class="dash-rows">
 						<div class="dash-row">
-							<span class="dash-row-label"><i class="bi bi-person-dash"></i>Unassigned</span>
+							<span class="dash-row-label"><i class="bi bi-person-dash"></i>{{ t('app.commerce-dashboard.row.unassigned') }}</span>
 							<span class="dash-row-value" :class="{ 'dash-value-warn': tasks.unassigned > 0 }">{{ tasks.unassigned }}</span>
 						</div>
 						<div class="dash-row">
-							<span class="dash-row-label">Overdue</span>
+							<span class="dash-row-label">{{ t('app.commerce-dashboard.row.overdue') }}</span>
 							<span class="dash-pill" :class="tasks.overdue > 0 ? 'danger' : 'ok'">{{ tasks.overdue }}</span>
 						</div>
 						<div class="dash-row">
-							<span class="dash-row-label">Open too long</span>
+							<span class="dash-row-label">{{ t('app.commerce-dashboard.row.openTooLong') }}</span>
 							<span class="dash-pill" :class="tasks.open > 0 ? 'warn' : 'ok'">{{ tasks.open }}</span>
 						</div>
 						<div class="dash-row">
-							<span class="dash-row-label">Unclaimed too long</span>
+							<span class="dash-row-label">{{ t('app.commerce-dashboard.row.unclaimedTooLong') }}</span>
 							<span class="dash-pill" :class="tasks.unclaimed > 0 ? 'warn' : 'ok'">{{ tasks.unclaimed }}</span>
 						</div>
 					</div>
@@ -273,26 +273,26 @@
 
 				<!-- ===== Integration Health ===== -->
 				<div class="island dash-card">
-					<div class="dash-card-head"><i class="bi bi-heart-pulse"></i>Integration Health</div>
+					<div class="dash-card-head"><i class="bi bi-heart-pulse"></i>{{ t('app.commerce-dashboard.card.health') }}</div>
 					<div class="dash-metric">
 						<span class="dash-metric-value">{{ health.received }}</span>
-						<span class="dash-metric-unit">webhooks / {{ health.days }}d</span>
+						<span class="dash-metric-unit">{{ t('app.commerce-dashboard.unit.webhooksDays', { days: health.days }) }}</span>
 					</div>
 					<div class="dash-rows">
 						<div class="dash-row">
-							<span class="dash-row-label"><i class="bi bi-shield-lock"></i>HMAC failures</span>
+							<span class="dash-row-label"><i class="bi bi-shield-lock"></i>{{ t('app.commerce-dashboard.row.hmacFailures') }}</span>
 							<span class="dash-row-value" :class="{ 'dash-value-danger': health.hmacFailures > 0 }">{{ health.hmacFailures }}</span>
 						</div>
 						<div class="dash-row">
-							<span class="dash-row-label">API error rate</span>
+							<span class="dash-row-label">{{ t('app.commerce-dashboard.row.apiErrorRate') }}</span>
 							<span class="dash-pill" :class="health.apiPill">{{ health.apiErrorRate }}</span>
 						</div>
 						<div class="dash-row">
-							<span class="dash-row-label">Processing error rate</span>
+							<span class="dash-row-label">{{ t('app.commerce-dashboard.row.processingErrorRate') }}</span>
 							<span class="dash-pill" :class="health.routePill">{{ health.routeErrorRate }}</span>
 						</div>
 						<div class="dash-row">
-							<span class="dash-row-label">Avg processing</span>
+							<span class="dash-row-label">{{ t('app.commerce-dashboard.row.avgProcessing') }}</span>
 							<span class="dash-row-value">{{ health.avgLatency }}</span>
 						</div>
 					</div>
@@ -301,27 +301,27 @@
 				<!-- ===== Event ingestion ===== -->
 				<div class="island dash-card">
 					<div class="dash-card-head has-link">
-						<span class="head-title"><i class="bi bi-inboxes"></i>Event ingestion</span>
-						<button class="dash-card-link" title="Open failed events in Operations"
+						<span class="head-title"><i class="bi bi-inboxes"></i>{{ t('app.commerce-dashboard.card.events') }}</span>
+						<button class="dash-card-link" :title="t('app.commerce-dashboard.events.openTitle')"
 							@click="openOps('events', { eventFilter: { status: 'error' } })">
 							<i class="bi bi-box-arrow-up-right"></i>
 						</button>
 					</div>
 					<div class="dash-metric">
 						<span class="dash-metric-value">{{ events.total }}</span>
-						<span class="dash-metric-unit">events</span>
+						<span class="dash-metric-unit">{{ t('app.commerce-dashboard.unit.events') }}</span>
 					</div>
 					<div class="dash-rows">
 						<div class="dash-row">
-							<span class="dash-row-label"><i class="bi bi-exclamation-octagon"></i>Failed (need replay)</span>
+							<span class="dash-row-label"><i class="bi bi-exclamation-octagon"></i>{{ t('app.commerce-dashboard.row.failedReplay') }}</span>
 							<span class="dash-pill" :class="events.error > 0 ? 'danger' : 'ok'">{{ events.error }}</span>
 						</div>
 						<div class="dash-row">
-							<span class="dash-row-label"><i class="bi bi-check2-all"></i>Processed</span>
+							<span class="dash-row-label"><i class="bi bi-check2-all"></i>{{ t('app.commerce-dashboard.row.processed') }}</span>
 							<span class="dash-row-value">{{ events.processed }}</span>
 						</div>
 						<div class="dash-row">
-							<span class="dash-row-label">Received</span>
+							<span class="dash-row-label">{{ t('app.commerce-dashboard.row.received') }}</span>
 							<span class="dash-row-value">{{ events.received }}</span>
 						</div>
 					</div>
@@ -330,27 +330,27 @@
 				<!-- ===== Reconciliation ===== -->
 				<div class="island dash-card">
 					<div class="dash-card-head has-link">
-						<span class="head-title"><i class="bi bi-arrow-left-right"></i>Reconciliation</span>
-						<button class="dash-card-link" title="Open reconciliation in Operations"
+						<span class="head-title"><i class="bi bi-arrow-left-right"></i>{{ t('app.commerce-dashboard.card.reconciliation') }}</span>
+						<button class="dash-card-link" :title="t('app.commerce-dashboard.reconciliation.openTitle')"
 							@click="openOps('reconcile')">
 							<i class="bi bi-box-arrow-up-right"></i>
 						</button>
 					</div>
 					<div class="dash-metric">
 						<span class="dash-metric-value" :class="{ 'dash-value-warn': reconciliation.drift > 0 }">{{ reconciliation.drift }}</span>
-						<span class="dash-metric-unit">products with drift</span>
+						<span class="dash-metric-unit">{{ t('app.commerce-dashboard.unit.productsWithDrift') }}</span>
 					</div>
 					<div class="dash-rows">
 						<div class="dash-row">
-							<span class="dash-row-label">Field diffs</span>
+							<span class="dash-row-label">{{ t('app.commerce-dashboard.row.fieldDiffs') }}</span>
 							<span class="dash-row-value">{{ reconciliation.diffs }}</span>
 						</div>
 						<div class="dash-row">
-							<span class="dash-row-label"><i class="bi bi-bandaid"></i>Auto-healed</span>
+							<span class="dash-row-label"><i class="bi bi-bandaid"></i>{{ t('app.commerce-dashboard.row.autoHealed') }}</span>
 							<span class="dash-row-value">{{ reconciliation.healed }}</span>
 						</div>
 						<div class="dash-row" v-if="reconciliation.lastRunAt">
-							<span class="dash-row-label">Last run</span>
+							<span class="dash-row-label">{{ t('app.commerce-dashboard.row.lastRun') }}</span>
 							<span class="dash-row-value" style="font-weight: 400;">{{ reconciliation.lastRunAt }}</span>
 						</div>
 					</div>
@@ -359,27 +359,27 @@
 				<!-- ===== Outbound sync ===== -->
 				<div class="island dash-card">
 					<div class="dash-card-head has-link">
-						<span class="head-title"><i class="bi bi-cloud-upload"></i>Outbound sync</span>
-						<button class="dash-card-link" title="Open outbound sync in Operations"
+						<span class="head-title"><i class="bi bi-cloud-upload"></i>{{ t('app.commerce-dashboard.card.outboundSync') }}</span>
+						<button class="dash-card-link" :title="t('app.commerce-dashboard.outboundSync.openTitle')"
 							@click="openOps('sync')">
 							<i class="bi bi-box-arrow-up-right"></i>
 						</button>
 					</div>
 					<div class="dash-metric">
 						<span class="dash-metric-value">{{ outboundSync.total }}</span>
-						<span class="dash-metric-unit">writes / {{ salesDays }}d</span>
+						<span class="dash-metric-unit">{{ t('app.commerce-dashboard.unit.writesDays', { days: salesDays }) }}</span>
 					</div>
 					<div class="dash-rows">
 						<div class="dash-row">
-							<span class="dash-row-label"><i class="bi bi-check2"></i>OK</span>
+							<span class="dash-row-label"><i class="bi bi-check2"></i>{{ t('app.commerce-dashboard.row.ok') }}</span>
 							<span class="dash-row-value">{{ outboundSync.ok }}</span>
 						</div>
 						<div class="dash-row">
-							<span class="dash-row-label">Failed</span>
+							<span class="dash-row-label">{{ t('app.commerce-dashboard.row.failed') }}</span>
 							<span class="dash-pill" :class="outboundSync.failed > 0 ? 'danger' : 'ok'">{{ outboundSync.failed }}</span>
 						</div>
 						<div class="dash-row" v-if="outboundSync.dryrun > 0">
-							<span class="dash-row-label">Dry-run</span>
+							<span class="dash-row-label">{{ t('app.commerce-dashboard.row.dryRun') }}</span>
 							<span class="dash-row-value">{{ outboundSync.dryrun }}</span>
 						</div>
 					</div>
@@ -392,9 +392,9 @@
 		<div class="status-bar window-drag-region">
 			<span class="nav-spacer"></span>
 			<div class="status-group">
-				<span v-if="refreshing" class="status-item"><i class="bi bi-arrow-repeat me-1"></i>Refreshing&hellip;</span>
-				<span v-else-if="lastUpdated" class="status-item">Updated {{ lastUpdated }}</span>
-				<span v-else class="status-item">Ready</span>
+				<span v-if="refreshing" class="status-item"><i class="bi bi-arrow-repeat me-1"></i>{{ t('app.commerce-dashboard.statusbar.refreshing') }}</span>
+				<span v-else-if="lastUpdated" class="status-item">{{ t('app.commerce-dashboard.statusbar.updated', { time: fmtTime(lastUpdated) }) }}</span>
+				<span v-else class="status-item">{{ t('app.commerce-dashboard.statusbar.ready') }}</span>
 			</div>
 		</div>
 

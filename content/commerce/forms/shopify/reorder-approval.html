@@ -86,7 +86,7 @@ body { margin: 0; height: 100%; background: var(--bg); color: var(--text); line-
 
 	<div v-if="view === 'loading'" class="state-pane">
 		<div class="spinner"></div>
-		<p>Loading proposal…</p>
+		<p>{{ t('form.commerce.shopify.reorderApproval.loading', undefined, 'Loading proposal…') }}</p>
 	</div>
 
 	<div v-else-if="view === 'error'" class="state-pane error-pane">
@@ -95,7 +95,7 @@ body { margin: 0; height: 100%; background: var(--bg); color: var(--text); line-
 	</div>
 
 	<div v-else-if="view === 'standalone'" class="state-pane">
-		<p>This form must be opened from the Tasks application.</p>
+		<p>{{ t('form.commerce.shopify.reorderApproval.standaloneNotice', undefined, 'This form must be opened from the Tasks application.') }}</p>
 	</div>
 
 	<template v-else>
@@ -104,24 +104,24 @@ body { margin: 0; height: 100%; background: var(--bg); color: var(--text); line-
 				<h1>{{ productTitle }}</h1>
 				<div class="tagline">
 					<span v-if="variantName">{{ variantName }}</span>
-					<span v-if="record.variantId">Variant {{ record.variantId }}</span>
+					<span v-if="record.variantId">{{ variantIdText }}</span>
 				</div>
 			</header>
 
 			<section class="card">
-				<h2 class="section-title">Proposal</h2>
+				<h2 class="section-title">{{ t('form.commerce.shopify.reorderApproval.proposal', undefined, 'Proposal') }}</h2>
 				<div class="card-body">
 					<div class="info-grid">
 						<div>
-							<div class="info-label">In stock</div>
+							<div class="info-label">{{ t('form.commerce.shopify.reorderApproval.inStock', undefined, 'In stock') }}</div>
 							<div class="info-value">{{ fmt(record.currentStock) }}</div>
 						</div>
 						<div>
-							<div class="info-label">Velocity</div>
-							<div class="info-value">{{ record.velocity == null ? '—' : record.velocity + ' /day' }}</div>
+							<div class="info-label">{{ t('form.commerce.shopify.reorderApproval.velocity', undefined, 'Velocity') }}</div>
+							<div class="info-value">{{ velocityText }}</div>
 						</div>
 						<div>
-							<div class="info-label">Suggested qty</div>
+							<div class="info-label">{{ t('form.commerce.shopify.reorderApproval.suggestedQty', undefined, 'Suggested qty') }}</div>
 							<div class="info-value">{{ fmt(record.suggestedQty) }}</div>
 						</div>
 					</div>
@@ -129,24 +129,24 @@ body { margin: 0; height: 100%; background: var(--bg); color: var(--text); line-
 					<!-- Editable order quantity + note (when this user owns the task) -->
 					<div v-if="canEdit">
 						<div class="field">
-							<label for="qty">Order quantity</label>
+							<label for="qty">{{ t('form.commerce.shopify.reorderApproval.orderQuantity', undefined, 'Order quantity') }}</label>
 							<input id="qty" type="number" min="0" step="1" v-model.number="orderQty" :disabled="actionPending">
-							<p class="field-hint">Adjust before approving. Approving with 0 is not allowed — reject instead.</p>
+							<p class="field-hint">{{ t('form.commerce.shopify.reorderApproval.orderQuantityHint', undefined, 'Adjust before approving. Approving with 0 is not allowed — reject instead.') }}</p>
 						</div>
 						<div class="field">
-							<label for="note">Note (optional)</label>
-							<textarea id="note" v-model="note" :disabled="actionPending" placeholder="Note for the purchase order / supplier…"></textarea>
+							<label for="note">{{ t('form.commerce.shopify.reorderApproval.noteOptional', undefined, 'Note (optional)') }}</label>
+							<textarea id="note" v-model="note" :disabled="actionPending" :placeholder="t('form.commerce.shopify.reorderApproval.notePlaceholder', undefined, 'Note for the purchase order / supplier…')"></textarea>
 						</div>
 					</div>
 
 					<!-- Read-only when not the assignee / already decided -->
 					<div v-else>
 						<div class="field">
-							<div class="info-label">Order quantity</div>
+							<div class="info-label">{{ t('form.commerce.shopify.reorderApproval.orderQuantity', undefined, 'Order quantity') }}</div>
 							<div class="field-value">{{ fmt(record.approvedQty != null ? record.approvedQty : record.suggestedQty) }}</div>
 						</div>
 						<div class="field" v-if="record.note">
-							<div class="info-label">Note</div>
+							<div class="info-label">{{ t('form.commerce.shopify.reorderApproval.note', undefined, 'Note') }}</div>
 							<div class="field-value">{{ record.note }}</div>
 						</div>
 					</div>
@@ -157,22 +157,22 @@ body { margin: 0; height: 100%; background: var(--bg); color: var(--text); line-
 		<footer class="actions">
 			<span v-if="taskCompleted" class="action-notice completed">
 				<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7 7a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.25 10.69l6.47-6.47a.75.75 0 0 1 1.06 0z"/></svg>
-				<span>This reorder has been processed.</span>
+				<span>{{ t('form.commerce.shopify.reorderApproval.completedNotice', undefined, 'This reorder has been processed.') }}</span>
 			</span>
 			<span v-else-if="!taskAssignee" class="action-notice">
-				<span>Claim this task to review and decide on the reorder.</span>
+				<span>{{ t('form.commerce.shopify.reorderApproval.claimPrompt', undefined, 'Claim this task to review and decide on the reorder.') }}</span>
 			</span>
 			<span v-else-if="!isAssignedToMe" class="action-notice">
-				<span>This task is assigned to {{ assigneeDisplay || taskAssignee }}. View only.</span>
+				<span>{{ assignedNoticeText }}</span>
 			</span>
 			<template v-else>
 				<button class="btn btn-danger" type="button" :disabled="actionPending" @click="onReject">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.22 4.22a.75.75 0 0 1 1.06 0L8 6.94l2.72-2.72a.75.75 0 1 1 1.06 1.06L9.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L8 9.06l-2.72 2.72a.75.75 0 0 1-1.06-1.06L6.94 8 4.22 5.28a.75.75 0 0 1 0-1.06z"/></svg>
-					<span>Reject</span>
+					<span>{{ t('form.commerce.shopify.reorderApproval.reject', undefined, 'Reject') }}</span>
 				</button>
 				<button class="btn btn-primary" type="button" :disabled="actionPending || !(orderQty > 0)" @click="onApprove">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7 7a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.25 10.69l6.47-6.47a.75.75 0 0 1 1.06 0z"/></svg>
-					<span>Approve &amp; order</span>
+					<span>{{ t('form.commerce.shopify.reorderApproval.approveAndOrder', undefined, 'Approve & order') }}</span>
 				</button>
 			</template>
 		</footer>
@@ -181,83 +181,148 @@ body { margin: 0; height: 100%; background: var(--bg); color: var(--text); line-
 	</template>
 </main>
 
+<script src="./forms-sdk.js?v=2"></script>
 <script type="module">
-import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ichigo.esm.min.js';
+import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.71/dist/ichigo.esm.min.js';
 
-	const pending = new Map();
-	let nextID = 1;
-	function rpcCall(method, params) {
-		return new Promise((resolve, reject) => {
-			const id = String(nextID++);
-			pending.set(id, { resolve, reject });
-			try { window.parent.postMessage({ __tasksRpc: 'call', id, method, params: params || {} }, '*'); }
-			catch (err) { pending.delete(id); reject(err); }
-		});
-	}
+	// Namespace this form pulls from the host i18n bundle. Keys live in
+	// /etc/i18n/commerce-forms.*.json.
+	const I18N_PREFIX = 'form.commerce.shopify.';
+
+	// The Tasks Form SDK hides the postMessage RPC bridge, owns the ICU engine
+	// (intl-messageformat is loaded inside it), and routes host events. Created
+	// at module scope — it holds transport, not reactive UI state.
+	const sdk = window.createTasksForm();
+
 	function fmt(n) { if (n == null || n === '') return '—'; const x = Number(n); return Number.isFinite(x) ? x.toLocaleString() : String(n); }
 
 	const App = {
 		data() {
 			return {
 				view: 'loading', errorMessage: '', toastMessage: '', actionPending: false,
+
+				// Effective localization pushed by the host (inside the context
+				// payload and on every 'localization-changed' event). Read by t()
+				// and the format* methods so the whole form repaints on a locale
+				// or time-zone switch.
+				localization: { locale: '', timeZone: '', numberFormat: '', currency: '' },
+
+				// i18n message map for this form's namespace, resolved by the host
+				// for the effective locale (fallback chain merged). `revision` is
+				// bumped on every (re)load so t() bindings repaint even when the
+				// locale string is unchanged (e.g. a bundle hot-reload).
+				i18n: { messages: {}, revision: 0 },
+
 				currentUserID: '', currentUserDisplay: '', task: null, assigneeDisplay: '',
 				loaded: false, reorderPath: '', record: {},
 				orderQty: 0, note: '',
-				_messageListener: null, _standaloneTimer: null, _toastTimer: null, _assigneeDisplayCache: {},
+				_toastTimer: null, _assigneeDisplayCache: {},
 			};
 		},
 		computed: {
-			productTitle() { return (this.record && this.record.title) ? String(this.record.title) : 'Reorder proposal'; },
+			productTitle() { return (this.record && this.record.title) ? String(this.record.title) : this.t('form.commerce.shopify.reorderApproval.reorderProposal', undefined, 'Reorder proposal'); },
 			variantName() { const t = this.record && this.record.variantTitle; return (t && t !== 'Default Title') ? String(t) : ''; },
+			// "Variant {id}". Parameterized, so built in JS to stay clear of the
+			// `{{ }}` mustache parser.
+			variantIdText() {
+				return this.t('form.commerce.shopify.reorderApproval.variantLabel',
+					{ id: this.record.variantId }, 'Variant {id}');
+			},
+			// "{count} /day" velocity label, or em dash when unknown. Parameterized
+			// text kept out of the template.
+			velocityText() {
+				if (this.record.velocity == null) return '—';
+				return this.t('form.commerce.shopify.reorderApproval.velocityPerDay',
+					{ count: this.record.velocity }, '{count} /day');
+			},
 			taskAssignee() { return (this.task && this.task.assignee) || ''; },
 			taskCompleted() { return !!(this.task && this.task.completed); },
 			isAssignedToMe() { return !!this.taskAssignee && this.taskAssignee === this.currentUserID; },
 			canEdit() { return this.isAssignedToMe && !this.taskCompleted; },
+			// "This task is assigned to X. View only." Built in JS (not the
+			// template) so the parameterized t() call stays clear of mustache
+			// brace parsing.
+			assignedNoticeText() {
+				const name = this.assigneeDisplay || this.taskAssignee;
+				return this.t('form.commerce.shopify.reorderApproval.assignedToOther',
+					{ name }, 'This task is assigned to {name}. View only.');
+			},
 		},
 		methods: {
+			// ----------------------------------------------------------
+			// i18n
+			// ----------------------------------------------------------
+			// Translate a message id against the host-provided bundle for the
+			// effective locale. Reads `localization.locale` and `i18n.revision`
+			// so every binding repaints when the language switches or the bundle
+			// hot-reloads. Falls back to `fallback` (then the id) when the key is
+			// absent — both the resolved template and the fallback are run
+			// through ICU so placeholders / plurals work either way.
+			t(id, params, fallback) {
+				// Touch revision so a bundle hot-reload (same locale) still repaints.
+				void this.i18n.revision;
+				return sdk.translate(this.i18n.messages, this.localization.locale, id, params, fallback);
+			},
+
+			// Apply an effective-localization snapshot pushed by the host. Mirrors
+			// the value onto <html lang> for correct typography/hyphenation, then
+			// (re)loads the message bundle for the new locale.
+			applyLocalization(loc) {
+				if (!loc || typeof loc !== 'object') return;
+				this.localization.locale = loc.locale || '';
+				this.localization.timeZone = loc.timeZone || '';
+				this.localization.numberFormat = loc.numberFormat || '';
+				this.localization.currency = loc.currency || '';
+				if (this.localization.locale) {
+					document.documentElement.setAttribute('lang', this.localization.locale);
+				}
+				this.loadMessages();
+				this.updateDocumentTitle();
+			},
+
+			// Pull this form's namespace from the host for the effective locale.
+			// Best-effort: an older host without the RPC leaves messages empty,
+			// so t() degrades to its English fallbacks.
+			async loadMessages() {
+				try {
+					const res = await sdk.getI18nMessages(I18N_PREFIX);
+					const messages = (res && res.messages && typeof res.messages === 'object') ? res.messages : {};
+					// Trust the host's resolved locale when present (it knows the
+					// effective preference even if the context lagged).
+					if (res && res.locale) this.localization.locale = res.locale;
+					this.i18n.messages = messages;
+					this.i18n.revision++;
+				} catch (_) {
+					// Leave existing messages in place; fall back to literals.
+				}
+			},
+
+			updateDocumentTitle() {
+				const title = this.t('form.commerce.shopify.reorderApproval.title', undefined, 'Reorder Approval');
+				document.title = (this.view === 'content' && this.record && this.record.title) ? (title + ' — ' + this.productTitle) : title;
+			},
+
 			onMounted() {
-				this._messageListener = (ev) => this.onMessage(ev);
-				window.addEventListener('message', this._messageListener);
-				this._standaloneTimer = setTimeout(() => { if (this.view === 'loading') this.view = 'standalone'; }, 3000);
-				try { window.parent.postMessage({ __tasksRpc: 'ready' }, '*'); } catch (_) {}
+				sdk
+					.on('context', (payload) => this.handleContext(payload))
+					.on('localization', (loc) => this.applyLocalization(loc))
+					.on('standalone', () => { if (this.view === 'loading') this.view = 'standalone'; })
+					.on('ready', () => { this.i18n.revision++; })
+					.start();
 			},
 			onUnmount() {
-				if (this._messageListener) window.removeEventListener('message', this._messageListener);
-				if (this._standaloneTimer) clearTimeout(this._standaloneTimer);
+				sdk.stop();
 				if (this._toastTimer) clearTimeout(this._toastTimer);
 			},
 			fmt,
-			onMessage(ev) {
-				const data = ev.data;
-				if (!data || typeof data !== 'object') return;
-				if (data.__tasksRpc === 'result') {
-					const p = pending.get(String(data.id));
-					if (!p) return;
-					pending.delete(String(data.id));
-					if (data.ok) p.resolve(data.data); else p.reject(new Error(data.error || 'RPC error'));
-					return;
-				}
-				if (data.__tasksRpc === 'event' && data.type === 'context') {
-					if (this._standaloneTimer) { clearTimeout(this._standaloneTimer); this._standaloneTimer = null; }
-					const payload = data.payload || {};
-					if (payload.theme !== undefined) this.applyTheme(payload.theme);
-					this.handleContext(payload);
-					return;
-				}
-				if (data.__tasksRpc === 'event' && data.type === 'theme-changed') { this.applyTheme(data.theme); }
-			},
-			applyTheme(theme) {
-				const root = document.documentElement;
-				if (theme === 'light' || theme === 'dark') root.dataset.theme = theme; else delete root.dataset.theme;
-			},
 			showToast(message) {
 				this.toastMessage = message || '';
 				if (this._toastTimer) clearTimeout(this._toastTimer);
 				this._toastTimer = setTimeout(() => { this.toastMessage = ''; }, 4000);
 			},
-			showError(message) { this.errorMessage = message || 'An unexpected error occurred.'; this.view = 'error'; },
+			showError(message) { this.errorMessage = message || this.t('form.commerce.shopify.common.unexpectedError', undefined, 'An unexpected error occurred.'); this.view = 'error'; },
 			async handleContext(ctx) {
-				if (!ctx || ctx.mode !== 'task' || !ctx.task) { if (!this.loaded) this.showError('This form must be opened from a Task.'); return; }
+				if (!ctx || ctx.mode !== 'task' || !ctx.task) { if (!this.loaded) this.showError(this.t('form.commerce.shopify.reorderApproval.mustOpenFromTask', undefined, 'This form must be opened from a Task.')); return; }
 				this.task = Object.assign({}, ctx.task);
 				this.currentUserID = (ctx.currentUser && ctx.currentUser.id) || '';
 				this.currentUserDisplay = (ctx.currentUser && ctx.currentUser.displayName) || this.currentUserID;
@@ -268,23 +333,23 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				catch (err) { this.loaded = false; this.showError(err && err.message ? err.message : String(err)); }
 			},
 			async loadProposal() {
-				const taskInfo = await rpcCall('getTaskWithVariables');
+				const taskInfo = await sdk.getTaskWithVariables();
 				const variables = (taskInfo && Array.isArray(taskInfo.variables)) ? taskInfo.variables : [];
 				const variableMap = {};
 				for (const v of variables) { if (v && v.name) variableMap[v.name] = v.value; }
 				const reorderPath = String(variableMap.reorderPath || '');
-				if (!reorderPath) throw new Error('Process variable "reorderPath" is not set on this task.');
+				if (!reorderPath) throw new Error(this.t('form.commerce.shopify.reorderApproval.noReorderPath', undefined, 'Process variable "reorderPath" is not set on this task.'));
 
-				const text = await rpcCall('readNodeText', { path: reorderPath });
+				const text = await sdk.readNodeText(reorderPath);
 				let record;
-				try { record = JSON.parse(text); } catch (err) { throw new Error('Failed to parse reorder record: ' + (err && err.message ? err.message : String(err))); }
+				try { record = JSON.parse(text); } catch (err) { throw new Error(this.t('form.commerce.shopify.reorderApproval.recordParseFailed', { detail: (err && err.message ? err.message : String(err)) }, 'Failed to parse reorder record: {detail}')); }
 
 				this.reorderPath = reorderPath;
 				this.record = record || {};
 				const q = (this.record.approvedQty != null) ? this.record.approvedQty : this.record.suggestedQty;
 				this.orderQty = Number(q) || 0;
 				this.note = this.record.note || '';
-				document.title = 'Reorder Approval — ' + this.productTitle;
+				this.updateDocumentTitle();
 			},
 			async refreshAssigneeDisplay() {
 				const assignee = this.taskAssignee;
@@ -292,7 +357,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				const cached = this._assigneeDisplayCache[assignee];
 				if (cached) { this.assigneeDisplay = cached; return; }
 				try {
-					const user = await rpcCall('getUser', { username: assignee });
+					const user = await sdk.getUser(assignee);
 					const display = (user && user.displayName) || assignee;
 					this._assigneeDisplayCache[assignee] = display;
 					if (this.taskAssignee === assignee) this.assigneeDisplay = display;
@@ -300,13 +365,13 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 			},
 			async decide(decision, qty) {
 				if (this.actionPending) return;
-				if (!this.reorderPath) { this.showToast('Cannot decide: reorder path is unknown.'); return; }
+				if (!this.reorderPath) { this.showToast(this.t('form.commerce.shopify.reorderApproval.decideNoPath', undefined, 'Cannot decide: reorder path is unknown.')); return; }
 				this.actionPending = true;
 				try {
-					await rpcCall('setNodeProperty', { path: this.reorderPath, name: 'reorder:decision', value: decision });
-					await rpcCall('setNodeProperty', { path: this.reorderPath, name: 'reorder:approved_qty', value: String(qty) });
-					await rpcCall('setNodeProperty', { path: this.reorderPath, name: 'reorder:note', value: (this.note || '').trim() });
-					await rpcCall('completeTask', { variables: [] });
+					await sdk.setNodeProperty(this.reorderPath, 'reorder:decision', decision);
+					await sdk.setNodeProperty(this.reorderPath, 'reorder:approved_qty', String(qty));
+					await sdk.setNodeProperty(this.reorderPath, 'reorder:note', (this.note || '').trim());
+					await sdk.completeTask([]);
 					this.task = Object.assign({}, this.task, { completed: true });
 				} catch (err) {
 					this.showToast(err && err.message ? err.message : String(err));

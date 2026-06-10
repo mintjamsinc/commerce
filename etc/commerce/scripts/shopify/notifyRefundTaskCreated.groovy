@@ -25,6 +25,7 @@ import commerce.Refunds
 import commerce.Orders
 import commerce.Notifications
 import commerce.NotificationMessage
+import commerce.ReviewReasons
 
 // --- Resolve task / process context ------------------------------------------
 def taskName = task?.getName() ?: "Refund Review"
@@ -34,14 +35,16 @@ def refundPath = Notifications.taskVar(task, "refundPath")
 def refundID = Notifications.taskVar(task, "refund_id")
 def orderID = Notifications.taskVar(task, "order_id")
 
-// Reasons are a JSON array string set by screenRefund.groovy.
+// Reasons are a JSON array string of structured descriptors set by
+// screenRefund.groovy. Rendered to operational English here (notifications have
+// no per-user locale); the review form renders the same descriptors localized.
 def reasons = []
 try {
     def raw = Notifications.taskVar(task, "reviewReasons")
     if (raw) {
         def parsed = JSON.parse(raw)
         if (parsed instanceof List) {
-            reasons = parsed.collect { it?.toString() }.findAll { it }
+            reasons = ReviewReasons.renderAll(parsed)
         }
     }
 } catch (Exception e) {

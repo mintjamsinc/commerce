@@ -12,6 +12,13 @@
 // rebuild are confirmed. Self-contained (ichigo.js runtime only).
 
 import { VDOM } from '@mintjamsinc/ichigojs';
+import {
+	createLocalizationSnapshot,
+	refreshLocalization,
+	handleLocalizationMessage,
+	translate,
+	formatDate,
+} from '../../composables/use-localization.js';
 
 type AnyInstance = any;
 
@@ -27,6 +34,10 @@ const App = {
 	data() {
 		return {
 			instance: null as AnyInstance,
+			// Reactive Localization snapshot — drives every t() / formatDate() binding
+			// so the app repaints when the user switches language or a bundle is
+			// hot-reloaded. See composables/use-localization.ts.
+			localization: createLocalizationSnapshot(),
 			section: 'publish' as 'publish' | 'pages',
 			busy: false,
 			status_: '',
@@ -46,7 +57,7 @@ const App = {
 			loadingPage: false,
 			newBlockType: 'markdown',
 
-			confirmDialog: { visible: false, title: '', message: '', ok: 'Confirm', showDiscard: false, resolve: null as null | ((a: string) => void) },
+			confirmDialog: { visible: false, title: '', message: '', ok: '', showDiscard: false, resolve: null as null | ((a: string) => void) },
 
 			_savedJson: '',
 			_base: '' as string,
@@ -62,10 +73,26 @@ const App = {
 	},
 
 	methods: {
+		// ---- i18n / locale-aware formatting ------------------------------------
+		// Reactive i18n lookup: reading the localization snapshot inside
+		// translate() subscribes every `{{ t(...) }}` binding, so the UI repaints
+		// the instant the user switches language or a bundle hot-reloads.
+		t(messageId: string, params?: Record<string, any>, fallback?: string): string {
+			return translate(this.localization, this.instance, messageId, params, fallback);
+		},
+		// Locale- and timezone-aware date/time formatting.
+		fmtTime(v: any): string {
+			if (!v) return '—';
+			return formatDate(this.localization, v, { format: 'datetime' });
+		},
+
 		onMounted() {
 			const vm = this;
 			vm._messageListener = (event: MessageEvent) => {
 				const data: any = event.data || {};
+				// Fold locale / time-zone / currency changes and i18n bundle
+				// hot-reloads into the reactive snapshot so the UI re-localizes live.
+				if (handleLocalizationMessage(data.type, vm.localization, vm.instance)) return;
 				if (data.type === 'theme-changed' && data.theme) document.documentElement.dataset.theme = data.theme;
 			};
 			window.addEventListener('message', vm._messageListener);
@@ -73,7 +100,12 @@ const App = {
 			window.appLaunch = async (instance: AnyInstance) => {
 				vm.instance = vm.$markRaw(instance);
 				try { document.documentElement.dataset.theme = instance.api.theme.currentTheme || 'light'; } catch (_) {}
-				try { instance.windowTitle = 'Commerce Publishing'; } catch (_) {}
+
+				// Snapshot the effective Localization preference so the first paint
+				// is already in the user's language / region.
+				refreshLocalization(vm.localization, vm.instance);
+
+				try { instance.windowTitle = vm.t('app.commerce-publish.title', undefined, 'Commerce Publishing'); } catch (_) {}
 				if (typeof instance.setBeforeCloseCallback === 'function') instance.setBeforeCloseCallback(async () => vm.confirmDiscard());
 				await vm.resolveBase();
 				await vm.loadSection('publish');
@@ -141,18 +173,18 @@ const App = {
 				this.status = this.$markRaw(j);
 				const s = j.store || {};
 				this.store = { name: s.name || '', shopDomain: s.shopDomain || '', currency: s.currency || '', lowStock: s.lowStock ?? 0 };
-			} catch (e: any) { this.showToast(e?.message || 'Could not load status.', true); }
+			} catch (e: any) { this.showToast(e?.message || this.t('app.commerce-publish.error.loadStatus', undefined, 'Could not load status.'), true); }
 		},
 		async rebuild() {
 			this.busy = true;
 			try {
 				const { status } = await this.postJson(STOREFRONT_SCRIPT, {});
 				if (status === 202 || status === 200) {
-					this.showToast('Rebuild started. Refreshing shortly…', false);
+					this.showToast(this.t('app.commerce-publish.toast.rebuildStarted', undefined, 'Rebuild started. Refreshing shortly…'), false);
 					setTimeout(() => this.loadStatus(), 4000);
 					setTimeout(() => this.loadStatus(), 12000);
-				} else this.showToast(`Could not start (${status}).`, true);
-			} catch (e: any) { this.showToast(e?.message || 'Could not start rebuild.', true); }
+				} else this.showToast(this.t('app.commerce-publish.error.rebuildFailed', { status }, `Could not start (${status}).`), true);
+			} catch (e: any) { this.showToast(e?.message || this.t('app.commerce-publish.error.rebuildError', undefined, 'Could not start rebuild.'), true); }
 			finally { this.busy = false; }
 		},
 		openPublic(rel: string) {
@@ -168,7 +200,7 @@ const App = {
 				const set: Record<string, boolean> = {};
 				(Array.isArray(j.published) ? j.published : []).forEach((s: string) => { set[s] = true; });
 				this.publishedSet = set;
-			} catch (e: any) { this.showToast(e?.message || 'Could not load pages.', true); }
+			} catch (e: any) { this.showToast(e?.message || this.t('app.commerce-publish.error.loadPages', undefined, 'Could not load pages.'), true); }
 		},
 		async selectPage(slug: string) {
 			if (this.editing && !this.isNew && this.editing.slug === slug) return;
@@ -187,7 +219,7 @@ const App = {
 				this.isNew = false;
 				this._savedJson = JSON.stringify(this.modelSnapshot());
 				this.setStatus('', '');
-			} catch (e: any) { this.showToast(e?.message || 'Could not load page.', true); }
+			} catch (e: any) { this.showToast(e?.message || this.t('app.commerce-publish.error.loadPage', undefined, 'Could not load page.'), true); }
 			finally { this.loadingPage = false; }
 		},
 		async newPage() {
@@ -266,7 +298,7 @@ const App = {
 		},
 
 		async savePage() {
-			if (!this.canSave) { if (this.editing && !SLUG_RE.test(String(this.editing.slug || ''))) this.showToast('Slug must be lowercase letters, digits and hyphens.', true); return; }
+			if (!this.canSave) { if (this.editing && !SLUG_RE.test(String(this.editing.slug || ''))) this.showToast(this.t('app.commerce-publish.error.slugInvalid', undefined, 'Slug must be lowercase letters, digits and hyphens.'), true); return; }
 			this.busy = true;
 			try {
 				const slug = String(this.editing.slug).trim();
@@ -274,15 +306,19 @@ const App = {
 				if (status < 200 || status >= 300 || json.ok === false) throw new Error(json.error || `Save failed (${status})`);
 				this.isNew = false;
 				this._savedJson = JSON.stringify(this.modelSnapshot());
-				this.setStatus('ok', 'Saved');
-				this.showToast('Saved. Rebuild to publish to the storefront.', false);
+				this.setStatus('ok', this.t('app.commerce-publish.status.saved', undefined, 'Saved'));
+				this.showToast(this.t('app.commerce-publish.toast.saved', undefined, 'Saved. Rebuild to publish to the storefront.'), false);
 				await this.loadPages();
-			} catch (e: any) { this.showToast(e?.message || 'Save failed.', true); this.setStatus('err', 'Save failed'); }
+			} catch (e: any) { this.showToast(e?.message || this.t('app.commerce-publish.error.saveFailed', undefined, 'Save failed.'), true); this.setStatus('err', this.t('app.commerce-publish.status.saveFailed', undefined, 'Save failed')); }
 			finally { this.busy = false; }
 		},
 		async deletePage() {
 			if (this.isNew || !this.editing) return;
-			const ok = await this.confirm('Delete page', `Delete the landing page "${this.editing.title || this.editing.slug}"? It will be removed from the storefront on the next rebuild.`, 'Delete');
+			const ok = await this.confirm(
+				this.t('app.commerce-publish.dialog.deleteTitle', undefined, 'Delete page'),
+				this.t('app.commerce-publish.dialog.deleteMessage', { name: this.editing.title || this.editing.slug }, `Delete the landing page "${this.editing.title || this.editing.slug}"? It will be removed from the storefront on the next rebuild.`),
+				this.t('app.commerce-publish.dialog.deleteOk', undefined, 'Delete'),
+			);
 			if (!ok) return;
 			this.busy = true;
 			try {
@@ -290,8 +326,8 @@ const App = {
 				if (status < 200 || status >= 300 || json.ok === false) throw new Error(json.error || `Delete failed (${status})`);
 				this.editing = null; this._savedJson = '';
 				await this.loadPages();
-				this.showToast('Page deleted. Rebuild to remove it from the storefront.', false);
-			} catch (e: any) { this.showToast(e?.message || 'Delete failed.', true); }
+				this.showToast(this.t('app.commerce-publish.toast.deleted', undefined, 'Page deleted. Rebuild to remove it from the storefront.'), false);
+			} catch (e: any) { this.showToast(e?.message || this.t('app.commerce-publish.error.deleteFailed', undefined, 'Delete failed.'), true); }
 			finally { this.busy = false; }
 		},
 		revert() {
@@ -311,7 +347,14 @@ const App = {
 		},
 		askDiscard(): Promise<string> {
 			const vm = this;
-			vm.confirmDialog = { visible: true, title: 'Unsaved Changes', message: 'You have unsaved changes to this page. Save them first?', ok: 'Save', showDiscard: true, resolve: null };
+			vm.confirmDialog = {
+				visible: true,
+				title: vm.t('app.commerce-publish.dialog.unsavedTitle', undefined, 'Unsaved Changes'),
+				message: vm.t('app.commerce-publish.dialog.unsavedMessage', undefined, 'You have unsaved changes to this page. Save them first?'),
+				ok: vm.t('common.save', undefined, 'Save'),
+				showDiscard: true,
+				resolve: null,
+			};
 			return new Promise((resolve) => { vm.confirmDialog.resolve = resolve; });
 		},
 		confirm(title: string, message: string, ok: string): Promise<boolean> {
@@ -326,7 +369,6 @@ const App = {
 		},
 
 		// ---- Format / status -------------------------------------------------
-		fmtTime(v: any): string { if (!v) return '—'; const d = new Date(v); return isNaN(d.getTime()) ? String(v) : d.toLocaleString(); },
 		setStatus(kind: '' | 'ok' | 'err', msg: string) { this.statusKind = kind; this.status_ = msg; },
 		showToast(msg: string, isError: boolean) {
 			this.toast = msg; this.toastError = !!isError;

@@ -1,0 +1,75 @@
+{
+	"app.commerce-pim.title": "コマース PIM",
+
+	"app.commerce-pim.toolbar.save": "オーバーレイを保存",
+	"app.commerce-pim.toolbar.revert": "変更を元に戻す",
+	"app.commerce-pim.toolbar.push": "メタフィールドを Shopify に送信",
+	"app.commerce-pim.toolbar.pushDisabled": "Admin API が無効です（コマース設定を確認してください）",
+
+	"app.commerce-pim.search.placeholder": "商品を検索…",
+	"app.commerce-pim.search.clear": "クリア",
+	"app.commerce-pim.search.noResults": "商品が見つかりませんでした。",
+	"app.commerce-pim.search.hint": "カタログを検索して開始してください。",
+
+	"app.commerce-pim.state.loading": "商品を読み込み中…",
+	"app.commerce-pim.state.empty": "商品を選択して情報オーバーレイを編集してください。",
+
+	"app.commerce-pim.product.idFallback": "商品 #{id}",
+	"app.commerce-pim.product.overlayUpdated": "オーバーレイ更新: {time}{hasUser, select, yes { （{user}）} other {}}",
+
+	"app.commerce-pim.base.summary": "Shopify ベース情報・バリエーション（{count}件）",
+	"app.commerce-pim.base.tags": "タグ",
+	"app.commerce-pim.base.colVariant": "バリエーション",
+	"app.commerce-pim.base.colSku": "SKU",
+	"app.commerce-pim.base.colPrice": "価格",
+
+	"app.commerce-pim.section.localized": "多言語コンテンツ",
+	"app.commerce-pim.action.addLocale": "ロケールを追加",
+	"app.commerce-pim.localized.empty": "多言語タイトル・説明文はまだありません。",
+	"app.commerce-pim.localized.labelLocale": "ロケール",
+	"app.commerce-pim.localized.placeholderLocale": "ja, en, …",
+	"app.commerce-pim.localized.labelTitle": "タイトル",
+	"app.commerce-pim.localized.labelDescription": "説明文（HTML）",
+	"app.commerce-pim.action.removeLocale": "ロケールを削除",
+
+	"app.commerce-pim.section.attributes": "カスタム属性",
+	"app.commerce-pim.action.addAttribute": "属性を追加",
+	"app.commerce-pim.attributes.empty": "カスタム属性はまだありません。",
+	"app.commerce-pim.attributes.placeholderKey": "material",
+	"app.commerce-pim.attributes.placeholderValue": "cotton",
+	"app.commerce-pim.action.removeAttribute": "属性を削除",
+
+	"app.commerce-pim.section.metafields": "メタフィールド",
+	"app.commerce-pim.action.addMetafield": "メタフィールドを追加",
+	"app.commerce-pim.metafields.hint": "CMS で作成したメタフィールドはツールバーから Shopify に送信できます（Admin API が必要です）。",
+	"app.commerce-pim.metafields.labelNamespace": "ネームスペース",
+	"app.commerce-pim.metafields.placeholderNamespace": "custom",
+	"app.commerce-pim.metafields.placeholderKey": "care",
+	"app.commerce-pim.metafields.labelType": "型",
+	"app.commerce-pim.metafields.placeholderType": "single_line_text_field",
+	"app.commerce-pim.action.removeMetafield": "メタフィールドを削除",
+
+	"app.commerce-pim.field.key": "キー",
+	"app.commerce-pim.field.value": "値",
+
+	"app.commerce-pim.statusbar.saving": "保存中…",
+	"app.commerce-pim.statusbar.pushing": "送信中…",
+	"app.commerce-pim.statusbar.unsaved": "未保存の変更があります",
+	"app.commerce-pim.statusbar.ready": "準備完了",
+
+	"app.commerce-pim.status.saved": "保存しました",
+	"app.commerce-pim.status.pushed": "メタフィールドを Shopify に送信しました。",
+
+	"app.commerce-pim.dialog.title": "未保存の変更",
+	"app.commerce-pim.dialog.body1": "この商品に未保存の変更があります。",
+	"app.commerce-pim.dialog.body2": "先に保存しますか？",
+	"app.commerce-pim.dialog.discard": "保存しない",
+
+	"app.commerce-pim.err.noWorkspace": "ワークスペースを解決できませんでした。",
+	"app.commerce-pim.err.searchFailed": "検索に失敗しました。",
+	"app.commerce-pim.err.productNotFound": "商品が見つかりませんでした。",
+	"app.commerce-pim.err.loadFailed": "商品を読み込めませんでした。",
+	"app.commerce-pim.err.saveFailed": "保存に失敗しました。",
+	"app.commerce-pim.err.saveFirst": "送信する前に変更を保存してください。",
+	"app.commerce-pim.err.pushFailed": "送信に失敗しました。"
+}

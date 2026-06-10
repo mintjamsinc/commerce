@@ -451,7 +451,7 @@ body {
 	<!-- Loading state -->
 	<div v-if="view === 'loading'" class="state-pane">
 		<div class="spinner"></div>
-		<p>Loading backorder…</p>
+		<p>{{ t('form.commerce.shopify.backorderRelease.loading', undefined, 'Loading backorder…') }}</p>
 	</div>
 
 	<!-- Error state -->
@@ -463,7 +463,7 @@ body {
 	<!-- Standalone notice (form opened outside Tasks app) -->
 	<div v-else-if="view === 'standalone'" class="state-pane">
 		<svg class="state-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM7.25 5a.75.75 0 0 1 1.5 0v3.5a.75.75 0 0 1-1.5 0V5zM8 11.25a.875.875 0 1 1 0-1.75.875.875 0 0 1 0 1.75z"/></svg>
-		<p>This form must be opened from the Tasks application.</p>
+		<p>{{ t('form.commerce.shopify.backorderRelease.standaloneNotice', undefined, 'This form must be opened from the Tasks application.') }}</p>
 	</div>
 
 	<!-- Main content -->
@@ -472,12 +472,12 @@ body {
 			<header class="order-header">
 				<div class="order-title-row">
 					<h1>{{ itemTitle }}</h1>
-					<span class="order-qty">×{{ quantityText }}</span>
+					<span class="order-qty">{{ headerQtyText }}</span>
 				</div>
 				<div class="order-tagline">
-					<span v-if="reason" class="status-badge" :class="reason">{{ reason }}</span>
+					<span v-if="reason" class="status-badge" :class="reason">{{ reasonLabel }}</span>
 					<span v-if="orderLabel">{{ orderLabel }}</span>
-					<span v-if="createdAtText">backordered {{ createdAtText }}</span>
+					<span v-if="createdAtText">{{ backorderedAtText }}</span>
 				</div>
 			</header>
 
@@ -485,47 +485,47 @@ body {
 			<section class="reasons">
 				<div class="reasons-title">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7 7a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.25 10.69l6.47-6.47a.75.75 0 0 1 1.06 0z"/></svg>
-					<span>Stock has arrived</span>
+					<span>{{ t('form.commerce.shopify.backorderRelease.stockArrived', undefined, 'Stock has arrived') }}</span>
 				</div>
-				<p>The awaited stock for this {{ reason === 'preorder' ? 'pre-order' : 'backordered' }} line is now available. Releasing it hands the line to normal fulfilment.</p>
+				<p>{{ stockArrivedText }}</p>
 			</section>
 
 			<!-- Backorder details -->
 			<section class="card">
-				<h2 class="section-title">Backorder</h2>
+				<h2 class="section-title">{{ t('form.commerce.shopify.backorderRelease.backorder', undefined, 'Backorder') }}</h2>
 				<div class="card-body">
 					<div class="info-grid">
 						<div class="info-block">
-							<div class="info-label">Order</div>
-							<div class="info-value" :class="{ empty: !orderLabel }">{{ orderLabel || 'Unknown' }}</div>
+							<div class="info-label">{{ t('form.commerce.shopify.backorderRelease.order', undefined, 'Order') }}</div>
+							<div class="info-value" :class="{ empty: !orderLabel }">{{ orderLabel || t('form.commerce.shopify.common.unknown', undefined, 'Unknown') }}</div>
 						</div>
 						<div class="info-block">
-							<div class="info-label">Customer</div>
-							<div class="info-value" :class="{ empty: !customerEmail }">{{ customerEmail || 'Unknown' }}</div>
+							<div class="info-label">{{ t('form.commerce.shopify.backorderRelease.customer', undefined, 'Customer') }}</div>
+							<div class="info-value" :class="{ empty: !customerEmail }">{{ customerEmail || t('form.commerce.shopify.common.unknown', undefined, 'Unknown') }}</div>
 						</div>
 						<div class="info-block">
-							<div class="info-label">SKU</div>
+							<div class="info-label">{{ t('form.commerce.shopify.backorderRelease.sku', undefined, 'SKU') }}</div>
 							<div class="info-value" :class="{ empty: !sku }">{{ sku || '—' }}</div>
 						</div>
 						<div class="info-block">
-							<div class="info-label">Variant</div>
+							<div class="info-label">{{ t('form.commerce.shopify.backorderRelease.variant', undefined, 'Variant') }}</div>
 							<div class="info-value" :class="{ empty: !variantTitle }">{{ variantTitle || '—' }}</div>
 						</div>
 						<div class="info-block">
-							<div class="info-label">Awaited quantity</div>
+							<div class="info-label">{{ t('form.commerce.shopify.backorderRelease.awaitedQuantity', undefined, 'Awaited quantity') }}</div>
 							<div class="info-value">{{ quantityText }}</div>
 						</div>
 						<div class="info-block">
-							<div class="info-label">Ordered quantity</div>
+							<div class="info-label">{{ t('form.commerce.shopify.backorderRelease.orderedQuantity', undefined, 'Ordered quantity') }}</div>
 							<div class="info-value">{{ orderedQuantityText }}</div>
 						</div>
 						<div class="info-block">
-							<div class="info-label">Available at order</div>
+							<div class="info-label">{{ t('form.commerce.shopify.backorderRelease.availableAtOrder', undefined, 'Available at order') }}</div>
 							<div class="info-value">{{ availableAtOrderText }}</div>
 						</div>
 						<div class="info-block">
-							<div class="info-label">Reason</div>
-							<div class="info-value">{{ reason === 'preorder' ? 'Pre-order' : 'Stock shortfall' }}</div>
+							<div class="info-label">{{ t('form.commerce.shopify.backorderRelease.reason', undefined, 'Reason') }}</div>
+							<div class="info-value">{{ reasonLabel }}</div>
 						</div>
 					</div>
 				</div>
@@ -533,21 +533,21 @@ body {
 
 			<!-- Memo -->
 			<section class="card">
-				<h2 class="section-title">Memo</h2>
+				<h2 class="section-title">{{ t('form.commerce.shopify.backorderRelease.memo', undefined, 'Memo') }}</h2>
 				<div class="memo-body">
 					<div v-if="memo" class="memo-card">
 						<div class="memo-header">
-							<span class="memo-author">{{ memo.name || memo.id || 'Unknown' }}</span>
+							<span class="memo-author">{{ memo.name || memo.id || t('form.commerce.shopify.common.unknown', undefined, 'Unknown') }}</span>
 							<span class="memo-time" v-if="memoTimestampText">{{ memoTimestampText }}</span>
 						</div>
 						<div class="memo-content">{{ memo.content }}</div>
 					</div>
-					<div v-else class="memo-empty">No memo yet.</div>
+					<div v-else class="memo-empty">{{ t('form.commerce.shopify.backorderRelease.noMemo', undefined, 'No memo yet.') }}</div>
 
 					<div v-if="canEditMemo && memoMode === 'view'" class="memo-edit-trigger">
 						<button class="btn btn-secondary" type="button" @click="enterMemoEdit">
 							<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25a1.75 1.75 0 0 1 .445-.755l8.61-8.612zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086zM11.189 6.25 9.75 4.81l-6.286 6.287a.25.25 0 0 0-.064.108l-.558 1.953 1.953-.558a.25.25 0 0 0 .108-.064l6.286-6.286z"/></svg>
-							<span>{{ memo ? 'Edit memo' : 'Add memo' }}</span>
+							<span>{{ memo ? t('form.commerce.shopify.backorderRelease.editMemo', undefined, 'Edit memo') : t('form.commerce.shopify.backorderRelease.addMemo', undefined, 'Add memo') }}</span>
 						</button>
 					</div>
 
@@ -555,16 +555,16 @@ body {
 						<textarea v-model="memoDraft"
 							class="memo-textarea"
 							rows="4"
-							placeholder="Write a memo for the next operator..."
+							:placeholder="t('form.commerce.shopify.backorderRelease.memoPlaceholder', undefined, 'Write a memo for the next operator...')"
 							:disabled="memoSaving"></textarea>
 						<div class="memo-editor-actions">
 							<button class="btn btn-secondary" type="button"
 								:disabled="memoSaving"
-								@click="cancelMemoEdit">Cancel</button>
+								@click="cancelMemoEdit">{{ t('form.commerce.shopify.common.cancel', undefined, 'Cancel') }}</button>
 							<button class="btn btn-primary" type="button"
 								:disabled="memoSaving || !memoDraftHasContent"
 								@click="saveMemo">
-								<span>Update</span>
+								<span>{{ t('form.commerce.shopify.common.update', undefined, 'Update') }}</span>
 							</button>
 						</div>
 					</div>
@@ -577,31 +577,31 @@ body {
 				<button v-if="isAssignedToMe || taskCompleted"
 					class="btn btn-secondary" type="button"
 					:disabled="!shopifyURL"
-					:title="shopifyURL || 'Shop domain or order ID is unavailable.'"
+					:title="shopifyURL || t('form.commerce.shopify.backorderRelease.shopifyUnavailable', undefined, 'Shop domain or order ID is unavailable.')"
 					@click="openShopify">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M9.5 2a.5.5 0 0 0 0 1h2.793L7.146 8.146a.5.5 0 1 0 .708.708L13 3.707V6.5a.5.5 0 0 0 1 0V2.5a.5.5 0 0 0-.5-.5h-4z"/><path d="M3.5 4A1.5 1.5 0 0 0 2 5.5v7A1.5 1.5 0 0 0 3.5 14h7a1.5 1.5 0 0 0 1.5-1.5v-3a.5.5 0 0 0-1 0v3a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1-.5-.5v-7a.5.5 0 0 1 .5-.5h3a.5.5 0 0 0 0-1h-3z"/></svg>
-					View on Shopify
+					{{ t('form.commerce.shopify.backorderRelease.viewOnShopify', undefined, 'View on Shopify') }}
 				</button>
 			</div>
 			<div class="action-area">
 				<span v-if="taskCompleted" class="action-notice completed">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7 7a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.25 10.69l6.47-6.47a.75.75 0 0 1 1.06 0z"/></svg>
-					<span>This backorder has been released.</span>
+					<span>{{ t('form.commerce.shopify.backorderRelease.completedNotice', undefined, 'This backorder has been released.') }}</span>
 				</span>
 				<span v-else-if="!taskAssignee" class="action-notice">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 14.5a5 5 0 0 1 10 0 .5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5z"/></svg>
-					<span>Claim this task to release the backorder.</span>
+					<span>{{ t('form.commerce.shopify.backorderRelease.claimPrompt', undefined, 'Claim this task to release the backorder.') }}</span>
 				</span>
 				<span v-else-if="!isAssignedToMe" class="action-notice">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 14.5a5 5 0 0 1 10 0 .5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5z"/></svg>
-					<span>This task is currently assigned to {{ assigneeDisplay || taskAssignee }}. View only.</span>
+					<span>{{ assignedNoticeText }}</span>
 				</span>
 				<button v-else
 					class="btn btn-primary" type="button"
 					:disabled="actionPending"
 					@click="onComplete">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7 7a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.25 10.69l6.47-6.47a.75.75 0 0 1 1.06 0z"/></svg>
-					<span>Release backorder</span>
+					<span>{{ t('form.commerce.shopify.backorderRelease.release', undefined, 'Release backorder') }}</span>
 				</button>
 			</div>
 		</footer>
@@ -611,74 +611,26 @@ body {
 </main>
 
 <!-- ichigo.js (ESM, latest) -->
+<script src="./forms-sdk.js?v=2"></script>
 <script type="module">
-import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ichigo.esm.min.js';
+import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.71/dist/ichigo.esm.min.js';
 
-	// ============================================================
-	// JSON-RPC bridge with the Tasks parent app
-	// ============================================================
-	const pending = new Map();
-	let nextID = 1;
+	// Namespace this form pulls from the host i18n bundle. Keys live in
+	// /etc/i18n/commerce-forms.*.json.
+	const I18N_PREFIX = 'form.commerce.shopify.';
 
-	function rpcCall(method, params) {
-		return new Promise((resolve, reject) => {
-			const id = String(nextID++);
-			pending.set(id, { resolve, reject });
-			try {
-				window.parent.postMessage({
-					__tasksRpc: 'call',
-					id: id,
-					method: method,
-					params: params || {},
-				}, '*');
-			} catch (err) {
-				pending.delete(id);
-				reject(err);
-			}
-		});
-	}
+	// The Tasks Form SDK hides the postMessage RPC bridge, owns the ICU engine
+	// (intl-messageformat is loaded inside it), and routes host events. Created
+	// at module scope — it holds transport, not reactive UI state.
+	const sdk = window.createTasksForm();
 
-	// ============================================================
-	// Pure helpers
-	// ============================================================
-	function getProp(node, name) {
-		if (!node || !Array.isArray(node.properties)) return undefined;
-		const p = node.properties.find(x => x && x.name === name);
-		if (!p) return undefined;
-		const v = p.propertyValue;
-		if (!v) return undefined;
-		if ('value' in v) return v.value;
-		if ('values' in v) return v.values;
-		return undefined;
-	}
+	// Node property reads (sdk.getProp / sdk.getStringProp) and simple-YAML
+	// scalar extraction (sdk.readYamlScalar) are node-contract concerns owned
+	// by the Tasks Form SDK; forms call them straight off `sdk`.
 
-	function getStringProp(node, name) {
-		const v = getProp(node, name);
-		return v == null ? '' : String(v);
-	}
-
-	function extractShopDomain(yamlText) {
-		if (!yamlText) return '';
-		const m = yamlText.match(/^[ \t]*shopDomain[ \t]*:[ \t]*["']?([^"'#\r\n]+?)["']?[ \t]*(?:#.*)?$/m);
-		return m ? m[1].trim() : '';
-	}
-
-	function formatNumber(n) {
-		if (n == null || n === '') return '—';
-		const num = Number(n);
-		if (Number.isFinite(num)) return num.toLocaleString();
-		return String(n);
-	}
-
-	function formatDate(value) {
-		if (!value) return '';
-		const d = new Date(value);
-		if (Number.isNaN(d.getTime())) return '';
-		return d.toLocaleString([], {
-			year: 'numeric', month: 'numeric', day: 'numeric',
-			hour: 'numeric', minute: '2-digit',
-		});
-	}
+	// Number / date formatting is locale-aware and therefore lives on the
+	// component (methods read `this.localization`, so bindings repaint when the
+	// user switches language / zone). See the methods of the same name.
 
 	// ============================================================
 	// Application
@@ -690,6 +642,18 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				errorMessage: '',
 				toastMessage: '',
 				actionPending: false,
+
+				// Effective localization pushed by the host (inside the context
+				// payload and on every 'localization-changed' event). Read by t()
+				// and the format* methods so the whole form repaints on a locale
+				// or time-zone switch.
+				localization: { locale: '', timeZone: '', numberFormat: '', currency: '' },
+
+				// i18n message map for this form's namespace, resolved by the host
+				// for the effective locale (fallback chain merged). `revision` is
+				// bumped on every (re)load so t() bindings repaint even when the
+				// locale string is unchanged (e.g. a bundle hot-reload).
+				i18n: { messages: {}, revision: 0 },
 
 				currentUserID: '',
 				currentUserDisplay: '',
@@ -708,8 +672,6 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				memoDraft: '',
 				memoSaving: false,
 
-				_messageListener: null,
-				_standaloneTimer: null,
 				_toastTimer: null,
 				_assigneeDisplayCache: {},
 			};
@@ -719,40 +681,74 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 			itemTitle() {
 				const r = this.record;
 				if (r && r.title) return String(r.title);
-				const t = getStringProp(this.node, 'commerce:title');
-				return t || 'Backorder';
+				const t = sdk.getStringProp(this.node, 'commerce:title');
+				return t || this.t('form.commerce.shopify.backorderRelease.backorderFallback', undefined, 'Backorder');
 			},
 			reason() {
 				const r = this.record;
-				return (r && r.reason) ? String(r.reason) : getStringProp(this.node, 'commerce:reason');
+				return (r && r.reason) ? String(r.reason) : sdk.getStringProp(this.node, 'commerce:reason');
+			},
+			// Localized label for the status badge / reason field, derived from
+			// the server reason code (kept untranslated as data).
+			reasonLabel() {
+				return this.reason === 'preorder'
+					? this.t('form.commerce.shopify.backorderRelease.reasonPreorder', undefined, 'Pre-order')
+					: this.t('form.commerce.shopify.backorderRelease.reasonShortfall', undefined, 'Stock shortfall');
+			},
+			// "Stock has arrived" explanation, with the line type interpolated.
+			// Kept out of the template because the parameterized t() call would
+			// otherwise need braces inside a mustache binding.
+			stockArrivedText() {
+				const lineType = this.reason === 'preorder'
+					? this.t('form.commerce.shopify.backorderRelease.lineTypePreorder', undefined, 'pre-order')
+					: this.t('form.commerce.shopify.backorderRelease.lineTypeBackordered', undefined, 'backordered');
+				return this.t('form.commerce.shopify.backorderRelease.stockArrivedBody',
+					{ lineType }, 'The awaited stock for this {lineType} line is now available. Releasing it hands the line to normal fulfilment.');
 			},
 			quantityText() {
 				const r = this.record;
-				const q = r && r.quantity != null ? r.quantity : getStringProp(this.node, 'commerce:quantity');
-				return formatNumber(q);
+				const q = r && r.quantity != null ? r.quantity : sdk.getStringProp(this.node, 'commerce:quantity');
+				return this.formatNumber(q);
 			},
 			orderedQuantityText() {
 				const r = this.record;
-				return formatNumber(r ? r.ordered_quantity : null);
+				return this.formatNumber(r ? r.ordered_quantity : null);
 			},
 			availableAtOrderText() {
 				const r = this.record;
-				return formatNumber(r ? r.available_at_order : null);
+				return this.formatNumber(r ? r.available_at_order : null);
 			},
 			orderLabel() {
 				const r = this.record;
-				const number = r && r.order_number != null ? String(r.order_number) : getStringProp(this.node, 'commerce:order_number');
-				if (number) return 'Order #' + number;
+				const number = r && r.order_number != null ? String(r.order_number) : sdk.getStringProp(this.node, 'commerce:order_number');
+				if (number) return this.t('form.commerce.shopify.backorderRelease.orderNumber', { number }, 'Order #{number}');
 				const id = this.orderID || (r && r.order_id != null ? String(r.order_id) : '');
-				return id ? 'Order ' + id : '';
+				return id ? this.t('form.commerce.shopify.backorderRelease.orderFallback', { id }, 'Order {id}') : '';
+			},
+			// "backordered <date>" tagline. Built in JS so the parameterized t()
+			// stays clear of mustache brace parsing.
+			backorderedAtText() {
+				if (!this.createdAtText) return '';
+				return this.t('form.commerce.shopify.backorderRelease.backorderedAt',
+					{ date: this.createdAtText }, 'backordered {date}');
+			},
+			// Pluralized "×N" awaited-quantity label in the header.
+			headerQtyText() {
+				return this.t('form.commerce.shopify.backorderRelease.headerQty',
+					{ count: this.quantityText }, '×{count}');
+			},
+			assignedNoticeText() {
+				const name = this.assigneeDisplay || this.taskAssignee;
+				return this.t('form.commerce.shopify.backorderRelease.assignedToOther',
+					{ name }, 'This task is currently assigned to {name}. View only.');
 			},
 			customerEmail() {
 				const r = this.record;
-				return (r && r.customer_email) ? String(r.customer_email) : getStringProp(this.node, 'commerce:customer_email');
+				return (r && r.customer_email) ? String(r.customer_email) : sdk.getStringProp(this.node, 'commerce:customer_email');
 			},
 			sku() {
 				const r = this.record;
-				return (r && r.sku) ? String(r.sku) : getStringProp(this.node, 'commerce:sku');
+				return (r && r.sku) ? String(r.sku) : sdk.getStringProp(this.node, 'commerce:sku');
 			},
 			variantTitle() {
 				const r = this.record;
@@ -761,7 +757,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 			},
 			createdAtText() {
 				const r = this.record;
-				return formatDate(r ? r.created_at : getStringProp(this.node, 'commerce:created_at'));
+				return this.formatDate(r ? r.created_at : sdk.getStringProp(this.node, 'commerce:created_at'));
 			},
 			taskAssignee() { return (this.task && this.task.assignee) || ''; },
 			taskCompleted() { return !!(this.task && this.task.completed); },
@@ -769,71 +765,104 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 			canEditMemo() { return this.isAssignedToMe && !this.taskCompleted; },
 			memoTimestampText() {
 				if (!this.memo || !this.memo.at) return '';
-				const d = new Date(this.memo.at);
-				if (Number.isNaN(d.getTime())) return this.memo.at;
-				return d.toLocaleString([], {
-					year: 'numeric', month: 'numeric', day: 'numeric',
-					hour: 'numeric', minute: '2-digit',
-				});
+				return this.formatDate(this.memo.at) || this.memo.at;
 			},
 			memoDraftHasContent() { return !!(this.memoDraft && this.memoDraft.trim()); },
 		},
 
 		methods: {
+			// ----------------------------------------------------------
+			// i18n & locale-aware formatting
+			// ----------------------------------------------------------
+			// Translate a message id against the host-provided bundle for the
+			// effective locale. Reads `localization.locale` and `i18n.revision`
+			// so every binding repaints when the language switches or the bundle
+			// hot-reloads. Falls back to `fallback` (then the id) when the key is
+			// absent — both the resolved template and the fallback are run
+			// through ICU so placeholders / plurals work either way.
+			t(id, params, fallback) {
+				// Touch revision so a bundle hot-reload (same locale) still repaints.
+				void this.i18n.revision;
+				return sdk.translate(this.i18n.messages, this.localization.locale, id, params, fallback);
+			},
+
+			formatNumber(n) {
+				if (n == null || n === '') return '—';
+				const num = Number(n);
+				if (!Number.isFinite(num)) return String(n);
+				const locale = this.localization.numberFormat || this.localization.locale || undefined;
+				return num.toLocaleString(locale);
+			},
+
+			formatDate(value) {
+				if (!value) return '';
+				const d = new Date(value);
+				if (Number.isNaN(d.getTime())) return '';
+				const locale = this.localization.locale || undefined;
+				const opts = {
+					year: 'numeric', month: 'numeric', day: 'numeric',
+					hour: 'numeric', minute: '2-digit',
+				};
+				if (this.localization.timeZone) opts.timeZone = this.localization.timeZone;
+				try {
+					return d.toLocaleString(locale, opts);
+				} catch (_) {
+					return d.toLocaleString(locale);
+				}
+			},
+
+			// Apply an effective-localization snapshot pushed by the host. Mirrors
+			// the value onto <html lang> for correct typography/hyphenation, then
+			// (re)loads the message bundle for the new locale.
+			applyLocalization(loc) {
+				if (!loc || typeof loc !== 'object') return;
+				this.localization.locale = loc.locale || '';
+				this.localization.timeZone = loc.timeZone || '';
+				this.localization.numberFormat = loc.numberFormat || '';
+				this.localization.currency = loc.currency || '';
+				if (this.localization.locale) {
+					document.documentElement.setAttribute('lang', this.localization.locale);
+				}
+				this.loadMessages();
+				this.updateDocumentTitle();
+			},
+
+			// Pull this form's namespace from the host for the effective locale.
+			// Best-effort: an older host without the RPC leaves messages empty,
+			// so t() degrades to its English fallbacks.
+			async loadMessages() {
+				try {
+					const res = await sdk.getI18nMessages(I18N_PREFIX);
+					const messages = (res && res.messages && typeof res.messages === 'object') ? res.messages : {};
+					// Trust the host's resolved locale when present (it knows the
+					// effective preference even if the context lagged).
+					if (res && res.locale) this.localization.locale = res.locale;
+					this.i18n.messages = messages;
+					this.i18n.revision++;
+				} catch (_) {
+					// Leave existing messages in place; fall back to literals.
+				}
+			},
+
+			updateDocumentTitle() {
+				const title = this.t('form.commerce.shopify.backorderRelease.title', undefined, 'Release Backorder');
+				document.title = this.record ? (title + ' — ' + this.itemTitle) : title;
+			},
+
+			// ----------------------------------------------------------
+			// Lifecycle
+			// ----------------------------------------------------------
 			onMounted() {
-				this._messageListener = (ev) => this.onMessage(ev);
-				window.addEventListener('message', this._messageListener);
-				this._standaloneTimer = setTimeout(() => {
-					if (this.view === 'loading') this.view = 'standalone';
-				}, 3000);
-				this.notifyReady();
+				sdk
+					.on('context', (payload) => this.handleContext(payload))
+					.on('localization', (loc) => this.applyLocalization(loc))
+					.on('standalone', () => { if (this.view === 'loading') this.view = 'standalone'; })
+					.on('ready', () => { this.i18n.revision++; })
+					.start();
 			},
-
 			onUnmount() {
-				if (this._messageListener) {
-					window.removeEventListener('message', this._messageListener);
-					this._messageListener = null;
-				}
-				if (this._standaloneTimer) { clearTimeout(this._standaloneTimer); this._standaloneTimer = null; }
-				if (this._toastTimer) { clearTimeout(this._toastTimer); this._toastTimer = null; }
-			},
-
-			notifyReady() {
-				try { window.parent.postMessage({ __tasksRpc: 'ready' }, '*'); } catch (_) {}
-			},
-
-			onMessage(ev) {
-				const data = ev.data;
-				if (!data || typeof data !== 'object') return;
-
-				if (data.__tasksRpc === 'result') {
-					const id = String(data.id);
-					const p = pending.get(id);
-					if (!p) return;
-					pending.delete(id);
-					if (data.ok) p.resolve(data.data);
-					else p.reject(new Error(data.error || 'RPC error'));
-					return;
-				}
-
-				if (data.__tasksRpc === 'event' && data.type === 'context') {
-					if (this._standaloneTimer) { clearTimeout(this._standaloneTimer); this._standaloneTimer = null; }
-					const payload = data.payload || {};
-					if (payload.theme !== undefined) this.applyTheme(payload.theme);
-					this.handleContext(payload);
-					return;
-				}
-
-				if (data.__tasksRpc === 'event' && data.type === 'theme-changed') {
-					this.applyTheme(data.theme);
-					return;
-				}
-			},
-
-			applyTheme(theme) {
-				const root = document.documentElement;
-				if (theme === 'light' || theme === 'dark') root.dataset.theme = theme;
-				else delete root.dataset.theme;
+				sdk.stop();
+				if (this._toastTimer) clearTimeout(this._toastTimer);
 			},
 
 			showToast(message) {
@@ -843,13 +872,13 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 			},
 
 			showError(message) {
-				this.errorMessage = message || 'An unexpected error occurred.';
+				this.errorMessage = message || this.t('form.commerce.shopify.common.unexpectedError', undefined, 'An unexpected error occurred.');
 				this.view = 'error';
 			},
 
 			async handleContext(ctx) {
 				if (!ctx || ctx.mode !== 'task' || !ctx.task) {
-					if (!this.recordLoaded) this.showError('This form must be opened from a Task.');
+					if (!this.recordLoaded) this.showError(this.t('form.commerce.shopify.backorderRelease.mustOpenFromTask', undefined, 'This form must be opened from a Task.'));
 					return;
 				}
 
@@ -870,7 +899,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 			},
 
 			async loadRecord() {
-				const taskInfo = await rpcCall('getTaskWithVariables');
+				const taskInfo = await sdk.getTaskWithVariables();
 				const variables = (taskInfo && Array.isArray(taskInfo.variables)) ? taskInfo.variables : [];
 				const variableMap = {};
 				for (const v of variables) {
@@ -880,22 +909,22 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				const backorderPath = String(variableMap.backorderPath || '');
 				const orderID = String(variableMap.order_id || '');
 				if (!backorderPath) {
-					throw new Error('Process variable "backorderPath" is not set on this task.');
+					throw new Error(this.t('form.commerce.shopify.backorderRelease.noBackorderPath', undefined, 'Process variable "backorderPath" is not set on this task.'));
 				}
 
 				const [node, recordText, configText] = await Promise.all([
-					rpcCall('getNode', { path: backorderPath }),
-					rpcCall('readNodeText', { path: backorderPath }),
-					rpcCall('readNodeText', { path: '/etc/commerce/config/shopify.yml' }).catch(() => ''),
+					sdk.getNode(backorderPath),
+					sdk.readNodeText(backorderPath),
+					sdk.readNodeText('/etc/commerce/config/shopify.yml').catch(() => ''),
 				]);
 
-				if (!node) throw new Error('Backorder not found: ' + backorderPath);
+				if (!node) throw new Error(this.t('form.commerce.shopify.backorderRelease.backorderNotFound', { path: backorderPath }, 'Backorder not found: {path}'));
 
 				let record;
 				try {
 					record = JSON.parse(recordText);
 				} catch (err) {
-					throw new Error('Failed to parse backorder JSON: ' + (err && err.message ? err.message : String(err)));
+					throw new Error(this.t('form.commerce.shopify.backorderRelease.backorderParseFailed', { detail: (err && err.message ? err.message : String(err)) }, 'Failed to parse backorder JSON: {detail}'));
 				}
 
 				this.node = node;
@@ -904,12 +933,12 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				this.orderID = orderID || (record && record.order_id != null ? String(record.order_id) : '');
 				this.loadMemoFromNode();
 
-				const shopDomain = extractShopDomain(configText);
+				const shopDomain = sdk.readYamlScalar(configText, 'shopDomain');
 				this.shopifyURL = (shopDomain && this.orderID)
 					? 'https://' + shopDomain + '/admin/orders/' + encodeURIComponent(this.orderID)
 					: '';
 
-				document.title = 'Release Backorder — ' + this.itemTitle;
+				this.updateDocumentTitle();
 			},
 
 			openShopify() {
@@ -923,7 +952,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				const cached = this._assigneeDisplayCache[assignee];
 				if (cached) { this.assigneeDisplay = cached; return; }
 				try {
-					const user = await rpcCall('getUser', { username: assignee });
+					const user = await sdk.getUser(assignee);
 					const display = (user && user.displayName) || assignee;
 					this._assigneeDisplayCache[assignee] = display;
 					if (this.taskAssignee === assignee) this.assigneeDisplay = display;
@@ -933,7 +962,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 			},
 
 			loadMemoFromNode() {
-				const raw = getStringProp(this.node, 'internal_memo');
+				const raw = sdk.getStringProp(this.node, 'internal_memo');
 				if (!raw) { this.memo = null; return; }
 				try {
 					const obj = JSON.parse(raw);
@@ -961,7 +990,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				if (this.memoSaving || !this.canEditMemo) return;
 				const content = (this.memoDraft || '').trim();
 				if (!content) return;
-				if (!this.backorderPath) { this.showToast('Cannot save memo: backorder path is unknown.'); return; }
+				if (!this.backorderPath) { this.showToast(this.t('form.commerce.shopify.backorderRelease.memoNoPath', undefined, 'Cannot save memo: backorder path is unknown.')); return; }
 				this.memoSaving = true;
 				try {
 					const payload = {
@@ -970,12 +999,8 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 						at: new Date().toISOString(),
 						content: content,
 					};
-					await rpcCall('setNodeProperty', {
-						path: this.backorderPath,
-						name: 'internal_memo',
-						value: JSON.stringify(payload),
-					});
-					const refreshed = await rpcCall('getNode', { path: this.backorderPath });
+					await sdk.setNodeProperty(this.backorderPath, 'internal_memo', JSON.stringify(payload));
+					const refreshed = await sdk.getNode(this.backorderPath);
 					if (refreshed) this.node = refreshed;
 					this.loadMemoFromNode();
 					this.memoMode = 'view';
@@ -991,7 +1016,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs/dist/ic
 				if (this.actionPending) return;
 				this.actionPending = true;
 				try {
-					await rpcCall('completeTask', { variables: [] });
+					await sdk.completeTask([]);
 					this.task = Object.assign({}, this.task, { completed: true });
 				} catch (err) {
 					this.showToast(err && err.message ? err.message : String(err));
