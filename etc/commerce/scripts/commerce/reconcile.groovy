@@ -20,136 +20,151 @@ import commerce.Jcr
 import commerce.Alerts
 import commerce.NotificationMessage
 
-def PRODUCTS_DIR = "/content/commerce/products"
-def RECON_DIR = "/content/commerce/reconciliation"
-def STATE_PATH = "${RECON_DIR}/state.json"
-
+// Cluster guard: the timer fires on every node of a cluster, so only the
+// node that wins this lease runs the task; the others skip this tick.
+// Manual triggers are asynchronous fire-and-forget, so skipping while a
+// run is already in flight on another node is correct for them as well.
+// In a standalone deployment the lease is always granted immediately.
+def __clusterLease = cluster.tryLock("commerce-reconcile", 1800000)
+if (__clusterLease == null) {
+    log.info("reconcile: another cluster node is running this task - skipping")
+    return
+}
 try {
-    def cfg = readYaml("/etc/commerce/config/reconcile.yml")
-    if (cfg == null || cfg.enabled?.toString()?.toLowerCase() == "false") {
-        return
-    }
+    def PRODUCTS_DIR = "/content/commerce/products"
+    def RECON_DIR = "/content/commerce/reconciliation"
+    def STATE_PATH = "${RECON_DIR}/state.json"
 
-    // Reconciliation needs Shopify Admin API reads.
-    def shopCfg = readYaml("/etc/commerce/config/shopify.yml")
-    def adminApi = shopCfg?.adminApi ?: shopCfg
-    if (!ShopifyAdmin.adminApiEnabled(shopCfg)) {
-        log.info("reconcile: Admin API disabled - skipping")
-        return
-    }
+    try {
+        def cfg = readYaml("/etc/commerce/config/reconcile.yml")
+        if (cfg == null || cfg.enabled?.toString()?.toLowerCase() == "false") {
+            return
+        }
 
-    int maxPerRun = intOr(cfg.maxPerRun, 50)
-    def sourceOfTruth = (cfg.sourceOfTruth instanceof Map) ? cfg.sourceOfTruth : [:]
-    def autoHeal = (cfg.autoHeal instanceof Map) ? cfg.autoHeal : [:]
-    boolean alert = !(cfg.alert?.toString()?.toLowerCase() == "false")
+        // Reconciliation needs Shopify Admin API reads.
+        def shopCfg = readYaml("/etc/commerce/config/shopify.yml")
+        def adminApi = shopCfg?.adminApi ?: shopCfg
+        if (!ShopifyAdmin.adminApiEnabled(shopCfg)) {
+            log.info("reconcile: Admin API disabled - skipping")
+            return
+        }
 
-    // --- Pick the batch (round-robin by product file name) -------------------
-    def names = productNames(repositorySession, PRODUCTS_DIR)
-    if (names.isEmpty()) {
-        return
-    }
-    def state = Jcr.readMap(repositorySession, STATE_PATH)
-    def cursor = state.cursor?.toString()
-    def batch = nextBatch(names, cursor, maxPerRun)
-    if (batch.isEmpty()) {
-        return
-    }
+        int maxPerRun = intOr(cfg.maxPerRun, 50)
+        def sourceOfTruth = (cfg.sourceOfTruth instanceof Map) ? cfg.sourceOfTruth : [:]
+        def autoHeal = (cfg.autoHeal instanceof Map) ? cfg.autoHeal : [:]
+        boolean alert = !(cfg.alert?.toString()?.toLowerCase() == "false")
 
-    def endpoint = ShopifyAdmin.endpoint(adminApi)
-    def token = ShopifyAdmin.accessToken(repositorySession, log, adminApi)
-    def httpClient = HttpClient.newHttpClient()
+        // --- Pick the batch (round-robin by product file name) -------------------
+        def names = productNames(repositorySession, PRODUCTS_DIR)
+        if (names.isEmpty()) {
+            return
+        }
+        def state = Jcr.readMap(repositorySession, STATE_PATH)
+        def cursor = state.cursor?.toString()
+        def batch = nextBatch(names, cursor, maxPerRun)
+        if (batch.isEmpty()) {
+            return
+        }
 
-    def allDiffs = []
-    int checked = 0
-    int healed = 0
+        def endpoint = ShopifyAdmin.endpoint(adminApi)
+        def token = ShopifyAdmin.accessToken(repositorySession, log, adminApi)
+        def httpClient = HttpClient.newHttpClient()
 
-    batch.each { name ->
-        def productId = name.replace("product_", "").replace(".json", "")
-        try {
-            def res = repositorySession.getResource("${PRODUCTS_DIR}/${name}")
-            if (res == null || !res.exists()) return
-            def cmsProduct = JSON.parse(res.content.toString())
+        def allDiffs = []
+        int checked = 0
+        int healed = 0
 
-            // CMS inventory aggregate per variant inventory item.
-            def cmsInvByItem = [:]
-            if (cmsProduct?.variants instanceof List) {
-                cmsProduct.variants.each { v ->
-                    def itemId = v?.inventory_item_id?.toString()
-                    if (itemId && !cmsInvByItem.containsKey(itemId)) {
-                        def levels = Locations.levels(repositorySession, itemId)
-                        if (levels != null && !levels.isEmpty()) {
-                            cmsInvByItem[itemId] = Locations.aggregate(repositorySession, itemId)
+        batch.each { name ->
+            def productId = name.replace("product_", "").replace(".json", "")
+            try {
+                def res = repositorySession.getResource("${PRODUCTS_DIR}/${name}")
+                if (res == null || !res.exists()) return
+                def cmsProduct = JSON.parse(res.content.toString())
+
+                // CMS inventory aggregate per variant inventory item.
+                def cmsInvByItem = [:]
+                if (cmsProduct?.variants instanceof List) {
+                    cmsProduct.variants.each { v ->
+                        def itemId = v?.inventory_item_id?.toString()
+                        if (itemId && !cmsInvByItem.containsKey(itemId)) {
+                            def levels = Locations.levels(repositorySession, itemId)
+                            if (levels != null && !levels.isEmpty()) {
+                                cmsInvByItem[itemId] = Locations.aggregate(repositorySession, itemId)
+                            }
                         }
                     }
                 }
-            }
 
-            def shopifyProduct = fetchShopifyProduct(httpClient, endpoint, token, productId)
-            if (shopifyProduct == null) return
-            checked++
+                def shopifyProduct = fetchShopifyProduct(httpClient, endpoint, token, productId)
+                if (shopifyProduct == null) return
+                checked++
 
-            def diffs = Reconciliation.diffProduct(cmsProduct, cmsInvByItem, shopifyProduct, sourceOfTruth)
-            diffs.each { d ->
-                d.productId = productId
-                d.title = cmsProduct?.title?.toString()
-                // Opt-in heal.
-                if (healEnabled(autoHeal, d.field)) {
-                    d.healed = applyHeal(httpClient, endpoint, token, res, productId, d)
-                    if (d.healed == "ok") healed++
+                def diffs = Reconciliation.diffProduct(cmsProduct, cmsInvByItem, shopifyProduct, sourceOfTruth)
+                diffs.each { d ->
+                    d.productId = productId
+                    d.title = cmsProduct?.title?.toString()
+                    // Opt-in heal.
+                    if (healEnabled(autoHeal, d.field)) {
+                        d.healed = applyHeal(httpClient, endpoint, token, res, productId, d)
+                        if (d.healed == "ok") healed++
+                    }
+                    allDiffs << d
                 }
-                allDiffs << d
+            } catch (Exception e) {
+                log.warn("reconcile: product ${productId} failed: ${e.message}")
             }
-        } catch (Exception e) {
-            log.warn("reconcile: product ${productId} failed: ${e.message}")
         }
+
+        // --- Persist the report ---------------------------------------------------
+        def productsWithDrift = allDiffs.collect { it.productId }.unique().size()
+        def now = java.time.Instant.now().toString()
+        def report = [
+            generatedAt      : now,
+            checked          : checked,
+            batchSize        : batch.size(),
+            productsWithDrift: productsWithDrift,
+            totalDiffs       : allDiffs.size(),
+            healed           : healed,
+            diffs            : allDiffs,
+        ]
+        def ym = new java.text.SimpleDateFormat("yyyy/MM").format(new Date())
+        def reportPath = "${RECON_DIR}/${ym}/recon_${System.currentTimeMillis()}.json".toString()
+        def reportRes = Jcr.getOrCreateFile(repositorySession, reportPath)
+        reportRes.write(Jcr.toJson(report))
+        reportRes.setProperty("commerce:total_diffs", allDiffs.size().toString())
+        reportRes.setProperty("commerce:products_with_drift", productsWithDrift.toString())
+        reportRes.setProperty("commerce:created_at", now)
+
+        // Advance + persist the cursor.
+        state.cursor = batch[batch.size() - 1]
+        state.lastRunAt = now
+        def stateRes = Jcr.getOrCreateFile(repositorySession, STATE_PATH)
+        stateRes.write(Jcr.toJson(state))
+        repositorySession.commit()
+
+        log.info("reconcile: checked ${checked}, drift on ${productsWithDrift} product(s), ${allDiffs.size()} diff(s), healed ${healed}")
+
+        // --- Alert on drift (debounced) -------------------------------------------
+        if (alert && !allDiffs.isEmpty()) {
+            def byField = allDiffs.groupBy { it.field }.collectEntries { k, v -> [(k): v.size()] }
+            def message = NotificationMessage.create()
+                .title("🔍", "Reconciliation")
+                .status("⚠", "CMS ↔ Shopify drift detected")
+                .field("Products checked", checked)
+                .field("Products with drift", productsWithDrift)
+                .field("Diffs", allDiffs.size())
+                .field("By field", byField.collect { k, c -> "${k}: ${c}" }.join(", "))
+                .field("Auto-healed", healed)
+            // Debounce per run-window so a recurring batch does not spam.
+            Alerts.fire(repositorySession, log, "${RECON_DIR}/alert-state.json", "drift", 30L * 60_000L, message)
+        }
+    } catch (Exception e) {
+        try { log.warn("reconcile: ${e.message}") } catch (Exception ignore) {}
     }
-
-    // --- Persist the report ---------------------------------------------------
-    def productsWithDrift = allDiffs.collect { it.productId }.unique().size()
-    def now = java.time.Instant.now().toString()
-    def report = [
-        generatedAt      : now,
-        checked          : checked,
-        batchSize        : batch.size(),
-        productsWithDrift: productsWithDrift,
-        totalDiffs       : allDiffs.size(),
-        healed           : healed,
-        diffs            : allDiffs,
-    ]
-    def ym = new java.text.SimpleDateFormat("yyyy/MM").format(new Date())
-    def reportPath = "${RECON_DIR}/${ym}/recon_${System.currentTimeMillis()}.json".toString()
-    def reportRes = Jcr.getOrCreateFile(repositorySession, reportPath)
-    reportRes.write(Jcr.toJson(report))
-    reportRes.setProperty("commerce:total_diffs", allDiffs.size().toString())
-    reportRes.setProperty("commerce:products_with_drift", productsWithDrift.toString())
-    reportRes.setProperty("commerce:created_at", now)
-
-    // Advance + persist the cursor.
-    state.cursor = batch[batch.size() - 1]
-    state.lastRunAt = now
-    def stateRes = Jcr.getOrCreateFile(repositorySession, STATE_PATH)
-    stateRes.write(Jcr.toJson(state))
-    repositorySession.commit()
-
-    log.info("reconcile: checked ${checked}, drift on ${productsWithDrift} product(s), ${allDiffs.size()} diff(s), healed ${healed}")
-
-    // --- Alert on drift (debounced) -------------------------------------------
-    if (alert && !allDiffs.isEmpty()) {
-        def byField = allDiffs.groupBy { it.field }.collectEntries { k, v -> [(k): v.size()] }
-        def message = NotificationMessage.create()
-            .title("🔍", "Reconciliation")
-            .status("⚠", "CMS ↔ Shopify drift detected")
-            .field("Products checked", checked)
-            .field("Products with drift", productsWithDrift)
-            .field("Diffs", allDiffs.size())
-            .field("By field", byField.collect { k, c -> "${k}: ${c}" }.join(", "))
-            .field("Auto-healed", healed)
-        // Debounce per run-window so a recurring batch does not spam.
-        Alerts.fire(repositorySession, log, "${RECON_DIR}/alert-state.json", "drift", 30L * 60_000L, message)
-    }
-} catch (Exception e) {
-    try { log.warn("reconcile: ${e.message}") } catch (Exception ignore) {}
+} finally {
+    __clusterLease.close()
 }
+
 
 // --- Helpers -----------------------------------------------------------------
 

@@ -13,57 +13,72 @@ import commerce.Pages
 import commerce.Catalog
 import commerce.Jcr
 
-def SOURCE = Pages.SOURCE_DIR
-def OUT = Pages.PUBLIC_DIR
-
+// Cluster guard: the timer fires on every node of a cluster, so only the
+// node that wins this lease runs the task; the others skip this tick.
+// Manual triggers are asynchronous fire-and-forget, so skipping while a
+// run is already in flight on another node is correct for them as well.
+// In a standalone deployment the lease is always granted immediately.
+def __clusterLease = cluster.tryLock("commerce-pages-publish", 600000)
+if (__clusterLease == null) {
+    log.info("publishPages: another cluster node is running this task - skipping")
+    return
+}
 try {
-    def cfg = readYaml("/etc/commerce/config/storefront.yml")
-    if (cfg == null || cfg.enabled?.toString()?.toLowerCase() == "false") {
-        return
-    }
+    def SOURCE = Pages.SOURCE_DIR
+    def OUT = Pages.PUBLIC_DIR
 
-    // Published catalog cards to resolve product blocks against.
-    def index = Jcr.readMap(repositorySession, "${Catalog.PUBLIC_DIR}/index.json")
-    def allCards = (index.products instanceof List) ? index.products : []
+    try {
+        def cfg = readYaml("/etc/commerce/config/storefront.yml")
+        if (cfg == null || cfg.enabled?.toString()?.toLowerCase() == "false") {
+            return
+        }
 
-    def liveSlugs = [] as Set
-    def entries = []
+        // Published catalog cards to resolve product blocks against.
+        def index = Jcr.readMap(repositorySession, "${Catalog.PUBLIC_DIR}/index.json")
+        def allCards = (index.products instanceof List) ? index.products : []
 
-    def dir = repositorySession.getResource(SOURCE)
-    if (dir != null && dir.exists()) {
-        def it = dir.list()
-        while (it.hasNext()) {
-            def child = it.next()
-            try {
-                def name = child.getName()
-                if (!name.endsWith(".json")) continue
-                def source = JSON.parse(child.content.toString())
-                if (!(source instanceof Map)) continue
-                if (!source.slug) source.slug = name.replace(".json", "")
+        def liveSlugs = [] as Set
+        def entries = []
 
-                def page = Pages.publicPage(source, allCards)
-                if (page == null) continue   // draft / not publishable
+        def dir = repositorySession.getResource(SOURCE)
+        if (dir != null && dir.exists()) {
+            def it = dir.list()
+            while (it.hasNext()) {
+                def child = it.next()
+                try {
+                    def name = child.getName()
+                    if (!name.endsWith(".json")) continue
+                    def source = JSON.parse(child.content.toString())
+                    if (!(source instanceof Map)) continue
+                    if (!source.slug) source.slug = name.replace(".json", "")
 
-                writeJson("${OUT}/${page.slug}.json", page)
-                entries << Pages.indexEntry(page)
-                liveSlugs << page.slug.toString()
-            } catch (Exception e) {
-                log.warn("publishPages: page ${child?.getName()} failed: ${e.message}")
+                    def page = Pages.publicPage(source, allCards)
+                    if (page == null) continue   // draft / not publishable
+
+                    writeJson("${OUT}/${page.slug}.json", page)
+                    entries << Pages.indexEntry(page)
+                    liveSlugs << page.slug.toString()
+                } catch (Exception e) {
+                    log.warn("publishPages: page ${child?.getName()} failed: ${e.message}")
+                }
             }
         }
+
+        entries.sort { a, b -> (a.title?.toString() ?: "") <=> (b.title?.toString() ?: "") }
+        writeJson("${OUT}/index.json", [
+            meta : [generatedAt: java.time.Instant.now().toString(), count: entries.size()],
+            pages: entries,
+        ])
+
+        prune("${OUT}", liveSlugs)
+        log.info("publishPages: published ${entries.size()} landing page(s)")
+    } catch (Exception e) {
+        try { log.warn("publishPages: ${e.message}") } catch (Exception ignore) {}
     }
-
-    entries.sort { a, b -> (a.title?.toString() ?: "") <=> (b.title?.toString() ?: "") }
-    writeJson("${OUT}/index.json", [
-        meta : [generatedAt: java.time.Instant.now().toString(), count: entries.size()],
-        pages: entries,
-    ])
-
-    prune("${OUT}", liveSlugs)
-    log.info("publishPages: published ${entries.size()} landing page(s)")
-} catch (Exception e) {
-    try { log.warn("publishPages: ${e.message}") } catch (Exception ignore) {}
+} finally {
+    __clusterLease.close()
 }
+
 
 // --- Helpers -----------------------------------------------------------------
 

@@ -17,56 +17,71 @@ import commerce.NotificationMessage
 import commerce.Alerts
 import commerce.SmtpClient
 
+// Cluster guard: the timer fires on every node of a cluster, so only the
+// node that wins this lease runs the task; the others skip this tick.
+// Manual triggers are asynchronous fire-and-forget, so skipping while a
+// run is already in flight on another node is correct for them as well.
+// In a standalone deployment the lease is always granted immediately.
+def __clusterLease = cluster.tryLock("commerce-crm-abandoned", 1800000)
+if (__clusterLease == null) {
+    log.info("abandonedCheckouts: another cluster node is running this task - skipping")
+    return
+}
 try {
-    def cfg = readYaml("/etc/commerce/config/crm.yml")
-    if (cfg == null || cfg.enabled?.toString()?.toLowerCase() == "false") {
-        return
-    }
-    def ac = (cfg.abandonedCart instanceof Map) ? cfg.abandonedCart : [:]
-    if (ac.enabled?.toString()?.toLowerCase() == "false") {
-        return
-    }
+    try {
+        def cfg = readYaml("/etc/commerce/config/crm.yml")
+        if (cfg == null || cfg.enabled?.toString()?.toLowerCase() == "false") {
+            return
+        }
+        def ac = (cfg.abandonedCart instanceof Map) ? cfg.abandonedCart : [:]
+        if (ac.enabled?.toString()?.toLowerCase() == "false") {
+            return
+        }
 
-    long now = System.currentTimeMillis()
-    long abandonedAfterMs = longOr(ac.abandonedAfterMinutes, 60L) * 60_000L
-    long intervalMs = longOr(ac.reminderIntervalMinutes, 1440L) * 60_000L
-    int maxReminders = intOr(ac.maxReminders, 2)
-    boolean sendToCustomer = ac.sendToCustomer?.toString()?.toLowerCase() == "true"
+        long now = System.currentTimeMillis()
+        long abandonedAfterMs = longOr(ac.abandonedAfterMinutes, 60L) * 60_000L
+        long intervalMs = longOr(ac.reminderIntervalMinutes, 1440L) * 60_000L
+        int maxReminders = intOr(ac.maxReminders, 2)
+        boolean sendToCustomer = ac.sendToCustomer?.toString()?.toLowerCase() == "true"
 
-    def abandoned = Checkouts.findAbandoned(repositorySession, abandonedAfterMs, now)
-    if (abandoned.isEmpty()) {
-        return
-    }
+        def abandoned = Checkouts.findAbandoned(repositorySession, abandonedAfterMs, now)
+        if (abandoned.isEmpty()) {
+            return
+        }
 
-    int emailed = 0
-    if (sendToCustomer) {
-        def email = emailTransport()
-        if (email == null) {
-            log.info("abandonedCheckouts: sendToCustomer is on but notifications.yml email transport is not configured")
-        } else {
-            abandoned.each { co ->
-                try {
-                    boolean eligible = (co.remindersSent < maxReminders) &&
-                        (co.remindersSent == 0 || (co.lastReminderMs > 0 && (now - co.lastReminderMs) >= intervalMs))
-                    if (eligible && co.email) {
-                        sendReminder(email, co)
-                        Checkouts.markReminded(repositorySession, log, co.path, now)
-                        emailed++
+        int emailed = 0
+        if (sendToCustomer) {
+            def email = emailTransport()
+            if (email == null) {
+                log.info("abandonedCheckouts: sendToCustomer is on but notifications.yml email transport is not configured")
+            } else {
+                abandoned.each { co ->
+                    try {
+                        boolean eligible = (co.remindersSent < maxReminders) &&
+                            (co.remindersSent == 0 || (co.lastReminderMs > 0 && (now - co.lastReminderMs) >= intervalMs))
+                        if (eligible && co.email) {
+                            sendReminder(email, co)
+                            Checkouts.markReminded(repositorySession, log, co.path, now)
+                            emailed++
+                        }
+                    } catch (Exception e) {
+                        log.warn("abandonedCheckouts: reminder for ${co.path} failed: ${e.message}")
                     }
-                } catch (Exception e) {
-                    log.warn("abandonedCheckouts: reminder for ${co.path} failed: ${e.message}")
                 }
             }
         }
+
+        log.info("abandonedCheckouts: ${abandoned.size()} abandoned cart(s), ${emailed} customer reminder(s) sent")
+
+        // --- Operator summary (debounced) ----------------------------------------
+        notifyOperators(abandoned, emailed, sendToCustomer)
+    } catch (Exception e) {
+        try { log.warn("abandonedCheckouts: ${e.message}") } catch (Exception ignore) {}
     }
-
-    log.info("abandonedCheckouts: ${abandoned.size()} abandoned cart(s), ${emailed} customer reminder(s) sent")
-
-    // --- Operator summary (debounced) ----------------------------------------
-    notifyOperators(abandoned, emailed, sendToCustomer)
-} catch (Exception e) {
-    try { log.warn("abandonedCheckouts: ${e.message}") } catch (Exception ignore) {}
+} finally {
+    __clusterLease.close()
 }
+
 
 // --- Helpers -----------------------------------------------------------------
 

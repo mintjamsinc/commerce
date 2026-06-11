@@ -13,55 +13,70 @@ import commerce.Customers
 import commerce.Notifications
 import commerce.NotificationMessage
 
-try {
-    def cfg = readYaml("/etc/commerce/config/crm.yml")
-    if (cfg == null || cfg.enabled?.toString()?.toLowerCase() == "false") {
-        return
-    }
-    def segCfg = (cfg.segments instanceof Map) ? cfg.segments : [:]
-    boolean alertEnabled = !(cfg.alert?.enabled?.toString()?.toLowerCase() == "false")
-    long now = System.currentTimeMillis()
-
-    def agg = Customers.aggregate(repositorySession)
-    if (agg.isEmpty()) {
-        return
-    }
-
-    def newlyVip = []
-    def newlyDormant = []
-    def newlyAtRisk = []
-    int updated = 0
-
-    agg.values().each { stats ->
-        try {
-            def cls = Customers.segment(stats, segCfg, now)
-            def prev = Customers.write(repositorySession, log, stats, cls)
-            updated++
-
-            // Transition detection for alerting.
-            if (cls.vip && prev.vip != true) {
-                newlyVip << label(stats)
-            }
-            def prevRecency = prev.recency?.toString()
-            if (cls.recency == "dormant" && prevRecency != "dormant") {
-                newlyDormant << label(stats)
-            } else if (cls.recency == "at_risk" && prevRecency != "at_risk" && prevRecency != "dormant") {
-                newlyAtRisk << label(stats)
-            }
-        } catch (Exception e) {
-            log.warn("segmentCustomers: customer ${stats?.key} failed: ${e.message}")
-        }
-    }
-
-    log.info("segmentCustomers: classified ${updated} customer(s); newly vip=${newlyVip.size()} at_risk=${newlyAtRisk.size()} dormant=${newlyDormant.size()}")
-
-    // --- Alert operators on behaviour changes (#15) --------------------------
-    if (alertEnabled && (!newlyVip.isEmpty() || !newlyDormant.isEmpty() || !newlyAtRisk.isEmpty())) {
-        notifyTransitions(newlyVip, newlyAtRisk, newlyDormant)
-    }
-} catch (Exception e) {
-    try { log.warn("segmentCustomers: ${e.message}") } catch (Exception ignore) {}
+// Cluster guard: the timer fires on every node of a cluster, so only the
+// node that wins this lease runs the task; the others skip this tick.
+// Manual triggers are asynchronous fire-and-forget, so skipping while a
+// run is already in flight on another node is correct for them as well.
+// In a standalone deployment the lease is always granted immediately.
+def __clusterLease = cluster.tryLock("commerce-crm-segment", 3600000)
+if (__clusterLease == null) {
+    log.info("segmentCustomers: another cluster node is running this task - skipping")
+    return
 }
+try {
+    try {
+        def cfg = readYaml("/etc/commerce/config/crm.yml")
+        if (cfg == null || cfg.enabled?.toString()?.toLowerCase() == "false") {
+            return
+        }
+        def segCfg = (cfg.segments instanceof Map) ? cfg.segments : [:]
+        boolean alertEnabled = !(cfg.alert?.enabled?.toString()?.toLowerCase() == "false")
+        long now = System.currentTimeMillis()
+
+        def agg = Customers.aggregate(repositorySession)
+        if (agg.isEmpty()) {
+            return
+        }
+
+        def newlyVip = []
+        def newlyDormant = []
+        def newlyAtRisk = []
+        int updated = 0
+
+        agg.values().each { stats ->
+            try {
+                def cls = Customers.segment(stats, segCfg, now)
+                def prev = Customers.write(repositorySession, log, stats, cls)
+                updated++
+
+                // Transition detection for alerting.
+                if (cls.vip && prev.vip != true) {
+                    newlyVip << label(stats)
+                }
+                def prevRecency = prev.recency?.toString()
+                if (cls.recency == "dormant" && prevRecency != "dormant") {
+                    newlyDormant << label(stats)
+                } else if (cls.recency == "at_risk" && prevRecency != "at_risk" && prevRecency != "dormant") {
+                    newlyAtRisk << label(stats)
+                }
+            } catch (Exception e) {
+                log.warn("segmentCustomers: customer ${stats?.key} failed: ${e.message}")
+            }
+        }
+
+        log.info("segmentCustomers: classified ${updated} customer(s); newly vip=${newlyVip.size()} at_risk=${newlyAtRisk.size()} dormant=${newlyDormant.size()}")
+
+        // --- Alert operators on behaviour changes (#15) --------------------------
+        if (alertEnabled && (!newlyVip.isEmpty() || !newlyDormant.isEmpty() || !newlyAtRisk.isEmpty())) {
+            notifyTransitions(newlyVip, newlyAtRisk, newlyDormant)
+        }
+    } catch (Exception e) {
+        try { log.warn("segmentCustomers: ${e.message}") } catch (Exception ignore) {}
+    }
+} finally {
+    __clusterLease.close()
+}
+
 
 // --- Helpers -----------------------------------------------------------------
 

@@ -14,96 +14,111 @@ import commerce.Pim
 import commerce.Locations
 import commerce.Jcr
 
-def PRODUCTS_DIR = "/content/commerce/products"
-def OUT = Catalog.PUBLIC_DIR
-
+// Cluster guard: the timer fires on every node of a cluster, so only the
+// node that wins this lease runs the task; the others skip this tick.
+// Manual triggers are asynchronous fire-and-forget, so skipping while a
+// run is already in flight on another node is correct for them as well.
+// In a standalone deployment the lease is always granted immediately.
+def __clusterLease = cluster.tryLock("commerce-catalog-publish", 600000)
+if (__clusterLease == null) {
+    log.info("publishCatalog: another cluster node is running this task - skipping")
+    return
+}
 try {
-    def cfg = readYaml("/etc/commerce/config/storefront.yml")
-    if (cfg == null || cfg.enabled?.toString()?.toLowerCase() == "false") {
-        return
-    }
-    def shop = readYaml("/etc/commerce/config/shopify.yml")
-    def adminApi = shop?.adminApi ?: shop
-    def lowStock = intOr(cfg.lowStock, 5)
-    def currency = (cfg.currency ?: "").toString()
-    def storeName = (cfg.storeName ?: "Store").toString()
-    def shopDomain = adminApi?.shopDomain?.toString() ?: ""
+    def PRODUCTS_DIR = "/content/commerce/products"
+    def OUT = Catalog.PUBLIC_DIR
 
-    // 1. Store / checkout descriptor.
-    writeJson("${OUT}/store.json", [
-        name      : storeName,
-        shopDomain: shopDomain,
-        currency  : currency,
-        lowStock  : lowStock,
-        generatedAt: java.time.Instant.now().toString(),
-    ])
+    try {
+        def cfg = readYaml("/etc/commerce/config/storefront.yml")
+        if (cfg == null || cfg.enabled?.toString()?.toLowerCase() == "false") {
+            return
+        }
+        def shop = readYaml("/etc/commerce/config/shopify.yml")
+        def adminApi = shop?.adminApi ?: shop
+        def lowStock = intOr(cfg.lowStock, 5)
+        def currency = (cfg.currency ?: "").toString()
+        def storeName = (cfg.storeName ?: "Store").toString()
+        def shopDomain = adminApi?.shopDomain?.toString() ?: ""
 
-    // 2. Per-product detail + cards + inventory map.
-    def cards = []
-    def items = [:]                 // inventory_item_id -> available (tracked only)
-    def liveIds = [] as Set
+        // 1. Store / checkout descriptor.
+        writeJson("${OUT}/store.json", [
+            name      : storeName,
+            shopDomain: shopDomain,
+            currency  : currency,
+            lowStock  : lowStock,
+            generatedAt: java.time.Instant.now().toString(),
+        ])
 
-    def dir = repositorySession.getResource(PRODUCTS_DIR)
-    if (dir != null && dir.exists()) {
-        def it = dir.list()
-        while (it.hasNext()) {
-            def child = it.next()
-            try {
-                def name = child.getName()
-                if (!name.startsWith("product_") || !name.endsWith(".json")) continue
-                // Only publish active, non-deleted products.
-                if (prop(child, "commerce:status") == "deleted") continue
-                if (prop(child, "commerce:source_status") != "active") continue
+        // 2. Per-product detail + cards + inventory map.
+        def cards = []
+        def items = [:]                 // inventory_item_id -> available (tracked only)
+        def liveIds = [] as Set
 
-                def product = JSON.parse(child.content.toString())
-                def productId = (product?.id ?: name.replace("product_", "").replace(".json", "")).toString()
+        def dir = repositorySession.getResource(PRODUCTS_DIR)
+        if (dir != null && dir.exists()) {
+            def it = dir.list()
+            while (it.hasNext()) {
+                def child = it.next()
+                try {
+                    def name = child.getName()
+                    if (!name.startsWith("product_") || !name.endsWith(".json")) continue
+                    // Only publish active, non-deleted products.
+                    if (prop(child, "commerce:status") == "deleted") continue
+                    if (prop(child, "commerce:source_status") != "active") continue
 
-                // Per-item availability (tracked only) for this product's variants.
-                def availByItem = [:]
-                if (product?.variants instanceof List) {
-                    product.variants.each { v ->
-                        def itemId = v?.inventory_item_id?.toString()
-                        if (itemId && !availByItem.containsKey(itemId)) {
-                            def levels = Locations.levels(repositorySession, itemId)
-                            if (levels != null && !levels.isEmpty()) {
-                                int agg = Locations.aggregate(repositorySession, itemId)
-                                availByItem[itemId] = agg
-                                items[itemId] = agg
+                    def product = JSON.parse(child.content.toString())
+                    def productId = (product?.id ?: name.replace("product_", "").replace(".json", "")).toString()
+
+                    // Per-item availability (tracked only) for this product's variants.
+                    def availByItem = [:]
+                    if (product?.variants instanceof List) {
+                        product.variants.each { v ->
+                            def itemId = v?.inventory_item_id?.toString()
+                            if (itemId && !availByItem.containsKey(itemId)) {
+                                def levels = Locations.levels(repositorySession, itemId)
+                                if (levels != null && !levels.isEmpty()) {
+                                    int agg = Locations.aggregate(repositorySession, itemId)
+                                    availByItem[itemId] = agg
+                                    items[itemId] = agg
+                                }
                             }
                         }
                     }
-                }
 
-                def pim = Pim.read(repositorySession, productId)
-                def detail = Catalog.detail(product, pim, availByItem)
-                writeJson("${OUT}/products/${productId}.json", detail)
-                cards << Catalog.card(detail)
-                liveIds << productId
-            } catch (Exception e) {
-                log.warn("publishCatalog: product ${child?.getName()} failed: ${e.message}")
+                    def pim = Pim.read(repositorySession, productId)
+                    def detail = Catalog.detail(product, pim, availByItem)
+                    writeJson("${OUT}/products/${productId}.json", detail)
+                    cards << Catalog.card(detail)
+                    liveIds << productId
+                } catch (Exception e) {
+                    log.warn("publishCatalog: product ${child?.getName()} failed: ${e.message}")
+                }
             }
         }
+
+        // Stable order: newest-ish by title for now (storefront sorts client-side too).
+        cards.sort { a, b -> (a.title?.toString() ?: "") <=> (b.title?.toString() ?: "") }
+
+        // 3. Index.
+        writeJson("${OUT}/index.json", [
+            meta    : [generatedAt: java.time.Instant.now().toString(), currency: currency, lowStock: lowStock, storeName: storeName, count: cards.size()],
+            products: cards,
+        ])
+
+        // 4. Inventory map (realtime polling source, #21).
+        writeJson("${OUT}/inventory.json", [updatedAt: java.time.Instant.now().toString(), items: items])
+
+        // 5. Prune detail files for products no longer published.
+        pruneDetails("${OUT}/products", liveIds)
+
+        log.info("publishCatalog: published ${cards.size()} product(s), ${items.size()} tracked item(s)")
+    } catch (Exception e) {
+        try { log.warn("publishCatalog: ${e.message}") } catch (Exception ignore) {}
     }
-
-    // Stable order: newest-ish by title for now (storefront sorts client-side too).
-    cards.sort { a, b -> (a.title?.toString() ?: "") <=> (b.title?.toString() ?: "") }
-
-    // 3. Index.
-    writeJson("${OUT}/index.json", [
-        meta    : [generatedAt: java.time.Instant.now().toString(), currency: currency, lowStock: lowStock, storeName: storeName, count: cards.size()],
-        products: cards,
-    ])
-
-    // 4. Inventory map (realtime polling source, #21).
-    writeJson("${OUT}/inventory.json", [updatedAt: java.time.Instant.now().toString(), items: items])
-
-    // 5. Prune detail files for products no longer published.
-    pruneDetails("${OUT}/products", liveIds)
-
-    log.info("publishCatalog: published ${cards.size()} product(s), ${items.size()} tracked item(s)")
-} catch (Exception e) {
-    try { log.warn("publishCatalog: ${e.message}") } catch (Exception ignore) {}
+} finally {
+    __clusterLease.close()
 }
+
 
 // --- Helpers -----------------------------------------------------------------
 

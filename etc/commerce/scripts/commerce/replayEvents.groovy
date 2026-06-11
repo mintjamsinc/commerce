@@ -13,58 +13,73 @@
 import commerce.Events
 import commerce.SimpleYaml
 
+// Cluster guard: the timer fires on every node of a cluster, so only the
+// node that wins this lease runs the task; the others skip this tick.
+// Manual triggers are asynchronous fire-and-forget, so skipping while a
+// run is already in flight on another node is correct for them as well.
+// In a standalone deployment the lease is always granted immediately.
+def __clusterLease = cluster.tryLock("commerce-replay", 600000)
+if (__clusterLease == null) {
+    log.info("replayEvents: another cluster node is running this task - skipping")
+    return
+}
 try {
-    def cfg = readConfig()
-    if (cfg == null) {
-        return
-    }
-    // Master switch + replay sub-switch.
-    if (cfg.enabled?.toString()?.toLowerCase() == "false") {
-        return
-    }
-    def replay = cfg.replay ?: [:]
-    boolean replayEnabled = !(replay.enabled?.toString()?.toLowerCase() == "false")
+    try {
+        def cfg = readConfig()
+        if (cfg == null) {
+            return
+        }
+        // Master switch + replay sub-switch.
+        if (cfg.enabled?.toString()?.toLowerCase() == "false") {
+            return
+        }
+        def replay = cfg.replay ?: [:]
+        boolean replayEnabled = !(replay.enabled?.toString()?.toLowerCase() == "false")
 
-    int maxAttempts = intOr(replay.maxAttempts, 5)
-    long backoffMs = longOr(replay.backoffMinutes, 15L) * 60_000L
-    long retentionMs = longOr(replay.retentionDays, 30L) * 86_400_000L
-    long now = System.currentTimeMillis()
+        int maxAttempts = intOr(replay.maxAttempts, 5)
+        long backoffMs = longOr(replay.backoffMinutes, 15L) * 60_000L
+        long retentionMs = longOr(replay.retentionDays, 30L) * 86_400_000L
+        long now = System.currentTimeMillis()
 
-    if (replayEnabled) {
-        def due = Events.findReplayable(repositorySession, maxAttempts, backoffMs, now)
-        int sent = 0
-        due.each { ev ->
-            try {
-                def payload = Events.payloadJson(repositorySession, ev.path)
-                if (payload == null) {
-                    return
+        if (replayEnabled) {
+            def due = Events.findReplayable(repositorySession, maxAttempts, backoffMs, now)
+            int sent = 0
+            due.each { ev ->
+                try {
+                    def payload = Events.payloadJson(repositorySession, ev.path)
+                    if (payload == null) {
+                        return
+                    }
+                    IntegrationAPI.createMessageSender()
+                        .setEndpointURI("direct:commerce-ingest")
+                        .setBody(payload)
+                        .setHeader("event_source", ev.source)
+                        .setHeader("event_topic", ev.topic)
+                        .setHeader("event_id", ev.event_id)
+                        .setHeader("received_at", ev.received_at)
+                        .setHeader("replay", "true")
+                        .sendAsync()
+                    sent++
+                } catch (Exception e) {
+                    log.warn("replayEvents: could not re-dispatch ${ev.path}: ${e.message}")
                 }
-                IntegrationAPI.createMessageSender()
-                    .setEndpointURI("direct:commerce-ingest")
-                    .setBody(payload)
-                    .setHeader("event_source", ev.source)
-                    .setHeader("event_topic", ev.topic)
-                    .setHeader("event_id", ev.event_id)
-                    .setHeader("received_at", ev.received_at)
-                    .setHeader("replay", "true")
-                    .sendAsync()
-                sent++
-            } catch (Exception e) {
-                log.warn("replayEvents: could not re-dispatch ${ev.path}: ${e.message}")
+            }
+            if (sent > 0) {
+                log.info("replayEvents: re-dispatched ${sent} failed event(s)")
             }
         }
-        if (sent > 0) {
-            log.info("replayEvents: re-dispatched ${sent} failed event(s)")
-        }
-    }
 
-    // Housekeeping: drop processed events past the retention window.
-    if (retentionMs > 0) {
-        Events.prune(repositorySession, log, retentionMs, now)
+        // Housekeeping: drop processed events past the retention window.
+        if (retentionMs > 0) {
+            Events.prune(repositorySession, log, retentionMs, now)
+        }
+    } catch (Exception e) {
+        try { log.warn("replayEvents: ${e.message}") } catch (Exception ignore) {}
     }
-} catch (Exception e) {
-    try { log.warn("replayEvents: ${e.message}") } catch (Exception ignore) {}
+} finally {
+    __clusterLease.close()
 }
+
 
 // --- Helpers -----------------------------------------------------------------
 

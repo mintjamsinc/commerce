@@ -20,98 +20,113 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-def PO_DIR = "/content/commerce/purchase-orders"
-
+// Cluster guard: the timer fires on every node of a cluster, so only the
+// node that wins this lease runs the task; the others skip this tick.
+// Manual triggers are asynchronous fire-and-forget, so skipping while a
+// run is already in flight on another node is correct for them as well.
+// In a standalone deployment the lease is always granted immediately.
+def __clusterLease = cluster.tryLock("commerce-reorder", 1800000)
+if (__clusterLease == null) {
+    log.info("proposeReorders: another cluster node is running this task - skipping")
+    return
+}
 try {
-    def cfgRes = repositorySession.getResource(Replenishment.CONFIG_PATH)
-    if (cfgRes == null || !cfgRes.exists()) {
-        return
-    }
-    def cfg = SimpleYaml.parse(cfgRes.content?.toString())
-    if (cfg == null || cfg.enabled?.toString()?.toLowerCase() != "true") {
-        return
-    }
+    def PO_DIR = "/content/commerce/purchase-orders"
 
-    int leadTimeDays = intOr(cfg.leadTimeDays, 7)
-    def perDay = SalesVelocity.loadPerDay(repositorySession)
-    def engine = ProcessAPI.getEngine()
-    def runtime = engine.getRuntimeService()
+    try {
+        def cfgRes = repositorySession.getResource(Replenishment.CONFIG_PATH)
+        if (cfgRes == null || !cfgRes.exists()) {
+            return
+        }
+        def cfg = SimpleYaml.parse(cfgRes.content?.toString())
+        if (cfg == null || cfg.enabled?.toString()?.toLowerCase() != "true") {
+            return
+        }
 
-    int proposed = 0
-    SalesVelocity.variants(repositorySession, perDay).each { v ->
-        try {
-            int qty = Replenishment.suggest(v.perDay == null ? null : (v.perDay as double), v.quantity, cfg)
-            if (qty <= 0) {
-                return
-            }
-            def variantId = v.variantId
-            def businessKey = "reorder:${variantId}".toString()
+        int leadTimeDays = intOr(cfg.leadTimeDays, 7)
+        def perDay = SalesVelocity.loadPerDay(repositorySession)
+        def engine = ProcessAPI.getEngine()
+        def runtime = engine.getRuntimeService()
 
-            // Skip if a replenishment workflow is already running for this variant.
-            long active = runtime.createProcessInstanceQuery()
-                .processDefinitionKey("replenishment-flow")
-                .processInstanceBusinessKey(businessKey)
-                .active().count()
-            if (active > 0) {
-                return
-            }
-            // Skip if a non-rejected PO was proposed within the lead time.
-            if (recentlyProposed(repositorySession, PO_DIR, variantId, leadTimeDays)) {
-                return
-            }
+        int proposed = 0
+        SalesVelocity.variants(repositorySession, perDay).each { v ->
+            try {
+                int qty = Replenishment.suggest(v.perDay == null ? null : (v.perDay as double), v.quantity, cfg)
+                if (qty <= 0) {
+                    return
+                }
+                def variantId = v.variantId
+                def businessKey = "reorder:${variantId}".toString()
 
-            // Record the proposal (review_pending) and start the approval workflow.
-            def id = "${System.currentTimeMillis()}_${variantId}".toString()
-            def now = LocalDate.now(ZoneId.systemDefault())
-            def path = "${PO_DIR}/${now.format(DateTimeFormatter.ofPattern('yyyy/MM'))}/po_${id}.json".toString()
-            def record = [
-                id          : id,
-                status      : "review_pending",
-                productId   : v.productId,
-                productPath : v.productPath,
-                variantId   : variantId,
-                variantTitle: v.variantTitle,
-                title       : v.title,
-                currentStock: v.quantity,
-                velocity    : v.perDay,
-                suggestedQty: qty,
-                createdAt   : java.time.Instant.now().toString(),
-            ]
-            def res = Jcr.getOrCreateFile(repositorySession, path)
-            res.write(Jcr.toJson(record))
-            res.setProperty("commerce:status", "review_pending")
-            res.setProperty("reorder:variant_id", variantId ?: "")
-            res.setProperty("reorder:product_id", v.productId ?: "")
-            res.setProperty("reorder:suggested_qty", qty.toString())
-            if (v.title) res.setProperty("reorder:title", v.title.toString())
-            repositorySession.commit()
+                // Skip if a replenishment workflow is already running for this variant.
+                long active = runtime.createProcessInstanceQuery()
+                    .processDefinitionKey("replenishment-flow")
+                    .processInstanceBusinessKey(businessKey)
+                    .active().count()
+                if (active > 0) {
+                    return
+                }
+                // Skip if a non-rejected PO was proposed within the lead time.
+                if (recentlyProposed(repositorySession, PO_DIR, variantId, leadTimeDays)) {
+                    return
+                }
 
-            ProcessAPI.createProcessStarter()
-                .setProcessDefinitionKey("replenishment-flow")
-                .setBusinessKey(businessKey)
-                .setVariables([
-                    reorderPath : path,
+                // Record the proposal (review_pending) and start the approval workflow.
+                def id = "${System.currentTimeMillis()}_${variantId}".toString()
+                def now = LocalDate.now(ZoneId.systemDefault())
+                def path = "${PO_DIR}/${now.format(DateTimeFormatter.ofPattern('yyyy/MM'))}/po_${id}.json".toString()
+                def record = [
+                    id          : id,
+                    status      : "review_pending",
+                    productId   : v.productId,
                     productPath : v.productPath,
-                    productID   : v.productId,
                     variantId   : variantId,
                     variantTitle: v.variantTitle,
-                    productTitle: v.title,
+                    title       : v.title,
+                    currentStock: v.quantity,
+                    velocity    : v.perDay,
                     suggestedQty: qty,
-                ])
-                .start()
-            proposed++
-        } catch (Exception e) {
-            try { repositorySession.rollback() } catch (Exception ignore) {}
-            log.warn("proposeReorders: variant ${v?.variantId} failed: ${e.message}")
-        }
-    }
+                    createdAt   : java.time.Instant.now().toString(),
+                ]
+                def res = Jcr.getOrCreateFile(repositorySession, path)
+                res.write(Jcr.toJson(record))
+                res.setProperty("commerce:status", "review_pending")
+                res.setProperty("reorder:variant_id", variantId ?: "")
+                res.setProperty("reorder:product_id", v.productId ?: "")
+                res.setProperty("reorder:suggested_qty", qty.toString())
+                if (v.title) res.setProperty("reorder:title", v.title.toString())
+                repositorySession.commit()
 
-    if (proposed > 0) {
-        log.info("proposeReorders: created ${proposed} reorder proposal(s)")
+                ProcessAPI.createProcessStarter()
+                    .setProcessDefinitionKey("replenishment-flow")
+                    .setBusinessKey(businessKey)
+                    .setVariables([
+                        reorderPath : path,
+                        productPath : v.productPath,
+                        productID   : v.productId,
+                        variantId   : variantId,
+                        variantTitle: v.variantTitle,
+                        productTitle: v.title,
+                        suggestedQty: qty,
+                    ])
+                    .start()
+                proposed++
+            } catch (Exception e) {
+                try { repositorySession.rollback() } catch (Exception ignore) {}
+                log.warn("proposeReorders: variant ${v?.variantId} failed: ${e.message}")
+            }
+        }
+
+        if (proposed > 0) {
+            log.info("proposeReorders: created ${proposed} reorder proposal(s)")
+        }
+    } catch (Exception e) {
+        try { log.warn("proposeReorders: ${e.message}") } catch (Exception ignore) {}
     }
-} catch (Exception e) {
-    try { log.warn("proposeReorders: ${e.message}") } catch (Exception ignore) {}
+} finally {
+    __clusterLease.close()
 }
+
 
 // True when a non-rejected purchase order for this variant was created within the
 // last `days` days (scans the current and previous month folders).
