@@ -22,7 +22,7 @@ through SDK methods rather than imported by every form.
 | Aspect | Convention |
 |---|---|
 | Location | `content/commerce/forms/shopify/forms-sdk.js`, beside the form HTML. |
-| Load | A **classic** `<script>` tag with a relative path, placed before the form's module script: `<script src="./forms-sdk.js?v=3"></script>` (bump the `?v=` when the SDK changes, to bust the iframe cache). |
+| Load | A **classic** `<script>` tag with a relative path, placed before the form's module script: `<script src="./forms-sdk.js?v=1"></script>` (bump the `?v=` when the SDK changes, to bust the iframe cache). |
 | Global | The script publishes `window.createTasksForm` / `window.TasksFormSDK`. The form's module script does `const sdk = window.createTasksForm();`. |
 | ICU engine | `intl-messageformat` is loaded **inside** the SDK (dynamic `import()` of the CDN ESM build) and surfaced via `formatMessage()` / `translate()`. Forms do **not** load it. |
 | Instance | One per form, at module scope — it holds transport, **not** reactive UI state. |
@@ -49,7 +49,7 @@ keeps `localization` and `i18n: { messages, revision }` in its own `data()` so
 ichigo.js repaints correctly, and wires the SDK in its lifecycle hooks:
 
 ```html
-<script src="./forms-sdk.js?v=3"></script>
+<script src="./forms-sdk.js?v=1"></script>
 <script type="module">
 import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.72/dist/ichigo.esm.min.js';
 

@@ -19,7 +19,7 @@
 // -------
 // This file is a **classic script**, loaded by a sibling relative <script> tag:
 //
-//     <script src="./forms-sdk.js?v=3"></script>
+//     <script src="./forms-sdk.js?v=1"></script>
 //
 // A classic <script src> is intentionally NOT subject to CORS, so the
 // opaque-origin form iframe can load it from the same CMS with no extra server
