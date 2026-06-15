@@ -8,7 +8,7 @@ notifications (see [notification-channels.md](notification-channels.md)).
 
 | Source | Signal | Where it is recorded |
 |---|---|---|
-| Webhook endpoint | `received`, `hmac_failure`, `unhandled`, `dispatch_error` counts | `webhook.groovy` → `direct:commerce-health` → `recordHealth.groovy` |
+| Webhook endpoint | `received`, `hmac_failure`, `verify_error`, `unhandled`, `dispatch_error` counts | `webhook.groovy` → `direct:commerce-health` → `recordHealth.groovy` |
 | Camel routes | per-topic `success` / `error` and processing latency (receipt → completion) | each route → `cms:/…/recordHealth.groovy` |
 | Shopify Admin API | per-label `success` / `error` and call latency | callers wrap `ShopifyAdmin.graphql` in `Health.timeApi` |
 
@@ -53,7 +53,7 @@ Daily document shape:
 ```json
 {
   "date": "2026-06-02",
-  "webhook": { "received": 120, "hmac_failure": 2, "unhandled": 1, "dispatch_error": 0 },
+  "webhook": { "received": 120, "hmac_failure": 2, "verify_error": 0, "unhandled": 1, "dispatch_error": 0 },
   "route":   { "orders/paid": { "success": 100, "error": 3,
                                 "latency_sum": 50000, "latency_count": 100, "latency_max": 1200 } },
   "api":     { "getMetafields": { "success": 50, "error": 1,
@@ -101,3 +101,14 @@ of bad requests could inflate it — which is by design (we *want* to alert on
 that), and the cooldown caps the resulting notifications. Recording is async and
 bounded; treat repeated HMAC-failure alerts as a signal to check the webhook
 secret and the source of traffic.
+
+HMAC verification runs with elevated privilege, not in the public endpoint. The
+endpoint is unauthenticated, so its session cannot read the webhook secret
+(`/etc/commerce/config/shopify.yml` is `jcr:all` = deny for anonymous). It calls
+the privileged route `direct:commerce-webhook-verify` synchronously, which reads
+the secret and checks the signature as the `commerce-service-user` and returns a
+verdict; the endpoint gates its response on it, so unverified payloads never reach
+the ingest core. The two failure counters are distinct: `hmac_failure` is a
+signature mismatch (a `401`, the caller's fault), while `verify_error` is a
+server-side condition — the secret is missing or unreadable (a `500`) — so the
+secret being unconfigured is never silently mistaken for an unauthorized caller.

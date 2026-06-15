@@ -20,6 +20,11 @@
           <camunda:field name="path">
             <camunda:string>/etc/commerce/scripts/shopify/notifyReorderTaskCreated.groovy</camunda:string>
           </camunda:field>
+          <!-- Task listeners run with no JCR identity; runAs avoids a guest login
+               that cannot read this script (matches processReorder in this flow). -->
+          <camunda:field name="runAs">
+            <camunda:string>commerce-service-user</camunda:string>
+          </camunda:field>
         </camunda:taskListener>
       </bpmn:extensionElements>
       <bpmn:incoming>Flow_start_approve</bpmn:incoming>

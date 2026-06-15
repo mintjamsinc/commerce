@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<camel>
+
+    <!--
+      Privileged webhook-verification entry point. The public webhook endpoint
+      (content/public/commerce/endpoints/shopify/webhook.groovy) runs unauthenticated,
+      so it cannot read the webhook shared secret itself (/etc/commerce/config/shopify.yml
+      is jcr:all = deny for anonymous). It sends the raw body + signature here
+      synchronously (IntegrationAPI .send(), InOut); this route runs the HMAC check as
+      the service user and replies with a verdict the endpoint uses to gate its HTTP
+      response. Verified-only payloads reach the ingest core (replay-attack safe).
+
+      In  : body            = raw request body (byte[])
+            header webhook_hmac = the X-Shopify-Hmac-SHA256 value
+      Out : header webhook_verified     = boolean verdict
+            header webhook_verify_error = set only on a server-side failure
+                                          (secret missing/unreadable) -> endpoint 500
+
+      No handled error handler here: a thrown failure must NOT look like a clean
+      "verified=false". The verify script catches server-side read/parse failures and
+      reports them via webhook_verify_error instead, keeping the verdict unambiguous.
+    -->
+    <route id="commerce-webhook-verify">
+        <from uri="direct:commerce-webhook-verify"/>
+
+        <setHeader name="runAs">
+            <constant>commerce-service-user</constant>
+        </setHeader>
+
+        <toD uri="cms:/etc/commerce/scripts/shopify/verifyWebhook.groovy?inputs=rawBody=@body,hmacHeader=webhook_hmac&amp;outputs=webhook_verified=webhookVerified,webhook_verify_error=webhookVerifyError"/>
+    </route>
+
+</camel>

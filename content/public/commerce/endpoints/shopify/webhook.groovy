@@ -1,6 +1,3 @@
-import javax.crypto.Mac
-import javax.crypto.spec.SecretKeySpec
-
 // Only accept POST requests
 if (request.getMethod() != "POST") {
     response.setStatus(405)
@@ -11,14 +8,46 @@ if (request.getMethod() != "POST") {
 byte[] bodyBytes = request.getInputStream().readAllBytes()
 String bodyString = new String(bodyBytes, "UTF-8")
 
-// Load shared secret from JCR config
-def configNode = repositorySession.getResource("/etc/commerce/config/shopify.yml")
-def config = YAML.parse(configNode)
-String sharedSecret = config.webhookSecret
-
-// Verify HMAC-SHA256 signature
+// Verify the HMAC-SHA256 signature. This endpoint is PUBLIC (unauthenticated), so
+// its session cannot read the webhook secret (/etc/commerce/config/shopify.yml is
+// jcr:all = deny for anonymous). Delegate verification to the privileged route
+// direct:commerce-webhook-verify, which reads the secret and checks the signature
+// as the service user, then returns a verdict. We call it synchronously (.send(),
+// InOut) so the verdict gates the response and unverified payloads never reach the
+// ingest core.
 String hmacHeader = request.getHeader("X-Shopify-Hmac-SHA256")
-if (hmacHeader == null || !verifyHmac(bodyBytes, hmacHeader, sharedSecret)) {
+def verifyReply
+try {
+    verifyReply = IntegrationAPI.createMessageSender()
+        .setEndpointURI("direct:commerce-webhook-verify")
+        .setBody(bodyBytes)
+        .setHeader("webhook_hmac", hmacHeader == null ? "" : hmacHeader)
+        .send()
+} catch (Exception e) {
+    // The verification route could not be reached/executed: a server-side failure.
+    // Fail closed with 500 (not 401) so it is not mistaken for an unauthorized caller.
+    log.error("Shopify webhook verification could not run: ${e.message}", e)
+    emitHealth("verify_error")
+    response.setStatus(500)
+    response.setHeader("Content-Type", "application/json")
+    response.getWriter().write('{"error":"Internal error"}')
+    return
+}
+
+// A server-side failure (secret missing/unreadable) is distinct from a signature
+// mismatch: answer 500 so it is not mistaken for an unauthorized caller, and so
+// Shopify's retries can succeed once the configuration is fixed.
+def verifyError = verifyReply.getHeader("webhook_verify_error")
+if (verifyError != null) {
+    log.error("Shopify webhook verification could not run: ${verifyError}")
+    emitHealth("verify_error")
+    response.setStatus(500)
+    response.setHeader("Content-Type", "application/json")
+    response.getWriter().write('{"error":"Internal error"}')
+    return
+}
+
+if (!Boolean.TRUE.equals(verifyReply.getHeader("webhook_verified"))) {
     log.warn("Shopify webhook HMAC verification failed")
     emitHealth("hmac_failure")
     response.setStatus(401)
@@ -89,22 +118,5 @@ void emitHealth(String metric) {
             .sendAsync()
     } catch (Exception e) {
         log.warn("Failed to emit webhook health metric '${metric}': ${e.message}")
-    }
-}
-
-boolean verifyHmac(byte[] body, String expected, String secret) {
-    try {
-        Mac mac = Mac.getInstance("HmacSHA256")
-        mac.init(new SecretKeySpec(secret.getBytes("UTF-8"), "HmacSHA256"))
-        byte[] computed = mac.doFinal(body)
-        String computedBase64 = Base64.encoder.encodeToString(computed)
-        // Constant-time comparison
-        return java.security.MessageDigest.isEqual(
-            computedBase64.getBytes("UTF-8"),
-            expected.getBytes("UTF-8")
-        )
-    } catch (Exception e) {
-        log.error("HMAC verification error: ${e.message}", e)
-        return false
     }
 }

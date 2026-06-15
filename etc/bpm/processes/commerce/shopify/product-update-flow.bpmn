@@ -23,6 +23,13 @@
         <camunda:field name="outputs">
           <camunda:string>hasThresholdConfig</camunda:string>
         </camunda:field>
+        <!-- The BPM engine runs service tasks on its own thread with no JCR identity;
+             without runAs the CmsDelegate logs in as guest and cannot even read this
+             script (/etc/commerce is denied to anonymous). Run as the service user,
+             consistent with the mutating tasks in this flow. -->
+        <camunda:field name="runAs">
+          <camunda:string>commerce-service-user</camunda:string>
+        </camunda:field>
       </bpmn:extensionElements>
       <bpmn:incoming>Flow_start_threshold</bpmn:incoming>
       <bpmn:outgoing>Flow_threshold_gw</bpmn:outgoing>
@@ -54,6 +61,11 @@
           <camunda:field name="path">
             <camunda:string>/etc/commerce/scripts/shopify/notifyTaskCreated.groovy</camunda:string>
           </camunda:field>
+          <!-- Task listeners run with no JCR identity; runAs avoids a guest login
+               that cannot read this script (matches the setWorkflowStatus listener). -->
+          <camunda:field name="runAs">
+            <camunda:string>commerce-service-user</camunda:string>
+          </camunda:field>
         </camunda:taskListener>
       </bpmn:extensionElements>
       <bpmn:incoming>Flow_threshold_no</bpmn:incoming>
@@ -78,6 +90,11 @@
         </camunda:field>
         <camunda:field name="outputs">
           <camunda:string>isInventoryLow</camunda:string>
+        </camunda:field>
+        <!-- Service tasks run with no JCR identity; runAs avoids a guest login that
+             cannot read this script. See ServiceTask_checkThreshold above. -->
+        <camunda:field name="runAs">
+          <camunda:string>commerce-service-user</camunda:string>
         </camunda:field>
       </bpmn:extensionElements>
       <bpmn:incoming>Flow_join_checkInventory</bpmn:incoming>
@@ -115,6 +132,11 @@
         <camunda:taskListener event="create" class="org.mintjams.script.bpm.CmsDelegate">
           <camunda:field name="path">
             <camunda:string>/etc/commerce/scripts/shopify/notifyTaskCreated.groovy</camunda:string>
+          </camunda:field>
+          <!-- Task listeners run with no JCR identity; runAs avoids a guest login
+               that cannot read this script (matches the setWorkflowStatus listener). -->
+          <camunda:field name="runAs">
+            <camunda:string>commerce-service-user</camunda:string>
           </camunda:field>
         </camunda:taskListener>
       </bpmn:extensionElements>
