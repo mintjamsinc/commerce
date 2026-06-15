@@ -19,7 +19,7 @@
 // -------
 // This file is a **classic script**, loaded by a sibling relative <script> tag:
 //
-//     <script src="./forms-sdk.js?v=1"></script>
+//     <script src="./forms-sdk.js?v=3"></script>
 //
 // A classic <script src> is intentionally NOT subject to CORS, so the
 // opaque-origin form iframe can load it from the same CMS with no extra server
@@ -141,6 +141,7 @@
 		for (var i = 0; i < EVENT_TYPES.length; i++) this._handlers[EVENT_TYPES[i]] = [];
 
 		this._messageListener = null;
+		this._pointerDownListener = null;
 		this._standaloneTimer = null;
 		this._contextSeen = false;
 		this._started = false;
@@ -166,6 +167,16 @@
 
 			this._messageListener = function (ev) { self._onMessage(ev); };
 			window.addEventListener('message', this._messageListener);
+
+			// Raise the host window whenever the user interacts with the form.
+			// The form runs in an opaque (null-origin) sandboxed iframe, so the
+			// shell cannot observe clicks inside it — without this, clicking the
+			// form body would NOT bring a background Tasks window to the front
+			// (only clicking the window chrome would). `pointerdown` in the
+			// capture phase catches mouse, touch, and pen before any form
+			// handler can stop it. Forwarding is fire-and-forget.
+			this._pointerDownListener = function () { self.notifyActivate(); };
+			window.addEventListener('pointerdown', this._pointerDownListener, true);
 
 			if (this._standaloneTimeout > 0) {
 				this._standaloneTimer = setTimeout(function () {
@@ -193,6 +204,10 @@
 				window.removeEventListener('message', this._messageListener);
 				this._messageListener = null;
 			}
+			if (this._pointerDownListener) {
+				window.removeEventListener('pointerdown', this._pointerDownListener, true);
+				this._pointerDownListener = null;
+			}
 			if (this._standaloneTimer) {
 				clearTimeout(this._standaloneTimer);
 				this._standaloneTimer = null;
@@ -205,6 +220,19 @@
 		notifyReady: function () {
 			try {
 				if (this._target) this._target.postMessage({ __tasksRpc: 'ready' }, '*');
+			} catch (_) {
+				// Running outside the Tasks app (standalone) — ignore.
+			}
+		},
+
+		/**
+		 * Ask the host to bring the Tasks window to the front. Fire-and-forget;
+		 * sent on every pointerdown inside the form so interacting with the form
+		 * body raises a background window, matching how same-origin apps behave.
+		 */
+		notifyActivate: function () {
+			try {
+				if (this._target) this._target.postMessage({ __tasksRpc: 'activate' }, '*');
 			} catch (_) {
 				// Running outside the Tasks app (standalone) — ignore.
 			}
