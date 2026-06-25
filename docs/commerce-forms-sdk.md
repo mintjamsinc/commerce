@@ -51,7 +51,7 @@ ichigo.js repaints correctly, and wires the SDK in its lifecycle hooks:
 ```html
 <script src="./forms-sdk.js?v=1"></script>
 <script type="module">
-import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.73/dist/ichigo.esm.min.js';
+import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.74/dist/ichigo.esm.min.js';
 
 const I18N_PREFIX = 'form.commerce.shopify.';
 const sdk = window.createTasksForm();
