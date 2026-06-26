@@ -22,7 +22,7 @@
     </bpmn:startEvent>
 
     <!-- 1. An operator releases the now-in-stock backorder to fulfilment. -->
-    <bpmn:userTask id="UserTask_releaseBackorder" name="Release Backorder" camunda:formKey="cms:/content/commerce/forms/shopify/backorder-release.html?t={{lastModified}}">
+    <bpmn:userTask id="UserTask_releaseBackorder" name="Release Backorder" camunda:formKey="cms:/content/commerce/forms/shopify/backorder-release.html">
       <bpmn:extensionElements>
         <!-- Advance the processing status to "ready" (stock arrived, awaiting release). -->
         <camunda:taskListener event="create" class="org.mintjams.script.bpm.CmsDelegate">

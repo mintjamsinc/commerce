@@ -19,13 +19,18 @@
 // -------
 // This file is a **classic script**, loaded by a sibling relative <script> tag:
 //
-//     <script src="./forms-sdk.js?v=1"></script>
+//     <script src="./forms-sdk.js"></script>
 //
 // A classic <script src> is intentionally NOT subject to CORS, so the
 // opaque-origin form iframe can load it from the same CMS with no extra server
 // configuration (an ES-module `import` of a same-origin file would be a
 // cross-origin fetch and get blocked). The script publishes its API on the
 // global object: `window.createTasksForm` / `window.TasksFormSDK`.
+//
+// No cache-busting query (`?v=…`) is needed. The CMS serves this file with an
+// ETag/Last-Modified validator and `Cache-Control: no-cache`, so the iframe
+// revalidates on every load and picks up an edited SDK automatically (304 while
+// unchanged). Just edit the file — there is no version to bump.
 //
 // `intl-messageformat` is loaded **inside** the SDK (via a dynamic `import()` of
 // the CDN ESM build, which IS CORS-enabled) and surfaced through

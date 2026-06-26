@@ -47,7 +47,7 @@
     </bpmn:exclusiveGateway>
 
     <!-- 2a. A rule matched: an operator reviews the order via a manual task. -->
-    <bpmn:userTask id="UserTask_orderReview" name="Order Review" camunda:formKey="cms:/content/commerce/forms/shopify/order-review.html?t={{lastModified}}">
+    <bpmn:userTask id="UserTask_orderReview" name="Order Review" camunda:formKey="cms:/content/commerce/forms/shopify/order-review.html">
       <bpmn:extensionElements>
         <!-- Advance the processing status to "review_pending" (waiting on an operator). -->
         <camunda:taskListener event="create" class="org.mintjams.script.bpm.CmsDelegate">
@@ -102,7 +102,7 @@
     </bpmn:serviceTask>
 
     <!-- 4. Fulfillment: a warehouse operator picks/packs and records tracking. -->
-    <bpmn:userTask id="UserTask_fulfillOrder" name="Fulfill Order" camunda:formKey="cms:/content/commerce/forms/shopify/order-fulfillment.html?t={{lastModified}}">
+    <bpmn:userTask id="UserTask_fulfillOrder" name="Fulfill Order" camunda:formKey="cms:/content/commerce/forms/shopify/order-fulfillment.html">
       <bpmn:extensionElements>
         <!-- Advance the processing status to "fulfillment_pending" (waiting on a fulfiller). -->
         <camunda:taskListener event="create" class="org.mintjams.script.bpm.CmsDelegate">

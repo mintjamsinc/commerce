@@ -49,7 +49,7 @@
     </bpmn:exclusiveGateway>
 
     <!-- 2a. A rule matched: an operator reviews the refund. -->
-    <bpmn:userTask id="UserTask_refundReview" name="Refund Review" camunda:formKey="cms:/content/commerce/forms/shopify/refund-review.html?t={{lastModified}}">
+    <bpmn:userTask id="UserTask_refundReview" name="Refund Review" camunda:formKey="cms:/content/commerce/forms/shopify/refund-review.html">
       <bpmn:extensionElements>
         <camunda:taskListener event="create" class="org.mintjams.script.bpm.CmsDelegate">
           <camunda:field name="path">

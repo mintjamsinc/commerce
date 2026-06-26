@@ -43,7 +43,7 @@
     </bpmn:exclusiveGateway>
 
     <!-- 2a. No threshold yet: operator sets it via a manual task -->
-    <bpmn:userTask id="UserTask_setThreshold" name="Set Inventory Threshold" camunda:formKey="cms:/content/commerce/forms/shopify/inventory-threshold-config.html?t={{lastModified}}">
+    <bpmn:userTask id="UserTask_setThreshold" name="Set Inventory Threshold" camunda:formKey="cms:/content/commerce/forms/shopify/inventory-threshold-config.html">
       <bpmn:extensionElements>
         <!-- Advance the processing status to "threshold_pending" (waiting on an operator). -->
         <camunda:taskListener event="create" class="org.mintjams.script.bpm.CmsDelegate">
@@ -115,7 +115,7 @@
     </bpmn:exclusiveGateway>
 
     <!-- 4a. Inventory low: operator reviews the alert via a manual task -->
-    <bpmn:userTask id="UserTask_355fcd40" name="Manual Inventory Check" camunda:formKey="cms:/content/commerce/forms/shopify/inventory-level-review.html?t={{lastModified}}">
+    <bpmn:userTask id="UserTask_355fcd40" name="Manual Inventory Check" camunda:formKey="cms:/content/commerce/forms/shopify/inventory-level-review.html">
       <bpmn:extensionElements>
         <!-- Advance the processing status to "review_pending" (waiting on an operator). -->
         <camunda:taskListener event="create" class="org.mintjams.script.bpm.CmsDelegate">

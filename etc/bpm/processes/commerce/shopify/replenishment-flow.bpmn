@@ -14,7 +14,7 @@
     <!-- 1. Operator reviews the reorder proposal: adjust the quantity and approve
          or reject. The decision (and approved quantity) is written to the reorder
          record by the form; the service task below acts on it. -->
-    <bpmn:userTask id="UserTask_approveReorder" name="Approve Reorder" camunda:formKey="cms:/content/commerce/forms/shopify/reorder-approval.html?t={{lastModified}}">
+    <bpmn:userTask id="UserTask_approveReorder" name="Approve Reorder" camunda:formKey="cms:/content/commerce/forms/shopify/reorder-approval.html">
       <bpmn:extensionElements>
         <camunda:taskListener event="create" class="org.mintjams.script.bpm.CmsDelegate">
           <camunda:field name="path">
