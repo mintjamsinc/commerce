@@ -20,7 +20,7 @@
 		"typescript": "^6.0.3"
 	},
 	"dependencies": {
-		"@mintjamsinc/ichigojs": "^0.1.74"
+		"@mintjamsinc/ichigojs": "^0.1.75"
 	},
 	"allowScripts": {
 		"esbuild@0.28.0": true
