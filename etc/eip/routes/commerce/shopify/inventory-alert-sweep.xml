@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<camel>
+
+    <!-- Swallow sweep failures: the inventory-alert sweep must never surface errors. -->
+    <routeConfiguration id="commerce-inventory-alert-sweep-error-handler">
+        <onException>
+            <exception>java.lang.Exception</exception>
+            <handled>
+                <constant>true</constant>
+            </handled>
+            <log message="commerce-inventory-alert-sweep error: ${exception.message}"
+                 loggingLevel="WARN"/>
+        </onException>
+    </routeConfiguration>
+
+    <!--
+      Inventory-alert sweep. Fires on a short period
+      (after a warm-up) and runs
+      sweepInventoryAlerts.groovy as the service user: it evaluates the items marked pending
+      by the inventory_levels/update route (and by product onboarding), edge-triggers each
+      against its effective threshold on the multi-location mirror total, and raises a
+      Manual Inventory Check (inventory-alert-flow) on the ok→low transition.
+
+      This timer is the base sweep heartbeat. The effective debounce window is
+      sweepDebounceSeconds in /etc/commerce/config/inventory-alert.yml (0 = every heartbeat):
+      bursts of updates for the same item collapse into a single evaluation. The
+      unconfigured-threshold policy lives in the same yml.
+    -->
+    <route id="commerce-inventory-alert-sweep" routeConfigurationId="commerce-inventory-alert-sweep-error-handler">
+        <from uri="timer:commerce-inventory-alert-sweep?period=15000&amp;delay=60000"/>
+
+        <setHeader name="runAs">
+            <constant>commerce-service-user</constant>
+        </setHeader>
+
+        <toD uri="cms:/etc/commerce/scripts/shopify/sweepInventoryAlerts.groovy"/>
+    </route>
+
+</camel>

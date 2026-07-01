@@ -15,15 +15,15 @@ computeVelocity.groovy
    ├─ writeCache → /content/commerce/analytics/velocity.json   (cheap to read)
    └─ forecast + stockout alerts → commerce.Alerts → Notifications (#17)
 
-per webhook (cheap):
-   checkInventoryLevel / checkThresholdConfig / notifyTaskCreated
+threshold resolution (reads the cache):
+   sweepInventoryAlerts (timer sweep) / checkThresholdConfig / notifyTaskCreated
         └─ SalesVelocity.loadPerDay → feeds InventoryRules.minVelocityPerDay (#5)
 ```
 
 Velocity is an expensive scan of the order history, so it runs as a periodic
-batch and is **cached**; the per-webhook inventory scripts only read the cached
-file. This keeps webhook processing fast while activating the velocity-based
-inventory rules and powering the forecast.
+batch and is **cached**; the inventory scripts (the alert sweep and the
+onboarding threshold check) only read the cached file. This keeps processing fast
+while activating the velocity-based inventory rules and powering the forecast.
 
 ## Velocity
 

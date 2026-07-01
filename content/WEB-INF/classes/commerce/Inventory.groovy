@@ -9,8 +9,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
  * Thresholds are stored as JSON on the product resource's `inventory_level_config`
  * property (written by the threshold form): { "variants": [ { "id": ...,
  * "inventory_alert_threshold": N }, ... ] }. Parsing is shared here; callers keep
- * their own error policy (checkInventoryLevel lets a malformed config propagate;
- * checkThresholdConfig / notifyTaskCreated wrap the call and treat it leniently).
+ * their own error policy (checkThresholdConfig / notifyTaskCreated / sweepInventoryAlerts
+ * wrap the call and treat a malformed config leniently).
  *
  * Lives under /content/WEB-INF/classes; use via `import commerce.Inventory`.
  */

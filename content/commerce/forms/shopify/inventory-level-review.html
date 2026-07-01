@@ -845,6 +845,15 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.75/
 				node: null,
 				productPath: '',
 				thresholdMap: {},
+				// Multi-location mirror total per variant id (the same source of truth the
+				// alert decision uses). Falls back to the payload inventory_quantity per
+				// variant when the mirror has no data for that item. See loadMirrorTotals().
+				mirrorTotals: {},
+				// Effective alert threshold per variant id ({ threshold, source, rule }), as
+				// resolved by the sweep (manual / rule / default) and stored in the per-item
+				// alert state. Lets the form show the same threshold the decision used instead
+				// of only the manual override. See loadThresholds().
+				effectiveThresholds: {},
 				shopifyURL: '',
 
 				// Internal memo
@@ -893,10 +902,19 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.75/
 					const title = (v && (v.title || v.option1)) || this.t('form.commerce.shopify.inventoryLevelReview.variantDefault', undefined, '(default)');
 					const sku = (v && v.sku) || '';
 					const price = v ? v.price : null;
-					const qty = v && v.inventory_quantity != null ? Number(v.inventory_quantity) : null;
-					const threshold = id && Object.prototype.hasOwnProperty.call(this.thresholdMap, id)
-						? this.thresholdMap[id]
-						: null;
+					// Prefer the multi-location mirror total (the alert decision's source of
+					// truth); fall back to the payload inventory_quantity until the mirror is
+					// populated for this item.
+					const qty = (id && this.mirrorTotals && this.mirrorTotals[id] != null)
+						? Number(this.mirrorTotals[id])
+						: (v && v.inventory_quantity != null ? Number(v.inventory_quantity) : null);
+					// Effective threshold = what the alert decision used (manual / rule / default),
+					// recorded by the sweep in the per-item state. Fall back to the manual override
+					// property when no evaluated state exists yet for this variant.
+					const eff = (id && this.effectiveThresholds) ? this.effectiveThresholds[id] : null;
+					const threshold = (eff && eff.threshold != null)
+						? Number(eff.threshold)
+						: (id && Object.prototype.hasOwnProperty.call(this.thresholdMap, id) ? this.thresholdMap[id] : null);
 					const isAlert = threshold != null && qty != null && qty < threshold;
 					return {
 						id,
@@ -1138,6 +1156,8 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.75/
 				this.product = product;
 				this.productPath = productPath;
 				this.thresholdMap = parseThresholds(sdk.getStringProp(node, 'inventory_level_config'));
+				this.mirrorTotals = await this.loadMirrorTotals(product);
+				this.effectiveThresholds = await this.loadThresholds(product);
 				this.loadMemoFromNode();
 				this.imageFailed = false;
 
@@ -1149,6 +1169,64 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.75/
 					: '';
 
 				this.updateDocumentTitle();
+			},
+
+			// Read the per-location inventory mirror for each variant and sum it into a
+			// total per variant id — the same multi-location total the alert decision uses
+			// (commerce.Locations.aggregate). Reads the same /content/commerce tree the form
+			// already reads; a missing/denied/empty mirror simply leaves the variant unset,
+			// so variantRows falls back to the payload inventory_quantity.
+			async loadMirrorTotals(product) {
+				const variants = (product && Array.isArray(product.variants)) ? product.variants : [];
+				const totals = {};
+				await Promise.all(variants.map(async (v) => {
+					const id = v && v.id != null ? String(v.id) : '';
+					const itemId = v && v.inventory_item_id != null ? String(v.inventory_item_id) : '';
+					if (!id || !itemId) return;
+					try {
+						const text = await sdk.readNodeText('/content/commerce/inventory/levels/' + itemId + '.json');
+						if (!text) return;
+						const doc = JSON.parse(text);
+						const locs = doc && doc.locations;
+						if (locs && typeof locs === 'object') {
+							let sum = 0;
+							let any = false;
+							for (const k of Object.keys(locs)) {
+								const a = locs[k] ? locs[k].available : null;
+								if (a != null) { sum += (Number(a) || 0); any = true; }
+							}
+							if (any) totals[id] = sum;
+						}
+					} catch (e) {
+						// leave unset → variantRows falls back to the payload value
+					}
+				}));
+				return totals;
+			},
+
+			// Read the effective alert threshold the sweep resolved for each variant (manual /
+			// rule / default), from the per-item alert state. Same /content/commerce tree the
+			// form already reads; a missing state leaves the variant unset, so variantRows falls
+			// back to the manual override property.
+			async loadThresholds(product) {
+				const variants = (product && Array.isArray(product.variants)) ? product.variants : [];
+				const out = {};
+				await Promise.all(variants.map(async (v) => {
+					const id = v && v.id != null ? String(v.id) : '';
+					const itemId = v && v.inventory_item_id != null ? String(v.inventory_item_id) : '';
+					if (!id || !itemId) return;
+					try {
+						const text = await sdk.readNodeText('/content/commerce/inventory/state/' + itemId + '.json');
+						if (!text) return;
+						const doc = JSON.parse(text);
+						if (doc && doc.threshold != null) {
+							out[id] = { threshold: Number(doc.threshold), source: doc.thresholdSource || null, rule: doc.thresholdRule || null };
+						}
+					} catch (e) {
+						// leave unset → variantRows falls back to the manual override property
+					}
+				}));
+				return out;
 			},
 
 			// ----------------------------------------------------------

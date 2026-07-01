@@ -170,8 +170,22 @@ Per-location stock + location metadata from Shopify. See
 ```
 /content/commerce/inventory/
 ├── levels/{inventory_item_id}.json    # { inventory_item_id, locations: { "<id>": { available, updatedAt } } }
-└── locations/{location_id}.json       # raw Shopify location payload (name, …)
+├── locations/{location_id}.json       # raw Shopify location payload (name, …)
+├── index/{inventory_item_id}.json     # reverse index { inventory_item_id, product_id, product_path, variant_id, variant_title, updatedAt }
+├── pending/{inventory_item_id}.json   # alert-sweep queue marker: this item changed and needs evaluation
+└── state/{inventory_item_id}.json     # alert edge-trigger state { inventory_item_id, alertState, lastEvaluatedTotal, threshold, thresholdSource, thresholdRule, evaluatedAt }
 ```
+
+The `pending/` and `state/` entries drive the inventory-alert sweep (`sweepInventoryAlerts.groovy`):
+`inventory_levels/update` (and product onboarding) marks an item pending; the sweep
+edge-triggers it against its threshold on the mirror total and raises `inventory-alert-flow` on
+the ok→low transition. See `commerce.InventoryAlert`.
+
+The `index/` entries are built from the Shopify product payload on `products/*` ingestion
+(`indexInventoryItems.groovy`) and removed on `products/delete`
+(`removeInventoryItemIndex.groovy`). They let an `inventory_levels/update` webhook — which
+carries only an `inventory_item_id` — be resolved back to its product and variant
+(`commerce.Locations.resolveItem`).
 
 ## Purchase Order Storage
 

@@ -72,7 +72,7 @@
 	"app.commerce-dashboard.row.processed": "Processed",
 	"app.commerce-dashboard.row.received": "Received",
 	"app.commerce-dashboard.row.fieldDiffs": "Field diffs",
-	"app.commerce-dashboard.row.autoHealed": "Auto-healed",
+	"app.commerce-dashboard.row.autoHealed": "Mirror refreshed",
 	"app.commerce-dashboard.row.lastRun": "Last run",
 	"app.commerce-dashboard.row.ok": "OK",
 	"app.commerce-dashboard.row.failed": "Failed",

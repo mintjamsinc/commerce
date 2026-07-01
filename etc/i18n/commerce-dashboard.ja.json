@@ -72,7 +72,7 @@
 	"app.commerce-dashboard.row.processed": "処理済み",
 	"app.commerce-dashboard.row.received": "受信",
 	"app.commerce-dashboard.row.fieldDiffs": "フィールド差分",
-	"app.commerce-dashboard.row.autoHealed": "自動修復",
+	"app.commerce-dashboard.row.autoHealed": "ミラー更新",
 	"app.commerce-dashboard.row.lastRun": "最終実行",
 	"app.commerce-dashboard.row.ok": "OK",
 	"app.commerce-dashboard.row.failed": "失敗",

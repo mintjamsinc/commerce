@@ -72,7 +72,10 @@ items, and how many (item, location) pairs are out (≤ safety stock).
 
 ## Relationship to the threshold engine
 
-The inventory alert workflow (#5) still operates on the variant's aggregate
-`inventory_quantity` from the product webhook. The per-location data here is an
-additional layer for allocation and visibility; per-location low-stock alerting
-can build on `commerce.Locations` in a future iteration.
+The inventory alert workflow (#5) judges low stock on the **multi-location mirror
+total** — `commerce.Locations` summed across locations (`aggregate` / `levels`).
+`sweepInventoryAlerts.groovy` (the timer-driven evaluation) and `notifyTaskCreated.groovy`
+(the alert display) share this source of truth; `notifyTaskCreated` falls back to the
+product webhook's aggregate `inventory_quantity` only until the mirror has been populated
+for an item. Per-location low-stock alerting (a threshold per location,
+rather than on the total) can still build on `commerce.Locations` in a future iteration.

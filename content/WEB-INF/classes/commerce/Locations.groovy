@@ -23,6 +23,7 @@ class Locations {
 
     static final String LEVELS_DIR = "/content/commerce/inventory/levels"
     static final String LOCATIONS_DIR = "/content/commerce/inventory/locations"
+    static final String INDEX_DIR = "/content/commerce/inventory/index"
 
     private static final ObjectMapper MAPPER = new ObjectMapper()
 
@@ -49,6 +50,98 @@ class Locations {
         int total = 0
         levels(session, inventoryItemId).each { loc, avail -> total += (avail ?: 0) }
         return total
+    }
+
+    /**
+     * Replace the per-location levels for an item with an authoritative full snapshot
+     * (e.g. a reconciliation pull from Shopify). Unlike the webhook recorder this is a
+     * full OVERWRITE, not a per-location merge, since the caller holds the complete set
+     * of locations. Defensive — returns whether the file was written.
+     */
+    static boolean replaceLevels(session, log, inventoryItemId, Map byLocation) {
+        def id = inventoryItemId?.toString()
+        if (id == null || id.isEmpty()) {
+            return false
+        }
+        try {
+            def now = java.time.Instant.now().toString()
+            def locs = [:]
+            (byLocation ?: [:]).each { locId, avail ->
+                if (locId != null) {
+                    locs[locId.toString()] = [available: toInt(avail), updatedAt: now]
+                }
+            }
+            def doc = [inventory_item_id: id, locations: locs]
+            def res = Jcr.getOrCreateFile(session, "${LEVELS_DIR}/${id}.json".toString())
+            res.write(Jcr.toJson(doc))
+            session.commit()
+            return true
+        } catch (Exception e) {
+            try { session.rollback() } catch (Exception ignore) {}
+            try { log.warn("Locations.replaceLevels ${id}: ${e.message}") } catch (Exception ignore) {}
+            return false
+        }
+    }
+
+    /**
+     * Stage a full level overwrite WITHOUT committing — the caller batches the commit (e.g. a
+     * large bulk reconcile). Same shape as {@link #replaceLevels} but leaves the commit (and
+     * rollback) to the caller. Defensive — returns whether the node was written.
+     */
+    static boolean writeLevels(session, log, inventoryItemId, Map byLocation) {
+        def id = inventoryItemId?.toString()
+        if (id == null || id.isEmpty()) {
+            return false
+        }
+        try {
+            def now = java.time.Instant.now().toString()
+            def locs = [:]
+            (byLocation ?: [:]).each { locId, avail ->
+                if (locId != null) {
+                    locs[locId.toString()] = [available: toInt(avail), updatedAt: now]
+                }
+            }
+            def res = Jcr.getOrCreateFile(session, "${LEVELS_DIR}/${id}.json".toString())
+            res.write(Jcr.toJson([inventory_item_id: id, locations: locs]))
+            return true
+        } catch (Exception e) {
+            try { log.warn("Locations.writeLevels ${id}: ${e.message}") } catch (Exception ignore) {}
+            return false
+        }
+    }
+
+    /** True when two locationId→available maps hold the same available for the same locations. */
+    static boolean sameLevels(Map a, Map b) {
+        def x = a ?: [:]
+        def y = b ?: [:]
+        if (x.size() != y.size()) {
+            return false
+        }
+        for (e in x) {
+            if (!y.containsKey(e.key) || toInt(e.value) != toInt(y[e.key])) {
+                return false
+            }
+        }
+        return true
+    }
+
+    /**
+     * Reverse-index lookup: resolve an {@code inventory_item_id} to its product/variant,
+     * or {@code null} when it has not been indexed yet. The index is built from the
+     * Shopify product payload by {@code indexInventoryItems.groovy} on products/* ingestion
+     * (an inventory_levels/update webhook carries only the inventory_item_id).
+     *
+     *   /content/commerce/inventory/index/{inventory_item_id}.json
+     *
+     * @return Map: [ inventory_item_id, product_id, product_path, variant_id, variant_title ]
+     *         or null when absent/invalid.
+     */
+    static Map resolveItem(session, inventoryItemId) {
+        if (inventoryItemId == null) {
+            return null
+        }
+        def doc = readJson(session, "${INDEX_DIR}/${inventoryItemId}.json")
+        return (doc instanceof Map && doc.inventory_item_id != null) ? doc : null
     }
 
     /** Human-readable location name, or the id when no metadata is stored. */

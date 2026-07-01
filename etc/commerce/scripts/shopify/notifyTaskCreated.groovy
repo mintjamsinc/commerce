@@ -12,17 +12,19 @@
 //                                  below their configured threshold (review
 //                                  context).
 // Rather than depend on which task fired, the notification reads the current
-// inventory state straight from the product resource - the same source of
-// truth used by checkInventoryLevel.groovy - and renders the appropriate
-// message. This keeps both contexts consistent and supports multi-variant
-// products.
+// inventory state from the product resource and the multi-location mirror - the
+// same total the inventory-alert sweep uses - and renders the appropriate message.
+// This keeps both contexts consistent and supports multi-variant products.
 //
 // Notification destinations are read from a dedicated config file that is kept
 // separate from the Shopify credentials (managed by the Commerce app):
 //   /etc/commerce/config/notifications.yml
 //
-// Supported channels: Slack and Discord incoming webhooks. Both use the JDK
-// built-in java.net.http.HttpClient, so no extra JAR is required.
+// Delivery goes to every enabled channel in the shared registry - Slack,
+// Discord, Teams, LINE, generic webhook and email - via commerce.Notifications
+// (see Notifications.registry()). Each channel renders the same message in its
+// own format using the JDK built-in java.net.http.HttpClient / SMTP client (no
+// extra JAR required).
 //
 // IMPORTANT: a notification failure must never break the business process, so
 // every external call is wrapped defensively and only logged on error.
@@ -30,6 +32,7 @@
 // Shared commerce helpers (see /content/WEB-INF/classes/commerce/).
 import commerce.Inventory
 import commerce.InventoryRules
+import commerce.Locations
 import commerce.SalesVelocity
 import commerce.Notifications
 import commerce.NotificationMessage
@@ -102,9 +105,18 @@ try {
                 def variantID = v.id?.toString()
                 def eff = variantID != null ? resolved[variantID] : null
                 def threshold = eff?.threshold
+                // Report the multi-location mirror total (the same total the inventory-alert
+                // sweep uses), falling back to the payload's inventory_quantity until the
+                // mirror is populated for this item.
                 def available = null
                 try {
-                    available = v.inventory_quantity == null ? null : (v.inventory_quantity as int)
+                    def itemId = v.inventory_item_id
+                    def levels = (itemId != null) ? Locations.levels(repositorySession, itemId) : [:]
+                    if (!levels.isEmpty()) {
+                        available = levels.values().sum() as int
+                    } else {
+                        available = v.inventory_quantity == null ? null : (v.inventory_quantity as int)
+                    }
                 } catch (Exception ignore) {
                     available = null
                 }

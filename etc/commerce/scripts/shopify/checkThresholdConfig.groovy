@@ -19,6 +19,7 @@
 //   - hasThresholdConfig: true if a usable (effective) threshold exists
 
 import commerce.Inventory
+import commerce.InventoryAlert
 import commerce.InventoryRules
 import commerce.SalesVelocity
 
@@ -46,7 +47,10 @@ try {
     ]
 
     def resolved = InventoryRules.resolve(product, rulesConfig, manual, SalesVelocity.loadPerDay(repositorySession))
-    hasThresholdConfig = InventoryRules.hasEffectiveThreshold(resolved)
+    // unconfiguredPolicy (inventory-alert.yml): "prompt" (default) raises the manual Set
+    // Inventory Threshold task when nothing is configured; "default" / "silent" skip it
+    // (the sweep then applies the default threshold, or stays quiet, respectively).
+    hasThresholdConfig = InventoryRules.hasEffectiveThreshold(resolved) || (loadUnconfiguredPolicy() != "prompt")
 } catch (Exception e) {
     log.warn("Failed to resolve thresholds at ${productPath}: ${e.message} - treating as unconfigured")
 }
@@ -71,4 +75,16 @@ def loadRulesConfig() {
 List splitTags(value) {
     if (value == null) return []
     return value.toString().split(",").collect { it.trim() }.findAll { it }
+}
+
+String loadUnconfiguredPolicy() {
+    try {
+        def node = repositorySession.getResource(InventoryAlert.CONFIG_PATH)
+        if (node != null && node.exists()) {
+            return InventoryAlert.unconfiguredPolicy(YAML.parse(node) ?: [:])
+        }
+    } catch (Exception e) {
+        log.warn("checkThresholdConfig: could not parse inventory-alert.yml: ${e.message} - assuming prompt")
+    }
+    return "prompt"
 }

@@ -46,6 +46,7 @@ const BACKORDER_FILE = 'backorder.yml';
 const ORDER_REVIEW_FILE = 'order-review.yml';
 const REFUND_REVIEW_FILE = 'refund-review.yml';
 const INVENTORY_RULES_FILE = 'inventory-rules.yml';
+const INVENTORY_ALERT_FILE = 'inventory-alert.yml';
 const SHOPIFY_PATH = CONFIG_DIR + '/' + SHOPIFY_FILE;
 const NOTIF_PATH = CONFIG_DIR + '/' + NOTIF_FILE;
 const HEALTH_PATH = CONFIG_DIR + '/' + HEALTH_FILE;
@@ -61,6 +62,7 @@ const BACKORDER_PATH = CONFIG_DIR + '/' + BACKORDER_FILE;
 const ORDER_REVIEW_PATH = CONFIG_DIR + '/' + ORDER_REVIEW_FILE;
 const REFUND_REVIEW_PATH = CONFIG_DIR + '/' + REFUND_REVIEW_FILE;
 const INVENTORY_RULES_PATH = CONFIG_DIR + '/' + INVENTORY_RULES_FILE;
+const INVENTORY_ALERT_PATH = CONFIG_DIR + '/' + INVENTORY_ALERT_FILE;
 const YAML_MIME = 'application/x-yaml';
 
 // --- Minimal YAML helpers --------------------------------------------------
@@ -167,12 +169,11 @@ function serializeShopify(s: any): string {
 # webhooks and kept INDEPENDENT of the Admin API credentials below.
 webhookSecret: "${esc(s.webhookSecret)}"
 
-# Admin API integration (optional).
-# When enabled, product webhooks are enriched with metafields from the Shopify
-# Admin API (GraphQL). When disabled, no Admin API calls are made and the
-# connection fields below are ignored. The four fields are required when enabled.
+# Admin API integration (REQUIRED).
+# Used to enrich products with metafields, refresh the inventory mirror during
+# reconciliation, and write fulfillments back to Shopify. There is no on/off toggle:
+# the Admin API is active once the four connection fields below are filled in.
 adminApi:
-  enabled: ${a.enabled === true}
   # Shop domain
   shopDomain: "${esc(a.shopDomain)}"
   # API version
@@ -464,33 +465,47 @@ abandonedCart:
 }
 
 function serializeReconcile(r: any): string {
-	const sot = r.sourceOfTruth || {};
-	const heal = r.autoHeal || {};
-	return `# CMS <-> Shopify reconciliation (category G, #24)
+	const schedules = (r.schedules || []).filter((s: any) => String(s.at || '').trim());
+	let body = `# CMS <- Shopify reconciliation (category G, #24)
 # Deploy to: /etc/commerce/config/reconcile.yml
 # Managed by the Commerce app (Webtop > Commerce > Reconciliation). See docs/reconciliation.md.
 
 # Master switch for the reconciliation batch.
 enabled: ${r.enabled === true}
 
-# Products checked per run (a round-robin cursor covers the catalog over time).
+# Diff page size: products fetched per page when scanning Shopify for changes.
 maxPerRun: ${num(r.maxPerRun, 50)}
 
-# Which side wins per field ("cms" or "shopify") — the heal direction when enabled.
-sourceOfTruth:
-  status: "${esc(sot.status || 'cms')}"
-  price: "${esc(sot.price || 'cms')}"
-  inventory: "${esc(sot.inventory || 'shopify')}"
-
-# Automatic healing, per field. OFF by default. Inventory is never auto-healed.
-autoHeal:
-  status: ${heal.status === true}
-  price: ${heal.price === true}
-  inventory: ${heal.inventory === true}
+# Shopify is the single source of truth: reconciliation only refreshes the CMS mirror
+# FROM Shopify (status / price / inventory) and reports drift — there is no CMS->Shopify push.
 
 # Send a (debounced) notification when drift is detected.
 alert: ${r.alert === true}
-`;
+
+# Refresh the per-location inventory mirror from Shopify each pass — the "nothing missed"
+# backstop for missed inventory webhooks. On by default.
+refreshInventoryMirror: ${r.refreshInventoryMirror !== false}
+
+# Diff throttle: leave reserveBudgetPercent of the cost bucket free for foreground ops; an
+# optional fixed floor (ms) between per-product calls.
+reserveBudgetPercent: ${num(r.reserveBudgetPercent, 50)}
+minDelayMsPerCall: ${num(r.minDelayMsPerCall, 0)}
+
+# Bulk job broker watchdog timeouts (minutes). Lower for testing.
+bulkWatchdogTimeoutMinutes: ${num(r.bulkWatchdogTimeoutMinutes, 90)}
+bulkProcessingTimeoutMinutes: ${num(r.bulkProcessingTimeoutMinutes, 180)}
+
+# Additional wall-clock passes (local HH:mm). scope: diff = products changed in Shopify
+# since the last pass (status/price; cheap); inventory = a full inventory audit via the
+# Bulk job broker. Empty = none.
+schedules:`;
+	if (!schedules.length) { body += ' []\n'; return body; }
+	body += '\n';
+	for (const s of schedules) {
+		const scope = String(s.scope) === 'inventory' ? 'inventory' : 'diff';
+		body += `  - at: "${esc(String(s.at).trim())}"\n    scope: ${scope}\n`;
+	}
+	return body;
 }
 
 function serializeIngest(g: any): string {
@@ -637,6 +652,31 @@ function serializeInventoryRules(ir: any): string {
 	return body;
 }
 
+function serializeInventoryAlert(ia: any): string {
+	const policy = ['prompt', 'default', 'silent'].includes(String(ia.unconfiguredPolicy)) ? String(ia.unconfiguredPolicy) : 'prompt';
+	return `# Inventory alert behaviour.
+# Managed by the Commerce app (Webtop > Commerce > Inventory alert).
+#
+# unconfiguredPolicy — how to treat a variant that resolves to NO effective threshold
+# (no manual override, no matching rule in inventory-rules.yml, and no default there):
+#   prompt  : raise the "Set Inventory Threshold" task so an operator sets it
+#             (default; matches the public commerce.gsp promise). No alert until set.
+#   default : monitor it using defaultThreshold below.
+#   silent  : do not monitor — no task, no alert.
+unconfiguredPolicy: ${policy}
+
+# Threshold used only when unconfiguredPolicy is "default".
+defaultThreshold: ${num(ia.defaultThreshold, 0)}
+
+# Debounce window for the alert sweep, in SECONDS. Bursts of inventory_levels/update for the
+# same item that arrive within the window collapse into a single evaluation.
+#   0 : evaluate on every sweep heartbeat (~15s; the timer period on
+#       etc/eip/routes/commerce/shopify/inventory-alert-sweep.xml). This is the default.
+#   N : leave at least N seconds between sweeps. Values at or below the heartbeat behave like 0.
+sweepDebounceSeconds: ${Math.max(0, num(ia.sweepDebounceSeconds, 0))}
+`;
+}
+
 // UTF-8 safe base64 for multipart upload chunks.
 function toBase64(text: string): string {
 	const bytes = new TextEncoder().encode(text);
@@ -659,6 +699,7 @@ const NAV_GROUPS = [
 	{ labelKey: 'app.commerce.nav.group.inventory', items: [
 		{ key: 'locations', labelKey: 'app.commerce.nav.locations', icon: 'bi-geo-alt' },
 		{ key: 'inventoryRules', labelKey: 'app.commerce.nav.inventoryRules', icon: 'bi-sliders' },
+		{ key: 'inventoryAlert', labelKey: 'app.commerce.nav.inventoryAlert', icon: 'bi-exclamation-triangle' },
 		{ key: 'forecast', labelKey: 'app.commerce.nav.forecast', icon: 'bi-graph-down-arrow' },
 		{ key: 'replenishment', labelKey: 'app.commerce.nav.replenishment', icon: 'bi-cart-plus' },
 		{ key: 'backorders', labelKey: 'app.commerce.nav.backorders', icon: 'bi-hourglass-split' },
@@ -681,6 +722,7 @@ const SECTION_DIRTY: Record<string, string> = {
 	shop: 'shopDirty', notifications: 'notifDirty', health: 'healthDirty', tasks: 'slaDirty',
 	forecast: 'velocityDirty', replenishment: 'reorderDirty', locations: 'locationsDirty',
 	ingestion: 'ingestDirty', reconciliation: 'reconcileDirty', inventoryRules: 'inventoryRulesDirty',
+	inventoryAlert: 'inventoryAlertDirty',
 	backorders: 'backorderDirty', orderReview: 'orderReviewDirty', refundReview: 'refundReviewDirty',
 	storefront: 'storefrontDirty', crm: 'crmDirty',
 };
@@ -739,7 +781,7 @@ const App = {
 			// Admin API connection settings are grouped (and gated) under adminApi.
 			shop: {
 				webhookSecret: '',
-				adminApi: { enabled: false, shopDomain: '', apiVersion: '', clientID: '', clientSecret: '' },
+				adminApi: { shopDomain: '', apiVersion: '', clientID: '', clientSecret: '' },
 			},
 			notif: {
 				slack: { enabled: false, webhookUrl: '' },
@@ -813,9 +855,13 @@ const App = {
 			reconcile: {
 				enabled: true,
 				maxPerRun: 50,
-				sourceOfTruth: { status: 'cms', price: 'cms', inventory: 'shopify' },
-				autoHeal: { status: false, price: false, inventory: false },
 				alert: true,
+				refreshInventoryMirror: true,
+				reserveBudgetPercent: 50,
+				minDelayMsPerCall: 0,
+				bulkWatchdogTimeoutMinutes: 90,
+				bulkProcessingTimeoutMinutes: 180,
+				schedules: [] as any[],
 			},
 
 			// Event ingestion replay / housekeeping (ingest.yml).
@@ -846,6 +892,10 @@ const App = {
 			// criteria edited as CSV, season as from/to.
 			inventoryRules: { default: 5 as any, rules: [] as any[] },
 
+			// Inventory alert behaviour (inventory-alert.yml): unconfigured-threshold
+			// policy, its default threshold, and the sweep debounce window (seconds).
+			inventoryAlert: { unconfiguredPolicy: 'prompt', defaultThreshold: 0, sweepDebounceSeconds: 0 },
+
 			// Snapshots for dirty detection (the in-memory edit model).
 			_origShop: '',
 			_origNotif: '',
@@ -862,6 +912,7 @@ const App = {
 			_origOrderReview: '',
 			_origRefundReview: '',
 			_origInventoryRules: '',
+			_origInventoryAlert: '',
 			_messageListener: null as any,
 			_toastTimer: null as any,
 		};
@@ -883,21 +934,22 @@ const App = {
 		orderReviewDirty(): boolean { return JSON.stringify(this.orderReview) !== this._origOrderReview; },
 		refundReviewDirty(): boolean { return JSON.stringify(this.refundReview) !== this._origRefundReview; },
 		inventoryRulesDirty(): boolean { return JSON.stringify(this.inventoryRules) !== this._origInventoryRules; },
+		inventoryAlertDirty(): boolean { return JSON.stringify(this.inventoryAlert) !== this._origInventoryAlert; },
 		hasChanges(): boolean {
 			return this.shopDirty || this.notifDirty || this.healthDirty || this.slaDirty || this.velocityDirty || this.reorderDirty || this.locationsDirty
 				|| this.storefrontDirty || this.crmDirty || this.reconcileDirty || this.ingestDirty || this.backorderDirty
-				|| this.orderReviewDirty || this.refundReviewDirty || this.inventoryRulesDirty;
+				|| this.orderReviewDirty || this.refundReviewDirty || this.inventoryRulesDirty || this.inventoryAlertDirty;
 		},
 
-		// When the Admin API is enabled, all four connection fields are required.
-		// Drives the inline field markers, the save guard and the status hint.
+		// The Admin API is required, but "not configured yet" (all four fields empty) is
+		// allowed — the integration degrades with a warning until it is filled in. Only a
+		// PARTIAL config (some fields filled, not all) is invalid. Drives the inline field
+		// markers, the save guard and the status hint.
 		adminApiInvalid(): boolean {
 			const a = this.shop.adminApi;
-			if (!a.enabled) return false;
-			return !String(a.shopDomain).trim()
-				|| !String(a.apiVersion).trim()
-				|| !String(a.clientID).trim()
-				|| !String(a.clientSecret).trim();
+			const filled = [a.shopDomain, a.apiVersion, a.clientID, a.clientSecret]
+				.filter((v: any) => String(v == null ? '' : v).trim() !== '').length;
+			return filled > 0 && filled < 4;
 		},
 		// An enabled channel must have its required connection fields. Drives the
 		// inline markers, the save guard and the status hint (mis-config guard).
@@ -1062,6 +1114,8 @@ const App = {
 		removeThreshold(rows: any[], i: number) { rows.splice(i, 1); },
 		addRule() { this.inventoryRules.rules.push({ name: '', productType: '', vendor: '', tags: '', seasonFrom: '', seasonTo: '', minVelocityPerDay: '', threshold: 0 }); },
 		removeRule(i: number) { this.inventoryRules.rules.splice(i, 1); },
+			addSchedule() { this.reconcile.schedules.push({ at: '00:00', scope: 'diff' }); },
+			removeSchedule(i: number) { this.reconcile.schedules.splice(i, 1); },
 
 		// ---- Window controls -------------------------------------------------
 		onMinimizeWindow() { this.instance?.minimize(); },
@@ -1126,7 +1180,7 @@ const App = {
 		async loadAll() {
 			try {
 				const [shopText, notifText, healthText, slaText, velocityText, reorderText, locationsText,
-					storefrontText, crmText, reconcileText, ingestText, backorderText, orderReviewText, refundReviewText, inventoryRulesText] = await Promise.all([
+					storefrontText, crmText, reconcileText, ingestText, backorderText, orderReviewText, refundReviewText, inventoryRulesText, inventoryAlertText] = await Promise.all([
 					this.readText(SHOPIFY_PATH),
 					this.readText(NOTIF_PATH),
 					this.readText(HEALTH_PATH),
@@ -1142,6 +1196,7 @@ const App = {
 					this.readText(ORDER_REVIEW_PATH),
 					this.readText(REFUND_REVIEW_PATH),
 					this.readText(INVENTORY_RULES_PATH),
+					this.readText(INVENTORY_ALERT_PATH),
 				]);
 
 				const s = parseSimpleYaml(shopText || '');
@@ -1153,7 +1208,6 @@ const App = {
 				this.shop = {
 					webhookSecret: String(s.webhookSecret || ''),
 					adminApi: {
-						enabled: a.enabled === true,
 						shopDomain: String(a.shopDomain ?? s.shopDomain ?? ''),
 						apiVersion: String(a.apiVersion ?? s.apiVersion ?? ''),
 						clientID: String(a.clientID ?? s.clientID ?? ''),
@@ -1317,18 +1371,20 @@ const App = {
 				};
 
 				const rc = parseYaml(reconcileText || '');
-				const rcSot = obj(rc.sourceOfTruth), rcHeal = obj(rc.autoHeal);
 				const hasRc = !!reconcileText;
 				this.reconcile = {
 					enabled: hasRc ? (rc.enabled === true) : true,
 					maxPerRun: Number(rc.maxPerRun) || 50,
-					sourceOfTruth: {
-						status: String(rcSot.status || 'cms'),
-						price: String(rcSot.price || 'cms'),
-						inventory: String(rcSot.inventory || 'shopify'),
-					},
-					autoHeal: { status: rcHeal.status === true, price: rcHeal.price === true, inventory: rcHeal.inventory === true },
 					alert: hasRc ? (rc.alert === true) : true,
+					refreshInventoryMirror: hasRc ? (rc.refreshInventoryMirror !== false) : true,
+					reserveBudgetPercent: Number.isFinite(Number(rc.reserveBudgetPercent)) ? Number(rc.reserveBudgetPercent) : 50,
+					minDelayMsPerCall: Number.isFinite(Number(rc.minDelayMsPerCall)) ? Number(rc.minDelayMsPerCall) : 0,
+					bulkWatchdogTimeoutMinutes: Number(rc.bulkWatchdogTimeoutMinutes) || 90,
+					bulkProcessingTimeoutMinutes: Number(rc.bulkProcessingTimeoutMinutes) || 180,
+					schedules: (Array.isArray(rc.schedules) ? rc.schedules : []).map((s: any) => ({
+						at: String((s && s.at) || '').trim(),
+						scope: (s && String(s.scope) === 'inventory') ? 'inventory' : 'diff',
+					})),
 				};
 
 				const ig = parseYaml(ingestText || '');
@@ -1393,6 +1449,14 @@ const App = {
 							threshold: Number(r.threshold) || 0,
 						};
 					}),
+				};
+
+				const ia = parseSimpleYaml(inventoryAlertText || '');
+				const iaPolicy = String(ia.unconfiguredPolicy || 'prompt').trim().toLowerCase();
+				this.inventoryAlert = {
+					unconfiguredPolicy: (iaPolicy === 'default' || iaPolicy === 'silent') ? iaPolicy : 'prompt',
+					defaultThreshold: Number(ia.defaultThreshold) || 0,
+					sweepDebounceSeconds: Math.max(0, Number(ia.sweepDebounceSeconds) || 0),
 				};
 
 				this.snapshot();
@@ -1475,6 +1539,9 @@ const App = {
 				if (this.inventoryRulesDirty) {
 					await this.writeText(CONFIG_DIR, INVENTORY_RULES_FILE, serializeInventoryRules(this.inventoryRules));
 				}
+				if (this.inventoryAlertDirty) {
+					await this.writeText(CONFIG_DIR, INVENTORY_ALERT_FILE, serializeInventoryAlert(this.inventoryAlert));
+				}
 				this.snapshot();
 				this.status = this.t('app.commerce.status.saved', undefined, 'All changes saved.');
 				this.statusKind = 'ok';
@@ -1504,6 +1571,7 @@ const App = {
 			this._origOrderReview = JSON.stringify(this.orderReview);
 			this._origRefundReview = JSON.stringify(this.refundReview);
 			this._origInventoryRules = JSON.stringify(this.inventoryRules);
+			this._origInventoryAlert = JSON.stringify(this.inventoryAlert);
 		},
 
 		showToast(message: string, isError: boolean) {

@@ -1,21 +1,15 @@
-// Determine whether the Shopify Admin API integration is enabled.
+// Determine whether the Shopify Admin API is CONFIGURED.
 //
-// The Admin API is optional: when enabled, the product webhook pipeline enriches
-// products with metafields fetched from the Shopify Admin API; when disabled, no
-// Admin API calls are made. This script is the single source of truth for that
-// decision so the Camel route can branch on a simple boolean header (mirroring
-// how checkThresholdConfig.groovy gates the BPMN flow).
+// The Admin API is REQUIRED by the commerce integration, but a fresh deployment may not
+// have filled the credentials yet. This script reports whether the four connection fields
+// are configured, so the product webhook route can skip metafield enrichment with a clear
+// signal (rather than calling Shopify with empty credentials) until shopify.yml is filled.
 //
 // Reads:
-//   /etc/commerce/config/shopify.yml -> adminApi.enabled
+//   /etc/commerce/config/shopify.yml -> adminApi.{shopDomain, apiVersion, clientID, clientSecret}
 //
 // Sets exchange attribute:
-//   - adminApiEnabled: true only when adminApi.enabled is explicitly true.
-//
-// The integration is treated as DISABLED unless explicitly turned on. Any other
-// state (flag absent, config missing/unreadable) yields false so that product
-// webhooks are still saved but no Admin API call is attempted with placeholder
-// or incomplete credentials.
+//   - adminApiEnabled: true when all four connection fields are configured.
 
 import commerce.ShopifyAdmin
 
@@ -29,4 +23,4 @@ try {
 }
 
 context.setAttribute("adminApiEnabled", adminApiEnabled)
-log.info("Shopify Admin API enabled: ${adminApiEnabled}")
+log.info("Shopify Admin API configured: ${adminApiEnabled}")

@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<camel>
+
+    <!-- Shopify Bulk job broker.
+         A single serialized lane runs one Shopify Bulk Operation at a time; completion is
+         event-driven (bulk_operations/finish webhook) with a watchdog safety net. -->
+    <routeConfiguration id="commerce-shopify-bulk-error-handler">
+        <onException>
+            <exception>java.lang.Exception</exception>
+            <handled>
+                <constant>true</constant>
+            </handled>
+            <log message="commerce-shopify-bulk error: ${exception.message}"
+                 loggingLevel="WARN"/>
+        </onException>
+    </routeConfiguration>
+
+    <!-- Enqueue a bulk job (idempotent per type). Producers send a `bulkJobType`
+         header here instead of calling Shopify directly. -->
+    <route id="commerce-shopify-bulk-enqueue" routeConfigurationId="commerce-shopify-bulk-error-handler">
+        <from uri="direct:commerce-shopify-bulk-enqueue"/>
+        <choice>
+            <when>
+                <simple>${header.runAs} == null || ${header.runAs} == ''</simple>
+                <setHeader name="runAs"><constant>commerce-service-user</constant></setHeader>
+            </when>
+        </choice>
+        <toD uri="cms:/etc/commerce/scripts/shopify/enqueueBulkJob.groovy?inputs=bulkJobType"/>
+    </route>
+
+    <!-- Single lane: start at most one Shopify bulk at a time (cluster-guarded in-script). -->
+    <route id="commerce-shopify-bulk-lane" routeConfigurationId="commerce-shopify-bulk-error-handler">
+        <from uri="timer:commerce-shopify-bulk-lane?period=30000&amp;delay=120000"/>
+        <setHeader name="runAs"><constant>commerce-service-user</constant></setHeader>
+        <toD uri="cms:/etc/commerce/scripts/shopify/runBulkLane.groovy"/>
+    </route>
+
+    <!-- bulk_operations/finish webhook (dispatched from ingest.xml by topic). Correlates the
+         finished bulk to its job and hands the heavy reconcile off to the result route. -->
+    <route id="commerce-shopify-bulk-finish" routeConfigurationId="commerce-shopify-bulk-error-handler">
+        <from uri="direct:commerce-shopify-bulk-finish"/>
+        <choice>
+            <when>
+                <simple>${header.runAs} == null || ${header.runAs} == ''</simple>
+                <setHeader name="runAs"><constant>commerce-service-user</constant></setHeader>
+            </when>
+        </choice>
+        <toD uri="cms:/etc/commerce/scripts/shopify/onBulkFinish.groovy?inputs=bulkPayload=@body"/>
+    </route>
+
+    <!-- Heavy result download + streaming reconcile (async; the lane stays RUNNING until this
+         marks the job COMPLETED). -->
+    <route id="commerce-shopify-bulk-result" routeConfigurationId="commerce-shopify-bulk-error-handler">
+        <from uri="direct:commerce-shopify-bulk-result"/>
+        <choice>
+            <when>
+                <simple>${header.runAs} == null || ${header.runAs} == ''</simple>
+                <setHeader name="runAs"><constant>commerce-service-user</constant></setHeader>
+            </when>
+        </choice>
+        <toD uri="cms:/etc/commerce/scripts/shopify/reconcileBulkResult.groovy?inputs=bulkJobId"/>
+    </route>
+
+    <!-- Liveness watchdog: recover a lost finish webhook / release a stuck lane. -->
+    <route id="commerce-shopify-bulk-watchdog" routeConfigurationId="commerce-shopify-bulk-error-handler">
+        <from uri="timer:commerce-shopify-bulk-watchdog?period=300000&amp;delay=300000"/>
+        <setHeader name="runAs"><constant>commerce-service-user</constant></setHeader>
+        <toD uri="cms:/etc/commerce/scripts/shopify/watchdogBulkJobs.groovy"/>
+    </route>
+
+</camel>

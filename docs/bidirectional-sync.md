@@ -34,8 +34,8 @@ the programmatic surface a Webtop app / form / ichigo.js storefront calls.
 
 ## Gating, safety & audit
 
-- **Enablement** — gated on `adminApi.enabled` in `shopify.yml`, the same switch as
-  metafield enrichment and fulfillment write-back. When disabled the endpoint
+- **Enablement** — requires the Admin API to be configured in `shopify.yml` (the same as
+  metafield enrichment and fulfillment write-back). When it is not configured the endpoint
   returns `409` and never calls Shopify.
 - **Dry run** (#28) — `"dryRun": true` validates the request and returns the exact
   target (gids + values) that *would* be written, without calling Shopify. Safe for

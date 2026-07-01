@@ -2,50 +2,85 @@
 
 When a Shopify product's inventory falls below a configured threshold, this
 mechanism automatically raises a manual review task for the person in charge and
-sends a notification to Slack / Discord. All settings are edited together from
-the **Commerce** app in Webtop.
+notifies the registered channels (Slack / Discord / Teams / LINE / Email /
+generic webhook). All settings are edited together from the **Commerce** app in
+Webtop (you can also edit the configuration files directly).
+
+> **Inventory is evaluated from the `inventory_levels/update` webhook**, and the
+> decision uses the **sum of stock across all locations (the local mirror)**.
+> Product webhooks (`products/*`) handle saving product data, building the
+> reverse index, and threshold onboarding.
 
 ---
 
 ## 1. Overall Flow
 
-1. When a product is updated in Shopify, a webhook is received.
-2. The product data is saved, and the inventory alert workflow starts.
-3. On the **first run**, if no threshold has been set for that product, a "Set
-   Inventory Threshold" task is created.
-4. If the inventory is below the threshold, an "Inventory Review" task is created.
-5. When a task is created, a notification is sent to the registered Slack / Discord.
+Inventory evaluation (alerts) and product onboarding (threshold setup) run as two
+separate paths.
+
+**Product onboarding path (`products/create` / `products/update`)**
+
+1. When a product webhook arrives, the product data is saved and a reverse index
+   `inventory_item_id → product/variant` is built.
+2. If the product has no threshold yet, a "Set Inventory Threshold" task is
+   created according to the **unconfigured-threshold policy** (default = `prompt`).
+
+**Inventory alert path (`inventory_levels/update`)**
+
+3. When an inventory webhook arrives, the per-location inventory mirror is updated
+   **newest-wins**, and the item is marked "pending" for evaluation.
+4. A short-period sweep (about every 15 seconds) evaluates the pending items.
+   - It sums stock across all locations (the mirror total) and compares it with
+     the per-variant threshold.
+   - **Edge trigger**: a "Manual Inventory Check" task is filed only at the moment
+     stock crosses below the threshold (ok → low). While it stays below
+     (low → low), it does not re-file. After recovery (low → ok), it can fire again.
+5. When the task is created, a notification is sent to every enabled channel.
 6. The person in charge opens the task in Webtop's **Tasks** app to review and respond.
 
+**Backstop (nothing missed)**
+
+7. A reconciliation batch (default: a daily full inventory audit at 00:00 via the
+   Bulk job broker) compares Shopify's authoritative stock with the mirror and
+   re-queues any item whose inventory webhook was missed.
+
 > If there is already a workflow in progress for the same product, a new webhook
-> will not start it a second time (the latest data has already been saved, so
-> nothing is missed).
+> will not start it a second time (re-entry guard; businessKey = product ID). The
+> latest data is already saved in the mirror, so nothing is missed.
 
 ---
 
 ## 2. Initial Setup (Commerce App)
 
-Open **Commerce** from the Webtop menu (administrators only). Switch screens
-using the icon in the top-left, and after editing, click 💾 (Save all) to
-**save everything at once**. If there are unsaved changes, "Unsaved changes" is
-shown in the status bar.
+Open **Commerce** from the Webtop menu (administrators only). Switch screens using
+the left-hand nav, and after editing, click 💾 (Save all) to **save everything at
+once**. If there are unsaved changes, "Unsaved changes" is shown in the status
+bar. (You may also edit each configuration file directly with the Text Editor;
+they live at `/etc/commerce/config/*.yml`.)
+
+> **By default the inventory alert is dormant.** The routes, timer, BPMN, and
+> reconciliation batch are resident from deployment, but the shipped
+> configuration has **no Shopify connection** (the webhook secret is a placeholder
+> and the four Admin API fields are empty) and **all notification channels are
+> disabled**, so nothing is filed or notified. To use it, configure the following.
 
 ### 2-1. Shop (Shopify Connection)
-Edit `etc/commerce/config/shopify.yml`. The settings are divided into two
-groups: **Webhook** and **Admin API**.
+Edit `etc/commerce/config/shopify.yml`. The settings are divided into two groups:
+**Webhook** and **Admin API**.
 
 **Webhook (required; independent of the Admin API)**
 
 | Item | Description |
 |---|---|
-| Webhook shared secret | The webhook signing secret from Shopify Admin > Notifications > Webhooks. Used to verify incoming webhooks (HMAC). **Required regardless of whether the Admin API is ON or OFF.** |
+| Webhook shared secret | The webhook signing secret from Shopify Admin > Notifications > Webhooks. Used to verify incoming webhooks (HMAC-SHA256). **Without it, no webhooks can be received at all.** |
 
-**Admin API (optional)**
+**Admin API (required)**
 
-When "Use the Admin API" is turned ON, metafields are fetched from the Shopify
-Admin API and attached to the product when a product webhook is received. When
-OFF, the Admin API is not called at all, and the following 4 items become
-**disabled (not editable)**.
+The Admin API is a **required dependency** (there is no ON/OFF toggle). It becomes
+active once all four fields below are filled in; until then the related features
+(first-seen resolution, authoritative mirror refresh during reconciliation,
+metafield enrichment, fulfillment write-back) are skipped with an "Admin API not
+configured" warning.
 
 | Item | Description |
 |---|---|
@@ -53,13 +88,41 @@ OFF, the Admin API is not called at all, and the following 4 items become
 | API version | e.g. `2026-01` |
 | Client ID / Client secret | App credentials from Shopify Partners |
 
-> When turned ON, all 4 items above are **required** (you cannot save if they are
-> left empty). Each secret item can be shown / hidden with the 👁 icon on the right.
+> All four items are **required** (you cannot save a partial configuration). Each
+> secret can be shown / hidden with the 👁 icon on the right. Webhook receipt and
+> mirror updates work without the Admin API, but first-seen resolution and
+> reconciliation require it.
 
-### 2-2. Notifications (Notification Targets)
+### 2-2. Shopify Webhook Subscriptions
+In the Shopify admin (or your app's scopes), subscribe to the following topics.
+
+| Topic | Purpose |
+|---|---|
+| `inventory_levels/update` | **Primary trigger for inventory alerts** (evaluation) |
+| `products/create` / `products/update` | Save products, build reverse index, threshold onboarding |
+| `products/delete` | Clean up the reverse index |
+| `locations/create` / `locations/update` | Location metadata |
+| `bulk_operations/finish` | Completion signal for the reconciliation (full inventory audit) |
+
+### 2-3. Notifications (Notification Targets)
 Edit `etc/commerce/config/notifications.yml` (**a separate file from the Shopify
-credentials**). For each of Slack / Discord, set the enable checkbox and the
-Incoming Webhook URL.
+credentials**). The supported channels are **Slack / Discord / Teams / LINE /
+Email / generic webhook** (6 total). **All are disabled (`enabled: false`) out of
+the box**, so enable the channels you want and set their destinations (Incoming
+Webhook URL / token / SMTP, etc.) — at least one. A single task-created event is
+delivered to every enabled channel.
+
+### 2-4. Threshold Policy (optional)
+- `etc/commerce/config/inventory-rules.yml`: rules that resolve the per-variant
+  **effective threshold**. Precedence: **manual override → rule → default → none
+  (unmonitored)**. Ships with `default: 5` and sample rules (so a threshold is
+  resolved from the start).
+- `etc/commerce/config/inventory-alert.yml`:
+  - `unconfiguredPolicy` — how to treat an item with no resolvable threshold.
+    `prompt` (default: raise the "Set Inventory Threshold" task) / `default`
+    (monitor using `defaultThreshold`) / `silent` (do not monitor).
+  - `sweepDebounceSeconds` — debounce window for the sweep in seconds (default 0 =
+    every ~15s heartbeat).
 
 ---
 
@@ -71,46 +134,38 @@ Incoming Webhook URL.
 4. Paste it into Commerce app > Notifications > Slack, and turn ON "Enable Slack notifications".
 5. Save with 💾.
 
----
-
-## 4. How to Set Up Discord
-
-1. Open "Settings (⚙)" > "Integrations" > "Webhooks" for the Discord channel you
-   want to notify.
-2. Create a "New Webhook" and "Copy Webhook URL".
-   (`https://discord.com/api/webhooks/...`)
-3. Paste it into Commerce app > Notifications > Discord, and turn ON "Enable Discord notifications".
-4. Save with 💾.
+(Discord / Teams / LINE / Email / generic webhook are configured the same way — set
+each channel's destination and enable it.)
 
 > Even if sending a notification fails, the business process is not stopped (it is
-> only recorded in the log). Channels with an unset / invalid URL are excluded
-> from sending.
+> only logged). Channels with an unset / invalid URL are excluded from sending.
 
 ---
 
-## 5. Handling Tasks (Tasks App)
+## 4. Handling Tasks (Tasks App)
 
-When a notification arrives, open the corresponding task in Webtop's **Tasks**
-app. The form automatically follows the light/dark theme. Operate on a task after
+When a notification arrives, open the corresponding task in Webtop's **Tasks** app.
+The form automatically follows the light/dark theme. Operate on a task after
 "Claim"ing it (assigning it to yourself).
 
-### 5-1. Set Inventory Threshold
-- Shown when the product does not yet have a threshold, such as on the first run.
-- Enter an "alert threshold" for each variant ("Apply to all" lets you fill them
-  in all at once).
-- Once the inventory falls below the threshold, a review task will be raised on
-  subsequent updates.
+### 4-1. Set Inventory Threshold
+- Shown when the product does not yet have a threshold, such as on the first run
+  (when `unconfiguredPolicy: prompt`).
+- Enter an "alert threshold" for each variant ("Apply to all" fills them in at once).
+- Once inventory (summed across all locations) falls below the threshold, a review
+  task will be raised on subsequent evaluations.
 - Save and complete the task with "Save thresholds & complete".
 
-### 5-2. Manual Inventory Check
+### 4-2. Manual Inventory Check
 - Shown for products whose inventory has fallen below the threshold.
-- You can check the inventory count, threshold, and alert status for each variant.
+- You can check the inventory count (**summed across all locations**), effective
+  threshold, and alert status for each variant.
 - Leave notes as needed, and use "View on Shopify" to go to the admin screen.
 - Once handled, complete the task with "Mark as reviewed".
 
 ---
 
-## 6. Notes on Deployment
+## 5. Notes on Deployment
 
 - Configuration, scripts, forms, and BPMN (under `etc/` and `content/`) are
   deployed to the CMS deployment paths.
@@ -118,23 +173,23 @@ app. The form automatically follows the light/dark theme. Operate on a task afte
   source under `webtop/src/webtop/apps/commerce` is self-contained — its only
   build-time dependency is the published `@mintjamsinc/ichigojs` runtime — so it
   does not require the cms0 Webtop project. Build with `npm run build`
-  (development) or `npm run build:prod` (production) from `webtop/`. The output
-  in `dist/webtop/apps/commerce/` (`app.js` / `index.html` / `assets` /
-  `app.yml`) can be dropped straight into a deployed Webtop's `apps/` directory.
-  The shared Webtop CSS and Bootstrap Icons that `index.html` references via
-  `../../assets/...` belong to the Webtop core at the deploy target and are not
-  part of this build.
+  (development) or `npm run build:prod` (production) from `webtop/`. The output in
+  `dist/webtop/apps/commerce/` (`app.js` / `index.html` / `assets` / `app.yml`)
+  can be dropped straight into a deployed Webtop's `apps/` directory. The shared
+  Webtop CSS and Bootstrap Icons that `index.html` references via `../../assets/...`
+  belong to the Webtop core at the deploy target and are not part of this build.
 - No additional library (JAR) is required for notifications (it uses the HTTP
   client built into the JDK).
 
 ---
 
-## 7. Troubleshooting
+## 6. Troubleshooting
 
 | Symptom | Things to Check |
 |---|---|
-| No notification arrives | Is "Enable" ON in Notifications / Is the Webhook URL correct / Are there any `notifyTaskCreated` warnings in the server log |
-| Review task is not raised | Is a threshold already set for that product (if not, the "Set Threshold" task comes first) / Is the inventory below the threshold |
-| Many tasks pile up for the same product | Is the multiple-start guard working (look for "already running ... skipping" in the log) |
+| Nothing happens at all | Are the Shop webhook secret and the 4 Admin API fields set / Are `inventory_levels/update` and `products/*` subscribed on the Shopify side |
+| No notification arrives | Is the target channel "Enable" ON in Notifications / Is the destination (URL, etc.) correct / Any `notifyTaskCreated` warnings in the server log |
+| Review task is not raised | Does the product resolve a threshold (`inventory-rules.yml` default / rule / manual) / Is inventory (summed across locations) below the threshold / Was it already judged low recently (edge trigger) |
+| Many tasks pile up for the same product | Is the re-entry guard working (look for "already running ... not starting another" in the log) |
 | Form says "Please open from the Tasks app" | The form is meant to be opened via the Tasks app (it does not work from a standalone URL) |
-| Cannot save in the Commerce app | Is the content service available / Are there any save (multipart upload) errors in the server log / When the Admin API is ON, all four connection fields must be filled in |
+| Cannot save in the Commerce app | Is the content service available / Any save (multipart upload) errors in the server log / Are all four Admin API connection fields filled in (a partial configuration cannot be saved) |

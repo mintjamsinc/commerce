@@ -83,6 +83,6 @@ gracefully.)
 
 | Script | Use |
 |---|---|
-| `checkInventoryLevel.groovy` | compares each variant's quantity against its effective threshold |
+| `sweepInventoryAlerts.groovy` | timer sweep: compares each variant's multi-location mirror total against its effective threshold |
 | `checkThresholdConfig.groovy` | decides whether the manual setup task is needed (effective threshold exists?) |
 | `notifyTaskCreated.groovy` | shows the effective threshold and its origin in the alert |

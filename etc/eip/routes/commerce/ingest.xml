@@ -129,6 +129,10 @@
                 <simple>${header.event_topic} == 'locations/create' || ${header.event_topic} == 'locations/update'</simple>
                 <toD uri="direct:shopify-location"/>
             </when>
+            <when>
+                <simple>${header.event_topic} == 'bulk_operations/finish'</simple>
+                <toD uri="direct:commerce-shopify-bulk-finish"/>
+            </when>
             <otherwise>
                 <!-- Any other topic (customers/*, fulfillments/*, carts/*,
                      checkouts/*, …) is normalized into a current-state entity

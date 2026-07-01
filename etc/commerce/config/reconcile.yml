@@ -1,36 +1,50 @@
 # CMS <-> Shopify reconciliation (category G, #24)
 # Deploy to: /etc/commerce/config/reconcile.yml
-# Managed by the Commerce app (Webtop > Commerce).
+# Managed by the Commerce app (Webtop > Commerce > Reconciliation). See docs/reconciliation.md.
 #
-# A periodic batch compares the CMS mirror with Shopify's current state (product
-# status, variant price, variant inventory), records drift to a report and alerts.
-# Healing is OFF by default (detect + report first); enable it per field once you
-# trust the source-of-truth policy. Requires the Admin API (shopify.yml ->
-# adminApi.enabled). See docs/reconciliation.md.
+# A periodic batch compares the CMS mirror with Shopify's current state (product status,
+# variant price, per-location inventory), records drift to a report, alerts, and refreshes
+# the CMS mirror FROM Shopify. Shopify is the single source of truth — there is no
+# CMS->Shopify push. Requires the Admin API (shopify.yml).
 
 # Master switch for the reconciliation batch.
 enabled: true
 
-# Products checked per run (the batch advances a round-robin cursor across runs, so
-# the whole catalog is covered over time without a large API burst).
+# Diff page size: products fetched per page when scanning Shopify for changes (diff scope).
 maxPerRun: 50
-
-# Which side wins for each field ("cms" or "shopify"). This decides the heal
-# direction when auto-heal is enabled:
-#   cms     -> push the CMS value to Shopify (ShopifyWrite)
-#   shopify -> refresh the CMS mirror from Shopify
-sourceOfTruth:
-  status: "cms"        # publish/unpublish is typically driven from the CMS
-  price: "cms"         # price is typically authored/owned in the CMS
-  inventory: "shopify" # stock is typically authoritative in Shopify (POS, etc.)
-
-# Automatic healing, per field. OFF by default: reconciliation only detects +
-# reports + alerts until you opt in. Inventory is never auto-healed (per-location
-# mirror vs aggregate cannot be written back losslessly) — it is always reported.
-autoHeal:
-  status: false
-  price: false
-  inventory: false
 
 # Send a (debounced) notification when drift is detected.
 alert: true
+
+# Refresh the per-location inventory mirror from Shopify's authoritative stock during each
+# pass, then re-evaluate alerts for any item whose stock had drifted — the "nothing missed"
+# backstop for missed / lost inventory webhooks. On by default; set false to disable.
+refreshInventoryMirror: true
+
+# Diff throttle ("accelerator"): the diff scope makes one foreground GraphQL call per changed
+# product, sharing the per-app/per-shop cost bucket with foreground work (fulfillment / PIM).
+#   reserveBudgetPercent : pause until at least this % of the cost bucket is free before the
+#                          next call (leaves headroom for foreground; 0 = use all).
+#   minDelayMsPerCall    : a fixed floor (ms) between per-product calls (0 = none).
+reserveBudgetPercent: 50
+minDelayMsPerCall: 0
+
+# Bulk job broker watchdog (recovers a lost bulk_operations/finish webhook / releases a stuck
+# lane). Lower for testing.
+#   bulkWatchdogTimeoutMinutes   : a RUNNING job older than this is re-checked against Shopify.
+#   bulkProcessingTimeoutMinutes : a PROCESSING (downloading/reconciling) job stuck longer than
+#                                  this is failed (lane released).
+bulkWatchdogTimeoutMinutes: 90
+bulkProcessingTimeoutMinutes: 180
+
+# Additional wall-clock passes. Each entry fires
+# a reconciliation at a local HH:mm with the given scope:
+#   diff      — only products Shopify changed since the last pass (status/price; cheap)
+#   inventory — a full inventory audit via the Bulk job broker
+# Empty = none. (The hourly round-robin baseline was retired on 2026-06-30.)
+# Shipped default: a daily full inventory audit at 00:00. It replaces the retired
+# round-robin's inventory backstop. Add `diff` rows for a periodic status/price backstop, and
+# more frequent `inventory` rows for a tighter recovery SLA. Removing it is the operator's call.
+schedules:
+  - at: "00:00"
+    scope: inventory

@@ -1,0 +1,19 @@
+# Inventory alert behaviour.
+#
+# unconfiguredPolicy — how to treat a variant that resolves to NO effective threshold
+# (no manual override, no matching rule in inventory-rules.yml, and no default there):
+#   prompt  : raise the "Set Inventory Threshold" task so an operator sets it
+#             (default; matches the public commerce.gsp promise). No alert until set.
+#   default : monitor it using defaultThreshold below.
+#   silent  : do not monitor — no task, no alert.
+unconfiguredPolicy: prompt
+
+# Threshold used only when unconfiguredPolicy is "default".
+defaultThreshold: 0
+
+# Debounce window for the alert sweep, in SECONDS. Bursts of inventory_levels/update for the
+# same item that arrive within the window collapse into a single evaluation.
+#   0 : evaluate on every sweep heartbeat (~15s; the timer period on
+#       etc/eip/routes/commerce/shopify/inventory-alert-sweep.xml). This is the default.
+#   N : leave at least N seconds between sweeps. Values at or below the heartbeat behave like 0.
+sweepDebounceSeconds: 0

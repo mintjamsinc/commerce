@@ -19,7 +19,7 @@ webhook.groovy ──→ refund-created route ──→ JCR (store refund) ─�
                                                        ┌──────────────┴──────────────┐
                                                        │ No rule matched              │ Rule matched
                                                        ▼                              ▼
-                                                       └────→ record refund ←── Refund Review task → Slack/Discord
+                                                       └────→ record refund ←── Refund Review task → notify
                                                                   │  update order's refund summary
                                                                   ▼
                                                               resolved
@@ -49,8 +49,9 @@ transactions; the currency is taken from those transactions.
 
 Operators work these in the Webtop **Tasks** app:
 
-1. A new **Refund Review** task appears (and a notice is posted to Slack /
-   Discord). Open it to see the refund amount, the order it belongs to, the
+1. A new **Refund Review** task appears (and a notice is posted to every enabled
+   notification channel — Slack / Discord / Teams / LINE / webhook / email).
+   Open it to see the refund amount, the order it belongs to, the
    refunded line items, whether inventory was restocked, the refund note, and —
    highlighted at the top — the **reasons it was flagged**.
 2. **Claim** the task to take ownership. Only the assignee can acknowledge it or
@@ -81,8 +82,11 @@ The refund's own `commerce:status` ends at `resolved`.
 1. **Refund screening rules** — edit `/etc/commerce/config/refund-review.yml`
    (see the table above).
 2. **Notifications** — the Refund Review task posts to the same destinations as
-   the order and inventory tools. Configure them in the Webtop **Commerce** app
-   under *Notifications*, or directly in `/etc/commerce/config/notifications.yml`.
+   the order and inventory tools: every enabled channel in the shared registry
+   (Slack, Discord, Teams, LINE, generic webhook, email). Configure them in the
+   Webtop **Commerce** app under *Notifications*, or directly in
+   `/etc/commerce/config/notifications.yml`. All channels ship disabled, so
+   enable at least one to receive notices (tasks are still raised either way).
 3. **Shopify webhook** — subscribe the `refunds/create` topic to the shared
    webhook endpoint (the same receiver used by `orders/paid` and the product
    topics). No Admin API access is required.

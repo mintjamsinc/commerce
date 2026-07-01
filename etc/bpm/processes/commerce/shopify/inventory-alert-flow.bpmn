@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+                  id="Definitions_inventory_alert" targetNamespace="http://bpmn.io/schema/bpmn">
+  <!-- Inventory alert workflow.
+       Started by sweepInventoryAlerts.groovy (via
+       ProcessAPI) once the multi-location mirror total of a variant crosses below its
+       effective threshold (the ok→low edge). The sweep guards against duplicates with an
+       active-instance query keyed by the product ID, so at most one open review per product.
+
+       The flow itself is minimal: present the Manual Inventory Check to an operator and end.
+       The low/threshold decision was already made by the sweep, so there is no re-check here
+       (the review form fetches the current per-location state itself).
+
+       Process variables (set by the ProcessStarter): productID, productPath.
+
+       NOTE: the user task id is intentionally "UserTask_355fcd40" so the shared
+       setWorkflowStatus.groovy maps it to commerce:status = "review_pending" with no change
+       (the same task previously lived in product-update-flow, from which it was removed). -->
+  <bpmn:process id="inventory-alert-flow" name="Inventory Alert Flow" isExecutable="true">
+    <bpmn:startEvent id="StartEvent_inventoryAlert">
+      <bpmn:outgoing>Flow_start_review</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <!-- An operator reviews the low-stock alert via a manual task. -->
+    <bpmn:userTask id="UserTask_355fcd40" name="Manual Inventory Check" camunda:formKey="cms:/content/commerce/forms/shopify/inventory-level-review.html">
+      <bpmn:extensionElements>
+        <!-- Advance the processing status to "review_pending" (waiting on an operator). -->
+        <camunda:taskListener event="create" class="org.mintjams.script.bpm.CmsDelegate">
+          <camunda:field name="path">
+            <camunda:string>/etc/commerce/scripts/shopify/setWorkflowStatus.groovy</camunda:string>
+          </camunda:field>
+          <camunda:field name="inputs">
+            <camunda:string>productPath</camunda:string>
+          </camunda:field>
+          <camunda:field name="runAs">
+            <camunda:string>commerce-service-user</camunda:string>
+          </camunda:field>
+        </camunda:taskListener>
+        <camunda:taskListener event="create" class="org.mintjams.script.bpm.CmsDelegate">
+          <camunda:field name="path">
+            <camunda:string>/etc/commerce/scripts/shopify/notifyTaskCreated.groovy</camunda:string>
+          </camunda:field>
+          <!-- Task listeners run with no JCR identity; runAs avoids a guest login
+               that cannot read this script (matches the setWorkflowStatus listener). -->
+          <camunda:field name="runAs">
+            <camunda:string>commerce-service-user</camunda:string>
+          </camunda:field>
+        </camunda:taskListener>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_start_review</bpmn:incoming>
+      <bpmn:outgoing>Flow_review_end</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:endEvent id="EndEvent_inventoryAlert">
+      <bpmn:extensionElements>
+        <!-- Workflow finished: mark the product as "monitored" (terminal status). -->
+        <camunda:executionListener event="end" class="org.mintjams.script.bpm.CmsDelegate">
+          <camunda:field name="path">
+            <camunda:string>/etc/commerce/scripts/shopify/setWorkflowStatus.groovy</camunda:string>
+          </camunda:field>
+          <camunda:field name="inputs">
+            <camunda:string>productPath</camunda:string>
+          </camunda:field>
+          <camunda:field name="runAs">
+            <camunda:string>commerce-service-user</camunda:string>
+          </camunda:field>
+        </camunda:executionListener>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_review_end</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- Sequence flows -->
+    <bpmn:sequenceFlow id="Flow_start_review" sourceRef="StartEvent_inventoryAlert" targetRef="UserTask_355fcd40"/>
+    <bpmn:sequenceFlow id="Flow_review_end" sourceRef="UserTask_355fcd40" targetRef="EndEvent_inventoryAlert"/>
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_inventory_alert">
+    <bpmndi:BPMNPlane id="BPMNPlane_inventory_alert" bpmnElement="inventory-alert-flow">
+      <bpmndi:BPMNShape id="Shape_StartEvent_inventoryAlert" bpmnElement="StartEvent_inventoryAlert">
+        <dc:Bounds x="140" y="202" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_UserTask_355fcd40" bpmnElement="UserTask_355fcd40">
+        <dc:Bounds x="240" y="180" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_EndEvent_inventoryAlert" bpmnElement="EndEvent_inventoryAlert">
+        <dc:Bounds x="402" y="202" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_Flow_start_review" bpmnElement="Flow_start_review">
+        <di:waypoint x="176" y="220"/>
+        <di:waypoint x="240" y="220"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_review_end" bpmnElement="Flow_review_end">
+        <di:waypoint x="340" y="220"/>
+        <di:waypoint x="402" y="220"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

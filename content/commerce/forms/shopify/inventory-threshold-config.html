@@ -805,10 +805,15 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.75/
 
 				// Seed each row with any pre-existing threshold (e.g. partial config).
 				const existing = parseThresholds(sdk.getStringProp(node, 'inventory_level_config'));
+				// Current stock per variant is the multi-location mirror total (the same
+				// figure the alert decision uses), falling back to the payload value.
+				const mirrorTotals = await this.loadMirrorTotals(product);
 				const list = (product && Array.isArray(product.variants)) ? product.variants : [];
 				this.rows = list.map(v => {
 					const id = v && v.id != null ? String(v.id) : '';
-					const qty = v && v.inventory_quantity != null ? Number(v.inventory_quantity) : null;
+					const qty = (id && mirrorTotals[id] != null)
+						? Number(mirrorTotals[id])
+						: (v && v.inventory_quantity != null ? Number(v.inventory_quantity) : null);
 					const pre = id && Object.prototype.hasOwnProperty.call(existing, id) ? existing[id] : '';
 					return {
 						id,
@@ -821,6 +826,38 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.75/
 				});
 
 				this.updateDocumentTitle();
+			},
+
+			// Read the per-location inventory mirror for each variant and sum it into a total
+			// per variant id — the multi-location total the alert decision uses
+			// (commerce.Locations.aggregate). A missing/denied/empty mirror leaves the variant
+			// unset, so the caller falls back to the payload inventory_quantity.
+			async loadMirrorTotals(product) {
+				const variants = (product && Array.isArray(product.variants)) ? product.variants : [];
+				const totals = {};
+				await Promise.all(variants.map(async (v) => {
+					const id = v && v.id != null ? String(v.id) : '';
+					const itemId = v && v.inventory_item_id != null ? String(v.inventory_item_id) : '';
+					if (!id || !itemId) return;
+					try {
+						const text = await sdk.readNodeText('/content/commerce/inventory/levels/' + itemId + '.json');
+						if (!text) return;
+						const doc = JSON.parse(text);
+						const locs = doc && doc.locations;
+						if (locs && typeof locs === 'object') {
+							let sum = 0;
+							let any = false;
+							for (const k of Object.keys(locs)) {
+								const a = locs[k] ? locs[k].available : null;
+								if (a != null) { sum += (Number(a) || 0); any = true; }
+							}
+							if (any) totals[id] = sum;
+						}
+					} catch (e) {
+						// leave unset → caller falls back to the payload value
+					}
+				}));
+				return totals;
 			},
 
 			applyToAll() {

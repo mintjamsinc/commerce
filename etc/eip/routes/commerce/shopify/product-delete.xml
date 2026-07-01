@@ -121,6 +121,12 @@
                     <simple>${date:now:yyyy-MM-dd'T'HH:mm:ss.SSSZ}</simple>
                 </setBody>
                 <toD uri="cms:store?path=/content/commerce/history/webhooks/${date:now:yyyy}/${date:now:MM}/${header.shopify_webhook_id}&amp;mimeType=text/plain"/>
+
+                <!-- Remove the inventory_item_id
+                     reverse-index entries for this product. The soft-deleted product
+                     JSON still carries the variants, so we resolve their inventory_item_ids
+                     and drop their index files. Defensive: never throws. -->
+                <toD uri="cms:/etc/commerce/scripts/shopify/removeInventoryItemIndex.groovy?inputs=productPath"/>
             </otherwise>
         </choice>
 

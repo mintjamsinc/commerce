@@ -11,16 +11,13 @@ import com.fasterxml.jackson.databind.ObjectMapper
  * mitigated by ingest replay #4) or a CMS-authoritative value that was never
  * pushed.
  *
- * Each field has a configured <b>source of truth</b> that decides the heal
- * direction:
- *   sourceOfTruth = "cms"     → CMS value wins → push to Shopify (ShopifyWrite)
- *   sourceOfTruth = "shopify" → Shopify value wins → refresh the CMS mirror
- *
- * By default reconciliation only detects + reports + alerts; healing is opt-in per
- * field (reconcile.yml). {@link #diffProduct} is pure (testable); {@link #applyRefresh}
- * (Shopify→CMS mirror patch) is defensive. CMS→Shopify healing is done by the
- * caller via {@link ShopifyWrite}. Lives under /content/WEB-INF/classes; use via
- * {@code import commerce.Reconciliation}.
+ * Shopify is the single source of truth for every reconciled field, so the only heal
+ * direction is Shopify→CMS: reconciliation detects + reports + alerts on drift and refreshes
+ * the CMS follower mirror from Shopify. There is no per-field source-of-truth and no
+ * CMS→Shopify push. {@link #diffProduct} is pure (testable); {@link #applyRefresh}
+ * (Shopify→CMS mirror patch for status / price) is defensive; inventory is refreshed from its
+ * per-location data by the reconcile batch (commerce.Locations.replaceLevels). Lives under
+ * /content/WEB-INF/classes; use via {@code import commerce.Reconciliation}.
  */
 class Reconciliation {
 
@@ -29,24 +26,23 @@ class Reconciliation {
     /**
      * Compute the field-level diffs between a CMS product (parsed product JSON), its
      * CMS inventory aggregates (inventory_item_id → available), and the Shopify
-     * product fetched from the Admin API. PURE.
+     * product fetched from the Admin API. PURE. Shopify is the source of truth, so the
+     * heal direction is always Shopify→CMS.
      *
-     * @param sourceOfTruth { status, price, inventory } → "cms" | "shopify"
      * @return list of diffs, each:
-     *   { field, variantId, inventoryItemId, cms, shopify, sourceOfTruth, heal }
-     *   heal = "push" (CMS→Shopify) | "refresh" (Shopify→CMS) | "report" (no clean
-     *   auto-heal, e.g. inventory which is per-location in the mirror).
+     *   { field, variantId, inventoryItemId, cms, shopify, sourceOfTruth: "shopify", heal }
+     *   heal = "refresh" (Shopify→CMS mirror patch for status / price) | "report"
+     *   (inventory — refreshed from per-location data by the reconcile batch).
      */
-    static List diffProduct(Map cmsProduct, Map cmsInvByItem, Map shopifyProduct, Map sourceOfTruth) {
+    static List diffProduct(Map cmsProduct, Map cmsInvByItem, Map shopifyProduct) {
         def diffs = []
-        def sot = sourceOfTruth ?: [:]
         def inv = cmsInvByItem ?: [:]
 
         // --- status ---
         def cmsStatus = lower(cmsProduct?.status)
         def shopStatus = lower(shopifyProduct?.status)
         if (cmsStatus && shopStatus && cmsStatus != shopStatus) {
-            diffs << diff("status", null, null, cmsStatus, shopStatus, sotOf(sot, "status"), healFor(sotOf(sot, "status"), true))
+            diffs << diff("status", null, null, cmsStatus, shopStatus, "refresh")
         }
 
         // --- per-variant price + inventory ---
@@ -69,7 +65,7 @@ class Reconciliation {
                 def cP = Money.toNumber(v?.price)
                 def sP = Money.toNumber(sv?.price)
                 if (cP != null && sP != null && cP.compareTo(sP) != 0) {
-                    diffs << diff("price", vid, null, cP.toString(), sP.toString(), sotOf(sot, "price"), healFor(sotOf(sot, "price"), true))
+                    diffs << diff("price", vid, null, cP.toString(), sP.toString(), "refresh")
                 }
 
                 def itemId = v?.inventory_item_id?.toString()
@@ -78,11 +74,9 @@ class Reconciliation {
                     int cI = toInt(inv[itemId])
                     int sI = toInt(sInv)
                     if (cI != sI) {
-                        // Inventory in the mirror is per-location while Shopify exposes
-                        // an aggregate, so neither direction can be written back
-                        // losslessly: inventory drift is always reported (heal by
-                        // replaying the missed inventory webhook (#4) or manually).
-                        diffs << diff("inventory", vid, itemId, cI.toString(), sI.toString(), sotOf(sot, "inventory"), "report")
+                        // Inventory is reported here; the actual mirror refresh is done from
+                        // per-location data by the reconcile batch (Locations.replaceLevels).
+                        diffs << diff("inventory", vid, itemId, cI.toString(), sI.toString(), "report")
                     }
                 }
             }
@@ -132,21 +126,9 @@ class Reconciliation {
 
     // --- Helpers ---------------------------------------------------------------
 
-    private static Map diff(String field, String variantId, String inventoryItemId, String cms, String shopify, String sot, String heal) {
+    private static Map diff(String field, String variantId, String inventoryItemId, String cms, String shopify, String heal) {
         return [field: field, variantId: variantId, inventoryItemId: inventoryItemId,
-                cms: cms, shopify: shopify, sourceOfTruth: sot, heal: heal]
-    }
-
-    private static String sotOf(Map sot, String field) {
-        def v = sot?.get(field)
-        return v == null ? "shopify" : v.toString().trim().toLowerCase()
-    }
-
-    // Heal direction from the source of truth. supported=false marks a field we only
-    // report (currently unused; inventory is decided inline).
-    private static String healFor(String sot, boolean supported) {
-        if (!supported) return "report"
-        return sot == "cms" ? "push" : "refresh"
+                cms: cms, shopify: shopify, sourceOfTruth: "shopify", heal: heal]
     }
 
     /** Numeric id from a Shopify gid ("gid://shopify/ProductVariant/123" → "123"). */

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<camel>
+
+    <!-- Swallow scheduler failures: the reconcile scheduler must never surface errors. -->
+    <routeConfiguration id="commerce-reconcile-scheduler-error-handler">
+        <onException>
+            <exception>java.lang.Exception</exception>
+            <handled>
+                <constant>true</constant>
+            </handled>
+            <log message="commerce-reconcile-scheduler error: ${exception.message}"
+                 loggingLevel="WARN"/>
+        </onException>
+    </routeConfiguration>
+
+    <!--
+      Wall-clock scheduler for reconciliation. The
+      CMS has no cron primitive, so a 1-minute heartbeat runs scheduleReconcile.groovy, which
+      reads reconcile.yml `schedules` ({ at: "HH:mm", scope: all|diff }) and at each due minute
+      fires direct:commerce-reconcile once (cluster-wide) with the schedule's scope.
+
+      The hourly commerce-reconcile timer remains the baseline "all" coverage; these schedules
+      are additive (typically frequent "diff" passes). Runs as the service user.
+    -->
+    <route id="commerce-reconcile-scheduler" routeConfigurationId="commerce-reconcile-scheduler-error-handler">
+        <from uri="timer:commerce-reconcile-scheduler?period=60000&amp;delay=120000"/>
+
+        <setHeader name="runAs">
+            <constant>commerce-service-user</constant>
+        </setHeader>
+
+        <toD uri="cms:/etc/commerce/scripts/commerce/scheduleReconcile.groovy"/>
+    </route>
+
+</camel>

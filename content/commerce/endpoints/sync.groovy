@@ -60,7 +60,7 @@ if (request.getMethod() != "POST") {
 if (!enabled) {
     response.setStatus(409)
     response.setHeader("Content-Type", "application/json")
-    response.getWriter().write('{"error":"Shopify Admin API is disabled (set adminApi.enabled in shopify.yml)"}')
+    response.getWriter().write('{"error":"Shopify Admin API is not configured (set the adminApi connection fields in shopify.yml)"}')
     return
 }
 

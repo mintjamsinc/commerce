@@ -117,45 +117,36 @@
 									</div>
 								</div>
 							</div>
-							<div class="property-hint">{{ t('app.commerce.shop.webhookSecret.hint') }}</div>
 						</div>
 
-						<!-- Admin API: optional enrichment, gated by a toggle. -->
+						<!-- Admin API: REQUIRED. Active once all four connection fields are filled. -->
 						<div class="property-group">
 							<div class="property-group-title">{{ t('app.commerce.shop.adminApi.groupTitle') }}</div>
-							<label class="wt-checkbox-label">
-								<input type="checkbox" class="wt" v-model="shop.adminApi.enabled">
-								{{ t('app.commerce.shop.adminApi.enableLabel') }}
-							</label>
 							<div class="property-hint">{{ t('app.commerce.shop.adminApi.hint') }}</div>
 
 							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.shop.shopDomain.label') }}<span v-if="shop.adminApi.enabled"
+								<label class="property-label">{{ t('app.commerce.shop.shopDomain.label') }}<span
 										class="required-mark" :title="t('app.commerce.field.required')">*</span></label>
 								<input type="text" class="wt w-100" v-model="shop.adminApi.shopDomain"
-									:disabled="!shop.adminApi.enabled"
-									:class="{ 'is-invalid': shop.adminApi.enabled && !shop.adminApi.shopDomain }"
+									:class="{ 'is-invalid': adminApiInvalid && !shop.adminApi.shopDomain }"
 									placeholder="example.myshopify.com">
 							</div>
 							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.shop.apiVersion.label') }}<span v-if="shop.adminApi.enabled"
+								<label class="property-label">{{ t('app.commerce.shop.apiVersion.label') }}<span
 										class="required-mark" :title="t('app.commerce.field.required')">*</span></label>
 								<input type="text" class="wt w-100" v-model="shop.adminApi.apiVersion"
-									:disabled="!shop.adminApi.enabled"
-									:class="{ 'is-invalid': shop.adminApi.enabled && !shop.adminApi.apiVersion }"
+									:class="{ 'is-invalid': adminApiInvalid && !shop.adminApi.apiVersion }"
 									placeholder="2026-01">
 							</div>
 							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.shop.clientId.label') }}<span v-if="shop.adminApi.enabled"
+								<label class="property-label">{{ t('app.commerce.shop.clientId.label') }}<span
 										class="required-mark" :title="t('app.commerce.field.required')">*</span></label>
 								<div class="input-group">
 									<input :type="reveal.clientID ? 'text' : 'password'"
 										autocomplete="off" v-model="shop.adminApi.clientID"
-										:disabled="!shop.adminApi.enabled"
-										:class="{ 'is-invalid': shop.adminApi.enabled && !shop.adminApi.clientID }">
+										:class="{ 'is-invalid': adminApiInvalid && !shop.adminApi.clientID }">
 									<div class="input-group-actions">
 										<button class="input-group-btn" @click="reveal.clientID = !reveal.clientID"
-											:disabled="!shop.adminApi.enabled"
 											:title="reveal.clientID ? t('app.commerce.field.hide') : t('app.commerce.field.show')">
 											<i class="bi" :class="reveal.clientID ? 'bi-eye' : 'bi-eye-slash'"></i>
 										</button>
@@ -163,16 +154,14 @@
 								</div>
 							</div>
 							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.shop.clientSecret.label') }}<span v-if="shop.adminApi.enabled"
+								<label class="property-label">{{ t('app.commerce.shop.clientSecret.label') }}<span
 										class="required-mark" :title="t('app.commerce.field.required')">*</span></label>
 								<div class="input-group">
 									<input :type="reveal.clientSecret ? 'text' : 'password'"
 										autocomplete="off" v-model="shop.adminApi.clientSecret"
-										:disabled="!shop.adminApi.enabled"
-										:class="{ 'is-invalid': shop.adminApi.enabled && !shop.adminApi.clientSecret }">
+										:class="{ 'is-invalid': adminApiInvalid && !shop.adminApi.clientSecret }">
 									<div class="input-group-actions">
 										<button class="input-group-btn" @click="reveal.clientSecret = !reveal.clientSecret"
-											:disabled="!shop.adminApi.enabled"
 											:title="reveal.clientSecret ? t('app.commerce.field.hide') : t('app.commerce.field.show')">
 											<i class="bi" :class="reveal.clientSecret ? 'bi-eye' : 'bi-eye-slash'"></i>
 										</button>
@@ -785,39 +774,44 @@
 								<label class="property-label">{{ t('app.commerce.reconciliation.perRun.label') }}</label>
 								<input type="number" class="wt w-100" v-model.number="reconcile.maxPerRun" :disabled="!reconcile.enabled">
 							</div>
-							<div class="property-hint">{{ t('app.commerce.reconciliation.perRun.hint') }}</div>
+								<div class="property-row">
+									<label class="property-label">{{ t('app.commerce.reconciliation.reserve.label') }}</label>
+									<input type="number" class="wt w-100" v-model.number="reconcile.reserveBudgetPercent" min="0" max="100" :disabled="!reconcile.enabled">
+								</div>
+								<div class="property-row">
+									<label class="property-label">{{ t('app.commerce.reconciliation.minDelay.label') }}</label>
+									<input type="number" class="wt w-100" v-model.number="reconcile.minDelayMsPerCall" min="0" :disabled="!reconcile.enabled">
+								</div>
+								<div class="property-row">
+									<label class="property-label">{{ t('app.commerce.reconciliation.watchdogTimeout.label') }}</label>
+									<input type="number" class="wt w-100" v-model.number="reconcile.bulkWatchdogTimeoutMinutes" min="1" :disabled="!reconcile.enabled">
+								</div>
+								<div class="property-row">
+									<label class="property-label">{{ t('app.commerce.reconciliation.processingTimeout.label') }}</label>
+									<input type="number" class="wt w-100" v-model.number="reconcile.bulkProcessingTimeoutMinutes" min="1" :disabled="!reconcile.enabled">
+								</div>
 						</div>
 						<div class="property-group">
-							<div class="property-group-title">{{ t('app.commerce.reconciliation.sourceOfTruth.groupTitle') }}</div>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.reconciliation.sourceOfTruth.status.label') }}</label>
-								<select class="wt w-100" v-model="reconcile.sourceOfTruth.status" :disabled="!reconcile.enabled"><option value="cms">{{ t('app.commerce.reconciliation.sourceOfTruth.cms') }}</option><option value="shopify">{{ t('app.commerce.reconciliation.sourceOfTruth.shopify') }}</option></select>
-							</div>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.reconciliation.sourceOfTruth.price.label') }}</label>
-								<select class="wt w-100" v-model="reconcile.sourceOfTruth.price" :disabled="!reconcile.enabled"><option value="cms">{{ t('app.commerce.reconciliation.sourceOfTruth.cms') }}</option><option value="shopify">{{ t('app.commerce.reconciliation.sourceOfTruth.shopify') }}</option></select>
-							</div>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.reconciliation.sourceOfTruth.inventory.label') }}</label>
-								<select class="wt w-100" v-model="reconcile.sourceOfTruth.inventory" :disabled="!reconcile.enabled"><option value="cms">{{ t('app.commerce.reconciliation.sourceOfTruth.cms') }}</option><option value="shopify">{{ t('app.commerce.reconciliation.sourceOfTruth.shopify') }}</option></select>
-							</div>
-							<div class="property-hint">{{ t('app.commerce.reconciliation.sourceOfTruth.hint') }}</div>
-						</div>
-						<div class="property-group">
-							<div class="property-group-title">{{ t('app.commerce.reconciliation.autoHeal.groupTitle') }}</div>
-							<label class="wt-checkbox-label">
-								<input type="checkbox" class="wt" v-model="reconcile.autoHeal.status" :disabled="!reconcile.enabled"> {{ t('app.commerce.reconciliation.autoHeal.status.label') }}
-							</label>
-							<label class="wt-checkbox-label">
-								<input type="checkbox" class="wt" v-model="reconcile.autoHeal.price" :disabled="!reconcile.enabled"> {{ t('app.commerce.reconciliation.autoHeal.price.label') }}
-							</label>
-							<label class="wt-checkbox-label">
-								<input type="checkbox" class="wt" v-model="reconcile.autoHeal.inventory" disabled> {{ t('app.commerce.reconciliation.autoHeal.inventory.label') }}
-							</label>
-							<div class="property-hint">{{ t('app.commerce.reconciliation.autoHeal.hint') }}</div>
 							<label class="wt-checkbox-label">
 								<input type="checkbox" class="wt" v-model="reconcile.alert" :disabled="!reconcile.enabled"> {{ t('app.commerce.reconciliation.alert.label') }}
 							</label>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="reconcile.refreshInventoryMirror" :disabled="!reconcile.enabled"> {{ t('app.commerce.reconciliation.refreshMirror.label') }}
+							</label>
+						</div>
+						<div class="property-group">
+							<div class="property-group-title">{{ t('app.commerce.reconciliation.schedules.groupTitle') }}</div>
+							<div v-if="reconcile.schedules.length === 0" class="property-hint">{{ t('app.commerce.reconciliation.schedules.empty') }}</div>
+							<div v-for="(s, i) in reconcile.schedules" :key="i" class="property-row">
+								<input type="time" class="wt" v-model="s.at" :disabled="!reconcile.enabled">
+								<select class="wt w-100" v-model="s.scope" :disabled="!reconcile.enabled">
+									<!-- 'all' (round-robin) scope retired 2026-06-30 -->
+									<option value="diff">{{ t('app.commerce.reconciliation.schedules.scope.diff') }}</option>
+									<option value="inventory">{{ t('app.commerce.reconciliation.schedules.scope.inventory') }}</option>
+								</select>
+								<button class="btn-icon" @click="removeSchedule(i)" :title="t('app.commerce.reconciliation.schedules.removeTitle')"><i class="bi bi-trash"></i></button>
+							</div>
+							<button class="wt wt-sm" @click="addSchedule" :disabled="!reconcile.enabled"><i class="bi bi-plus-lg me-1"></i>{{ t('app.commerce.reconciliation.schedules.add') }}</button>
 						</div>
 					</template>
 
@@ -986,6 +980,37 @@
 							<label class="wt-checkbox-label">
 								<input type="checkbox" class="wt" v-model="refundReview.noRestock.enabled" :disabled="!refundReview.enabled"> {{ t('app.commerce.refundReview.noRestock.enableLabel') }}
 							</label>
+						</div>
+					</template>
+
+					<!-- ========== Inventory alert ========== -->
+					<template v-if="section === 'inventoryAlert'">
+						<div>
+							<h2 class="commerce-h2 mb-2">{{ t('app.commerce.inventoryAlert.title') }}</h2>
+							<div class="commerce-lede">{{ t('app.commerce.inventoryAlert.lede') }}</div>
+						</div>
+						<div class="property-group">
+							<div class="property-row">
+								<label class="property-label">{{ t('app.commerce.inventoryAlert.unconfiguredPolicy.label') }}</label>
+								<select class="wt w-100" v-model="inventoryAlert.unconfiguredPolicy">
+									<option value="prompt">{{ t('app.commerce.inventoryAlert.unconfiguredPolicy.prompt') }}</option>
+									<option value="default">{{ t('app.commerce.inventoryAlert.unconfiguredPolicy.default') }}</option>
+									<option value="silent">{{ t('app.commerce.inventoryAlert.unconfiguredPolicy.silent') }}</option>
+								</select>
+							</div>
+							<div class="property-hint">{{ t('app.commerce.inventoryAlert.unconfiguredPolicy.hint') }}</div>
+							<div class="property-row">
+								<label class="property-label">{{ t('app.commerce.inventoryAlert.defaultThreshold.label') }}</label>
+								<input type="number" class="wt w-100" v-model.number="inventoryAlert.defaultThreshold" :disabled="inventoryAlert.unconfiguredPolicy !== 'default'" placeholder="0">
+							</div>
+							<div class="property-hint">{{ t('app.commerce.inventoryAlert.defaultThreshold.hint') }}</div>
+						</div>
+						<div class="property-group">
+							<div class="property-row">
+								<label class="property-label">{{ t('app.commerce.inventoryAlert.debounce.label') }}</label>
+								<input type="number" class="wt w-100" v-model.number="inventoryAlert.sweepDebounceSeconds" min="0" placeholder="0">
+							</div>
+							<div class="property-hint">{{ t('app.commerce.inventoryAlert.debounce.hint') }}</div>
 						</div>
 					</template>
 

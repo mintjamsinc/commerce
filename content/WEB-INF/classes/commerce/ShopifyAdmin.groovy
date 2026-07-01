@@ -23,13 +23,23 @@ class ShopifyAdmin {
     private static final long TOKEN_TTL_MILLIS = 23L * 60 * 60 * 1000
 
     /**
-     * True only when the Shopify Admin API integration is explicitly enabled
-     * (adminApi.enabled == true) in the already-parsed shopify.yml `config`.
-     * Anything else (flag absent / config missing) is treated as disabled.
+     * True when the Shopify Admin API is CONFIGURED — all four connection fields
+     * (shopDomain, apiVersion, clientID, clientSecret) are filled in the already-parsed
+     * shopify.yml `config`. The Admin API is REQUIRED by the commerce integration (metafield
+     * enrichment, the inventory mirror/reconcile, and fulfillment write-back depend on it),
+     * so there is no on/off toggle: it is active whenever it is configured. A deployment that
+     * has not yet filled the credentials is treated as not-configured, so callers degrade with
+     * a clear warning instead of calling Shopify with empty/placeholder credentials.
      */
     static boolean adminApiEnabled(config) {
-        def enabled = config?.adminApi?.enabled
-        return enabled != null && enabled.toString().trim().toLowerCase() == "true"
+        def a = config?.adminApi
+        if (!(a instanceof Map)) {
+            return false
+        }
+        return ["shopDomain", "apiVersion", "clientID", "clientSecret"].every { k ->
+            def v = a[k]
+            v != null && !v.toString().trim().isEmpty()
+        }
     }
 
     /** GraphQL endpoint for the configured shop + API version. */
@@ -122,5 +132,86 @@ class ShopifyAdmin {
             throw new RuntimeException("Shopify GraphQL errors: ${mapper.writeValueAsString(json.errors)}")
         }
         return json
+    }
+
+    // --- Bulk Operations (async full exports; OFF the foreground cost bucket) --
+    // Bulk execution does not consume the GraphQL
+    // cost bucket, so a full-catalog export never throttles foreground Admin API calls.
+    // (Shapes follow the standard Shopify bulk GraphQL; verify against the configured API
+    //  version with a live smoke test.)
+
+    /** Encode a string as a GraphQL string literal (reuses JSON string escaping). */
+    private static String gqlString(String s) {
+        return new ObjectMapper().writeValueAsString(s == null ? "" : s)
+    }
+
+    /** Start a Bulk Operation for the given GraphQL query; returns the bulk operation gid. */
+    static String startBulk(HttpClient client, String endpoint, String accessToken, String bulkQuery) {
+        def mutation = """
+mutation {
+  bulkOperationRunQuery(query: ${gqlString(bulkQuery)}) {
+    bulkOperation { id status }
+    userErrors { field message }
+  }
+}
+""".trim()
+        def resp = graphql(client, endpoint, accessToken, [query: mutation])
+        def r = resp?.data?.bulkOperationRunQuery
+        def errs = r?.userErrors
+        if (errs != null && !errs.isEmpty()) {
+            throw new RuntimeException("bulkOperationRunQuery userErrors: ${new ObjectMapper().writeValueAsString(errs)}")
+        }
+        def gid = r?.bulkOperation?.id
+        if (gid == null) {
+            throw new RuntimeException("bulkOperationRunQuery returned no bulkOperation id")
+        }
+        return gid.toString()
+    }
+
+    /** The current Bulk Operation (most recent), or null: [id, status, url, errorCode]. */
+    static Map currentBulk(HttpClient client, String endpoint, String accessToken) {
+        def resp = graphql(client, endpoint, accessToken,
+            [query: "{ currentBulkOperation { id status url errorCode objectCount } }"])
+        def c = resp?.data?.currentBulkOperation
+        if (c == null) return null
+        return [id: c.id?.toString(), status: c.status?.toString(),
+                url: c.url?.toString(), errorCode: c.errorCode?.toString()]
+    }
+
+    /** True when a Bulk Operation is CREATED or RUNNING (lane pre-check / singleton guard). */
+    static boolean currentBulkRunning(HttpClient client, String endpoint, String accessToken) {
+        def s = currentBulk(client, endpoint, accessToken)?.status
+        return s == "CREATED" || s == "RUNNING"
+    }
+
+    /**
+     * Status + downloadable result URL for a Bulk Operation by gid, or null.
+     *
+     * `node(id:)` returns null for a BulkOperation on newer API versions, so:
+     *   • 2026-01+ : the dedicated `bulkOperation(id:)` query;
+     *   • older    : `currentBulkOperation` — the broker runs ONE bulk at a time, so the shop's
+     *                current (query) op is this job's; the id is verified.
+     * Tries the new query first and falls back when the field is unavailable.
+     */
+    static Map bulkByGid(HttpClient client, String endpoint, String accessToken, String gid) {
+        if (gid != null) {
+            try {
+                def resp = graphql(client, endpoint, accessToken,
+                    [query: "{ bulkOperation(id: ${gqlString(gid)}) { id status url errorCode objectCount } }".toString()])
+                def b = resp?.data?.bulkOperation
+                if (b != null) {
+                    return [id: b.id?.toString(), status: b.status?.toString(),
+                            url: b.url?.toString(), errorCode: b.errorCode?.toString()]
+                }
+            } catch (Exception ignore) {
+                // `bulkOperation(id:)` is not available on this API version — fall back below.
+            }
+        }
+        def c = currentBulk(client, endpoint, accessToken)
+        if (c == null) return null
+        if (gid != null && c.id != null && c.id.toString() != gid.toString()) {
+            return null   // a different (newer) bulk is current — not this job's
+        }
+        return c
     }
 }

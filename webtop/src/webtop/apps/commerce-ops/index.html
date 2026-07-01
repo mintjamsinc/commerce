@@ -165,7 +165,7 @@
 						<div class="property-group-title">{{ t('app.commerce-ops.reconcile.driftTitle') }}</div>
 						<div v-if="recon.diffs.length === 0" class="property-hint">{{ t('app.commerce-ops.reconcile.noDrift') }}</div>
 						<table v-else class="ops-table">
-							<thead><tr><th>{{ t('app.commerce-ops.table.product') }}</th><th>{{ t('app.commerce-ops.table.field') }}</th><th>{{ t('app.commerce-ops.table.variant') }}</th><th>{{ t('app.commerce-ops.table.cms') }}</th><th>{{ t('app.commerce-ops.table.shopify') }}</th><th>{{ t('app.commerce-ops.table.truth') }}</th><th>{{ t('app.commerce-ops.table.heal') }}</th></tr></thead>
+							<thead><tr><th>{{ t('app.commerce-ops.table.product') }}</th><th>{{ t('app.commerce-ops.table.field') }}</th><th>{{ t('app.commerce-ops.table.variant') }}</th><th>{{ t('app.commerce-ops.table.cms') }}</th><th>{{ t('app.commerce-ops.table.shopify') }}</th><th>{{ t('app.commerce-ops.table.heal') }}</th></tr></thead>
 							<tbody>
 								<tr v-for="(d, i) in recon.diffs" :key="i">
 									<td>{{ d.title || ('#' + d.productId) }}</td>
@@ -173,7 +173,6 @@
 									<td>{{ d.variantId || '—' }}</td>
 									<td class="ops-val">{{ d.cms }}</td>
 									<td class="ops-val">{{ d.shopify }}</td>
-									<td>{{ d.sourceOfTruth }}</td>
 									<td>
 										<span class="ops-pill" :class="healClass(d)">{{ d.healed === 'ok' ? t('app.commerce-ops.reconcile.healedLabel') : d.heal }}</span>
 									</td>

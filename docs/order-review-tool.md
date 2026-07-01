@@ -24,10 +24,10 @@ Groovy endpoint ──→ order-paid route ──→ JCR (store + normalize)
                               ┌────────────┴────────────┐
                               │ No                       │ Yes
                               ▼                          ▼
-                              └──────→ approved ←── Order Review task → Slack/Discord
+                              └──────→ approved ←── Order Review task → notify
                                           │
                                           ▼
-                                  Fulfill Order task → Slack/Discord
+                                  Fulfill Order task → notify
                                           │  operator records tracking, marks fulfilled
                                           ▼
                           Create Fulfillment (Shopify write-back, gated) → fulfilled
@@ -55,8 +55,9 @@ orders are auto-approved and a warning is logged rather than blocking the flow.
 
 Operators work these in the Webtop **Tasks** app:
 
-1. A new **Order Review** task appears (and a notice is posted to Slack /
-   Discord). Open it to see the order summary, customer and addresses, line
+1. A new **Order Review** task appears (and a notice is posted to every enabled
+   notification channel — Slack / Discord / Teams / LINE / webhook / email).
+   Open it to see the order summary, customer and addresses, line
    items, and — highlighted at the top — the **reasons it was flagged**.
 2. **Claim** the task to take ownership. Only the assignee can approve it or
    write a memo.
@@ -66,7 +67,8 @@ Operators work these in the Webtop **Tasks** app:
 ## Stage 3 — Fulfillment
 
 Once approved (whether auto-approved or after a review), a **Fulfill Order** task
-is raised for the warehouse and announced to Slack / Discord:
+is raised for the warehouse and announced to every enabled notification channel
+(Slack / Discord / Teams / LINE / webhook / email):
 
 1. Open the task to see what to pick and where to ship it (line items and
    shipping address).
@@ -76,28 +78,31 @@ is raised for the warehouse and announced to Slack / Discord:
    - It always records the tracking details and a fulfilled-at timestamp on the
      order (`commerce:tracking_number`, `commerce:tracking_company`,
      `commerce:fulfilled_at`).
-   - When the **Admin API is enabled** (`shopify.yml` → `adminApi.enabled`), it
+   - When the **Admin API is configured** (`shopify.yml` → `adminApi`), it
      also creates the fulfillment in Shopify (GraphQL `fulfillmentCreateV2`),
      passing the tracking info. This is **best-effort**: a failure is recorded in
      `commerce:fulfillment_writeback` / `commerce:fulfillment_error` and logged,
      but never breaks the workflow — the operator can still fulfill manually in
-     Shopify. When the Admin API is disabled, the write-back is `skipped` and the
-     fulfillment is CMS-side only.
+     Shopify. When the Admin API is not yet configured, the write-back is `skipped`
+     and the fulfillment is CMS-side only.
 
 ## Configuration
 
 1. **Order screening rules** — edit `/etc/commerce/config/order-review.yml`
    (see the table above).
-2. **Shopify write-back** — to push fulfillments back to Shopify, enable the
-   Admin API in `/etc/commerce/config/shopify.yml` (`adminApi.enabled: true`)
-   and provide `shopDomain`, `apiVersion`, `clientID`, `clientSecret`. The app
+2. **Shopify write-back** — to push fulfillments back to Shopify, configure the
+   Admin API in `/etc/commerce/config/shopify.yml` (`adminApi`: `shopDomain`,
+   `apiVersion`, `clientID`, `clientSecret`). The app
    must be granted the fulfillment write scopes (e.g. `write_merchant_managed_fulfillment_orders`).
    By default the write-back does **not** ask Shopify to email the customer;
    set `adminApi.notifyCustomer: true` to opt into Shopify's shipping-notification
    email.
 3. **Notifications** — both order tasks post to the same destinations as the
-   inventory alert tool. Configure them in the Webtop **Commerce** app under
-   *Notifications*, or directly in `/etc/commerce/config/notifications.yml`.
+   inventory alert tool: every enabled channel in the shared registry (Slack,
+   Discord, Teams, LINE, generic webhook, email). Configure them in the Webtop
+   **Commerce** app under *Notifications*, or directly in
+   `/etc/commerce/config/notifications.yml`. All channels ship disabled, so
+   enable at least one to receive notices (tasks are still raised either way).
 4. **Shopify webhook** — ensure the `orders/paid` topic points at the webhook
    endpoint.
 

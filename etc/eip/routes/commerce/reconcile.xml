@@ -14,27 +14,15 @@
     </routeConfiguration>
 
     <!--
-      Periodic CMS <-> Shopify reconciliation (category G, #24). Fires hourly (after
-      a 10-minute warm-up) and runs reconcile.groovy as the service user: it compares
-      a cursor-advanced batch of products against Shopify, reports drift and (only
-      when enabled per field) heals it. On-demand runs come through the reconcile
-      endpoint. Settings live in /etc/commerce/config/reconcile.yml.
+      On-demand reconciliation (diff scope: status / price). The reconcile endpoint and the
+      `diff` schedule (scheduleReconcile.groovy) send here. Honors the caller-supplied runAs
+      (the operator who triggered it), falling back to the service user, and defaults the
+      scope to `diff`.
+
+      The hourly round-robin baseline timer was RETIRED on 2026-06-30: status/price drift is
+      caught by `diff` schedules; the full inventory audit is the Bulk job broker (`inventory`
+      scope → direct:commerce-shopify-bulk-enqueue). Settings live in reconcile.yml.
     -->
-    <route id="commerce-reconcile" routeConfigurationId="commerce-reconcile-error-handler">
-        <from uri="timer:commerce-reconcile?period=3600000&amp;delay=600000"/>
-
-        <setHeader name="runAs">
-            <constant>commerce-service-user</constant>
-        </setHeader>
-
-        <toD uri="cms:/etc/commerce/scripts/commerce/reconcile.groovy"/>
-    </route>
-
-    <!-- On-demand entry point: the reconcile endpoint sends here to trigger a run.
-         Honor the caller-supplied runAs (the logged-in operator who triggered it) so
-         the run - and the reports / healed products it writes under /content/commerce
-         - is attributed to that user. Fall back to the service user only when no
-         caller identity was supplied (e.g. an internal trigger). -->
     <route id="commerce-reconcile-run" routeConfigurationId="commerce-reconcile-error-handler">
         <from uri="direct:commerce-reconcile"/>
 
@@ -47,7 +35,16 @@
             </when>
         </choice>
 
-        <toD uri="cms:/etc/commerce/scripts/commerce/reconcile.groovy"/>
+        <choice>
+            <when>
+                <simple>${header.scope} == null || ${header.scope} == ''</simple>
+                <setHeader name="scope">
+                    <constant>diff</constant>
+                </setHeader>
+            </when>
+        </choice>
+
+        <toD uri="cms:/etc/commerce/scripts/commerce/reconcile.groovy?inputs=scope"/>
     </route>
 
 </camel>

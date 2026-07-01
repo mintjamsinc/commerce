@@ -154,8 +154,9 @@
                 <log message="Product ${header.productID} saved to ${header.productPath}"
                      loggingLevel="INFO"/>
 
-                <!-- Admin API enrichment is optional. Resolve the toggle from
-                     shopify.yml (adminApi.enabled) into a boolean header. -->
+                <!-- The Admin API is required; enrich with metafields when it is configured.
+                     checkAdminApiEnabled reports whether shopify.yml has the connection
+                     fields filled, so a not-yet-configured deployment degrades cleanly. -->
                 <toD uri="cms:/etc/commerce/scripts/shopify/checkAdminApiEnabled.groovy?outputs=adminApiEnabled"/>
                 <choice>
                     <when>
@@ -173,7 +174,7 @@
                              loggingLevel="INFO"/>
                     </when>
                     <otherwise>
-                        <log message="Admin API disabled - skipping metafields enrichment for product ${header.productID}"
+                        <log message="Admin API not configured - skipping metafields enrichment for product ${header.productID} (set adminApi in shopify.yml)"
                              loggingLevel="INFO"/>
                     </otherwise>
                 </choice>
@@ -183,6 +184,12 @@
                     <simple>${date:now:yyyy-MM-dd'T'HH:mm:ss.SSSZ}</simple>
                 </setBody>
                 <toD uri="cms:store?path=/content/commerce/history/webhooks/${date:now:yyyy}/${date:now:MM}/${header.shopify_webhook_id}&amp;mimeType=text/plain"/>
+
+                <!-- Build the inventory_item_id -> product/variant reverse index from the
+                     product payload. The script is defensive (never throws), so indexing
+                     cannot break ingestion. Placed after the idempotency marker, where the
+                     exchange body is no longer consumed downstream. -->
+                <toD uri="cms:/etc/commerce/scripts/shopify/indexInventoryItems.groovy?inputs=shopify_payload,productPath"/>
 
                 <!-- Guard against duplicate workflow instances for the same product.
                      Shopify can emit several products/update webhooks in quick succession;

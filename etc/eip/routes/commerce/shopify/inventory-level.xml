@@ -54,6 +54,11 @@
 
         <toD uri="cms:/etc/commerce/scripts/shopify/recordInventoryLevel.groovy?inputs=shopifyPayload=@body"/>
 
+        <!-- Mark this item pending so the inventory-alert
+             sweep (sweepInventoryAlerts.groovy) evaluates it against its threshold on the
+             mirror total. The alert trigger is now inventory_levels/update. Defensive. -->
+        <toD uri="cms:/etc/commerce/scripts/shopify/markInventoryAlertPending.groovy?inputs=shopify_payload"/>
+
         <!-- Release covered backorders (#12): when the arriving stock covers open
              backorders for this item, raise each as a "Release Backorder" task
              (FIFO). Defensive - never breaks the inventory route. -->

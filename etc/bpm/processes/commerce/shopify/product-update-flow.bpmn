@@ -6,6 +6,17 @@
                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                   xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
                   id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">
+  <!-- Product onboarding flow. Started from the products/create & products/update route
+       (product-update.xml), guarded against duplicate instances per product. Its job is
+       ONBOARDING: ensure the product has an inventory threshold (prompting an operator when
+       it does not), then enqueue the product's inventory items for alert evaluation.
+
+       The low-stock ALERT itself is no longer decided here: the trigger moved to
+       inventory_levels/update,
+       evaluated by the inventory-alert sweep (sweepInventoryAlerts.groovy) which raises
+       inventory-alert-flow. So this flow ends by enqueuing the product's items pending, and
+       the sweep evaluates current stock against the threshold (covering an already-low product
+       the moment its threshold is first set). -->
   <bpmn:process id="product-update-flow" name="Product Update Flow" isExecutable="true">
     <bpmn:startEvent id="StartEvent_5a40e714">
       <bpmn:outgoing>Flow_start_threshold</bpmn:outgoing>
@@ -76,73 +87,8 @@
     <bpmn:exclusiveGateway id="Gateway_thresholdJoin">
       <bpmn:incoming>Flow_threshold_yes</bpmn:incoming>
       <bpmn:incoming>Flow_setThreshold_join</bpmn:incoming>
-      <bpmn:outgoing>Flow_join_checkInventory</bpmn:outgoing>
+      <bpmn:outgoing>Flow_join_end</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-
-    <!-- 3. Evaluate inventory levels against the configured thresholds -->
-    <bpmn:serviceTask id="ServiceTask_d2656f77" name="Check Inventory Level" camunda:class="org.mintjams.script.bpm.CmsDelegate">
-      <bpmn:extensionElements>
-        <camunda:field name="path">
-          <camunda:string>/etc/commerce/scripts/shopify/checkInventoryLevel.groovy</camunda:string>
-        </camunda:field>
-        <camunda:field name="inputs">
-          <camunda:string>productPath</camunda:string>
-        </camunda:field>
-        <camunda:field name="outputs">
-          <camunda:string>isInventoryLow</camunda:string>
-        </camunda:field>
-        <!-- Service tasks run with no JCR identity; runAs avoids a guest login that
-             cannot read this script. See ServiceTask_checkThreshold above. -->
-        <camunda:field name="runAs">
-          <camunda:string>commerce-service-user</camunda:string>
-        </camunda:field>
-      </bpmn:extensionElements>
-      <bpmn:incoming>Flow_join_checkInventory</bpmn:incoming>
-      <bpmn:outgoing>Flow_e58a323d</bpmn:outgoing>
-    </bpmn:serviceTask>
-
-    <!-- 4. Manual check needed? -->
-    <bpmn:exclusiveGateway id="ExclusiveGateway_7373b1e3" name="Manual check needed?">
-      <bpmn:incoming>Flow_e58a323d</bpmn:incoming>
-      <bpmn:outgoing>Flow_9e9a04fb</bpmn:outgoing>
-      <bpmn:outgoing>Flow_ea9e4305</bpmn:outgoing>
-    </bpmn:exclusiveGateway>
-
-    <bpmn:exclusiveGateway id="ExclusiveGateway_848b2f2b">
-      <bpmn:incoming>Flow_9e9a04fb</bpmn:incoming>
-      <bpmn:incoming>Flow_a90bc208</bpmn:incoming>
-      <bpmn:outgoing>Flow_14450437</bpmn:outgoing>
-    </bpmn:exclusiveGateway>
-
-    <!-- 4a. Inventory low: operator reviews the alert via a manual task -->
-    <bpmn:userTask id="UserTask_355fcd40" name="Manual Inventory Check" camunda:formKey="cms:/content/commerce/forms/shopify/inventory-level-review.html">
-      <bpmn:extensionElements>
-        <!-- Advance the processing status to "review_pending" (waiting on an operator). -->
-        <camunda:taskListener event="create" class="org.mintjams.script.bpm.CmsDelegate">
-          <camunda:field name="path">
-            <camunda:string>/etc/commerce/scripts/shopify/setWorkflowStatus.groovy</camunda:string>
-          </camunda:field>
-          <camunda:field name="inputs">
-            <camunda:string>productPath</camunda:string>
-          </camunda:field>
-          <camunda:field name="runAs">
-            <camunda:string>commerce-service-user</camunda:string>
-          </camunda:field>
-        </camunda:taskListener>
-        <camunda:taskListener event="create" class="org.mintjams.script.bpm.CmsDelegate">
-          <camunda:field name="path">
-            <camunda:string>/etc/commerce/scripts/shopify/notifyTaskCreated.groovy</camunda:string>
-          </camunda:field>
-          <!-- Task listeners run with no JCR identity; runAs avoids a guest login
-               that cannot read this script (matches the setWorkflowStatus listener). -->
-          <camunda:field name="runAs">
-            <camunda:string>commerce-service-user</camunda:string>
-          </camunda:field>
-        </camunda:taskListener>
-      </bpmn:extensionElements>
-      <bpmn:incoming>Flow_ea9e4305</bpmn:incoming>
-      <bpmn:outgoing>Flow_a90bc208</bpmn:outgoing>
-    </bpmn:userTask>
 
     <bpmn:endEvent id="EndEvent_0b9f3301">
       <bpmn:extensionElements>
@@ -158,8 +104,21 @@
             <camunda:string>commerce-service-user</camunda:string>
           </camunda:field>
         </camunda:executionListener>
+        <!-- Enqueue the product's inventory items for alert evaluation, so the sweep checks
+             current stock against the (now configured) threshold. -->
+        <camunda:executionListener event="end" class="org.mintjams.script.bpm.CmsDelegate">
+          <camunda:field name="path">
+            <camunda:string>/etc/commerce/scripts/shopify/enqueueProductInventoryPending.groovy</camunda:string>
+          </camunda:field>
+          <camunda:field name="inputs">
+            <camunda:string>productPath</camunda:string>
+          </camunda:field>
+          <camunda:field name="runAs">
+            <camunda:string>commerce-service-user</camunda:string>
+          </camunda:field>
+        </camunda:executionListener>
       </bpmn:extensionElements>
-      <bpmn:incoming>Flow_14450437</bpmn:incoming>
+      <bpmn:incoming>Flow_join_end</bpmn:incoming>
     </bpmn:endEvent>
 
     <!-- Sequence flows -->
@@ -172,16 +131,7 @@
       <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${hasThresholdConfig == true}</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="Flow_setThreshold_join" sourceRef="UserTask_setThreshold" targetRef="Gateway_thresholdJoin"/>
-    <bpmn:sequenceFlow id="Flow_join_checkInventory" sourceRef="Gateway_thresholdJoin" targetRef="ServiceTask_d2656f77"/>
-    <bpmn:sequenceFlow id="Flow_e58a323d" sourceRef="ServiceTask_d2656f77" targetRef="ExclusiveGateway_7373b1e3"/>
-    <bpmn:sequenceFlow id="Flow_9e9a04fb" name="No" sourceRef="ExclusiveGateway_7373b1e3" targetRef="ExclusiveGateway_848b2f2b">
-      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${isInventoryLow == false}</bpmn:conditionExpression>
-    </bpmn:sequenceFlow>
-    <bpmn:sequenceFlow id="Flow_ea9e4305" name="Yes" sourceRef="ExclusiveGateway_7373b1e3" targetRef="UserTask_355fcd40">
-      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${isInventoryLow == true}</bpmn:conditionExpression>
-    </bpmn:sequenceFlow>
-    <bpmn:sequenceFlow id="Flow_a90bc208" sourceRef="UserTask_355fcd40" targetRef="ExclusiveGateway_848b2f2b"/>
-    <bpmn:sequenceFlow id="Flow_14450437" sourceRef="ExclusiveGateway_848b2f2b" targetRef="EndEvent_0b9f3301"/>
+    <bpmn:sequenceFlow id="Flow_join_end" sourceRef="Gateway_thresholdJoin" targetRef="EndEvent_0b9f3301"/>
   </bpmn:process>
 
   <bpmndi:BPMNDiagram id="BPMNDiagram_1">
@@ -204,34 +154,15 @@
       <bpmndi:BPMNShape id="_688cda3d-b00a-47dc-8c8c-2b05f6259912" bpmnElement="Gateway_thresholdJoin">
         <dc:Bounds x="570" y="195" width="50" height="50"/>
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="becf0f0d-e1c5-4e4b-a6de-5940c6d4df6e" bpmnElement="ServiceTask_d2656f77">
-        <dc:Bounds x="680" y="180" width="100" height="80"/>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="d8d9981a-8757-4e9c-992f-3b80d5671d91" bpmnElement="ExclusiveGateway_7373b1e3">
-        <dc:Bounds x="840" y="195" width="50" height="50"/>
-        <bpmndi:BPMNLabel>
-          <dc:Bounds x="887" y="167" width="76" height="14"/>
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="cb52fbd8-056e-447e-9d85-4108e8d23b5e" bpmnElement="UserTask_355fcd40">
-        <dc:Bounds x="900" y="280" width="100" height="80"/>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="c69a3538-5c54-422c-af0e-7a81ed44f92e" bpmnElement="ExclusiveGateway_848b2f2b">
-        <dc:Bounds x="1010" y="195" width="50" height="50"/>
-      </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="_37e5d2f9-3df7-43a8-a712-e3d23f6ed14b" bpmnElement="EndEvent_0b9f3301">
-        <dc:Bounds x="1120" y="202" width="36" height="36"/>
+        <dc:Bounds x="682" y="202" width="36" height="36"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNEdge id="c304ed12-c7b9-4ffa-bcd5-2ec2199c1019" bpmnElement="Flow_start_threshold">
         <di:waypoint x="176" y="220"/>
-        <di:waypoint x="196" y="220"/>
-        <di:waypoint x="196" y="220"/>
         <di:waypoint x="240" y="220"/>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="a34b0924-c1ed-4059-bf5a-f49c4873e7c0" bpmnElement="Flow_threshold_gw">
         <di:waypoint x="340" y="220"/>
-        <di:waypoint x="360" y="220"/>
-        <di:waypoint x="360" y="220"/>
         <di:waypoint x="400" y="220"/>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="fd4d3070-8368-4c40-a753-ad39054fae6f" bpmnElement="Flow_threshold_no">
@@ -244,8 +175,6 @@
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="_61c6b6fc-4bcd-4881-9132-91f9e79c7c76" bpmnElement="Flow_threshold_yes">
         <di:waypoint x="450" y="220"/>
-        <di:waypoint x="470" y="220"/>
-        <di:waypoint x="470" y="220"/>
         <di:waypoint x="570" y="220"/>
         <bpmndi:BPMNLabel>
           <dc:Bounds x="482" y="209" width="20" height="14"/>
@@ -256,45 +185,9 @@
         <di:waypoint x="595" y="320"/>
         <di:waypoint x="595" y="245"/>
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="_27bc935c-0703-4550-814c-4f86c362d24c" bpmnElement="Flow_join_checkInventory">
+      <bpmndi:BPMNEdge id="_27bc935c-0703-4550-814c-4f86c362d24c" bpmnElement="Flow_join_end">
         <di:waypoint x="620" y="220"/>
-        <di:waypoint x="640" y="220"/>
-        <di:waypoint x="640" y="220"/>
-        <di:waypoint x="680" y="220"/>
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="_2fc8537e-0a2f-4b30-baca-ab06ad3dcb20" bpmnElement="Flow_e58a323d">
-        <di:waypoint x="780" y="220"/>
-        <di:waypoint x="800" y="220"/>
-        <di:waypoint x="800" y="220"/>
-        <di:waypoint x="840" y="220"/>
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="_175bf93f-6d05-4fa5-a3e0-a95687be2526" bpmnElement="Flow_9e9a04fb">
-        <di:waypoint x="890" y="220"/>
-        <di:waypoint x="910" y="220"/>
-        <di:waypoint x="910" y="220"/>
-        <di:waypoint x="1010" y="220"/>
-        <bpmndi:BPMNLabel>
-          <dc:Bounds x="922" y="211" width="15" height="14"/>
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="_49a2a45c-5d9a-46ea-b8de-e129d240c995" bpmnElement="Flow_ea9e4305">
-        <di:waypoint x="865" y="245"/>
-        <di:waypoint x="865" y="320"/>
-        <di:waypoint x="900" y="320"/>
-        <bpmndi:BPMNLabel>
-          <dc:Bounds x="848" y="271" width="20" height="14"/>
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="_8d315019-28f9-4b18-9da0-f06444fce9a1" bpmnElement="Flow_a90bc208">
-        <di:waypoint x="1000" y="320"/>
-        <di:waypoint x="1035" y="320"/>
-        <di:waypoint x="1035" y="245"/>
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="_3ee3162d-8d96-4ae5-b068-b60708a15894" bpmnElement="Flow_14450437">
-        <di:waypoint x="1060" y="220"/>
-        <di:waypoint x="1080" y="220"/>
-        <di:waypoint x="1080" y="220"/>
-        <di:waypoint x="1120" y="220"/>
+        <di:waypoint x="682" y="220"/>
       </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>

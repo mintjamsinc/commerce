@@ -202,7 +202,7 @@ returned even if it could not be persisted.
 
 | Method | Purpose |
 |---|---|
-| `boolean adminApiEnabled(config)` | True only when `adminApi.enabled == true` in parsed `shopify.yml`. |
+| `boolean adminApiEnabled(config)` | True when the Admin API is configured (all four `adminApi` connection fields filled) in parsed `shopify.yml`. The Admin API is required; there is no enable toggle. |
 | `String endpoint(adminApi)` | GraphQL endpoint URL; throws if `shopDomain`/`apiVersion` missing. |
 | `String accessToken(session, log, adminApi)` | Reuse cached token while fresh, else fetch + cache. |
 | `Object graphql(client, endpoint, accessToken, payload)` | POST GraphQL; throws on non-200 or a top-level `errors` array. `payload` may be a Map or a JSON String. |
@@ -279,7 +279,7 @@ script `YAML` binding. Coercion: true/false → Boolean, integers → Long, deci
 ### `commerce.Inventory`
 Read per-variant alert thresholds from a product's `inventory_level_config`
 property. *Pure* — a malformed config throws, so each caller keeps its own policy
-(`checkInventoryLevel` lets it propagate; `checkThresholdConfig` /
+(`sweepInventoryAlerts` isolates it per item in its sweep loop; `checkThresholdConfig` /
 `notifyTaskCreated` catch and treat as unconfigured).
 
 | Method | Purpose |
@@ -475,7 +475,7 @@ the allow-listed legacy names are touched.
 | `recordHealth.groovy` | Health |
 | `scanTaskSla.groovy` | SimpleYaml, TaskSla |
 | `checkAdminApiEnabled.groovy` | ShopifyAdmin |
-| `checkInventoryLevel.groovy` | Inventory, InventoryRules, SalesVelocity |
+| `sweepInventoryAlerts.groovy` | Inventory, InventoryRules, SalesVelocity, Locations, InventoryAlert |
 | `checkThresholdConfig.groovy` | Inventory, InventoryRules, SalesVelocity |
 | `computeVelocity.groovy` | SalesVelocity, Alerts, NotificationMessage, SimpleYaml |
 | `proposeReorders.groovy` | SalesVelocity, Replenishment, SimpleYaml, Jcr |

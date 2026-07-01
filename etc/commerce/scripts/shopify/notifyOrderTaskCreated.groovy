@@ -15,8 +15,11 @@
 // read from:
 //   /etc/commerce/config/notifications.yml
 //
-// Supported channels: Slack and Discord incoming webhooks, using the JDK
-// built-in java.net.http.HttpClient (no extra JAR required).
+// Delivery goes to every enabled channel in the shared registry - Slack,
+// Discord, Teams, LINE, generic webhook and email - via commerce.Notifications
+// (see Notifications.registry()). Each channel renders the same message in its
+// own format using the JDK built-in java.net.http.HttpClient / SMTP client (no
+// extra JAR required).
 //
 // IMPORTANT: a notification failure must never break the business process, so
 // every external call is wrapped defensively and only logged on error.

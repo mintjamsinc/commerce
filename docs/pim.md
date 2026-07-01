@@ -68,7 +68,7 @@ POST …/endpoints/sync.groovy  {"action":"metafields","productId":123}
 
 This reads `pim.metafields` (via `commerce.Pim.metafieldsToPush`) and applies them
 with the Admin `metafieldsSet` mutation (`commerce.ShopifyWrite.setMetafields`),
-gated on `adminApi.enabled`, with `dryRun` and the same audit trail as every other
+requires the Admin API to be configured, with `dryRun` and the same audit trail as every other
 outbound write. Multi-language fields are served from the unified view today;
 pushing them to Shopify translations is a future extension.
 

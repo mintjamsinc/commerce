@@ -12,8 +12,8 @@ package commerce
  *
  *   - the review FORMS (order-review.html / refund-review.html), rendered in the
  *     reviewer's own locale and time zone with the Tasks Form SDK's ICU engine;
- *   - the operational NOTIFICATIONS (Slack / Discord), rendered server-side with
- *     no per-user locale.
+ *   - the operational NOTIFICATIONS (Slack, Discord, Teams, LINE, webhook,
+ *     email), rendered server-side with no per-user locale.
  *
  * If the reason were pre-rendered to a fixed string in Groovy (the old
  * approach), the form could never localize it and money/numbers could never
@@ -93,8 +93,9 @@ class ReviewReasons {
 
     // =======================================================================
     // Server-side rendering — turn descriptors into operational English text
-    // for the Slack / Discord notifications, which have no per-user locale.
-    // The forms do NOT use this; they render each descriptor in the reviewer's
+    // for the notifications (Slack, Discord, Teams, LINE, webhook, email),
+    // which have no per-user locale. The forms do NOT use this; they
+    // render each descriptor in the reviewer's
     // locale via their i18n bundle.
     // =======================================================================
 

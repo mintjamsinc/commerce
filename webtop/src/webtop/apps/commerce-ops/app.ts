@@ -296,7 +296,7 @@ const App = {
 		},
 		healClass(d: any): string {
 			if (d.healed === 'ok') return 'st-processed';
-			if (d.heal === 'push' || d.heal === 'refresh') return 'st-received';
+			if (d.heal === 'refresh') return 'st-received';
 			return 'st-report';
 		},
 
