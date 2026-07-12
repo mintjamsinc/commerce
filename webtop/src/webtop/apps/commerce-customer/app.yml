@@ -1,0 +1,22 @@
+identifier: c1e7d2a4-5f83-4b96-a0d1-7e2c9f4b3a68
+title: Commerce Customer
+icon: assets/icons/icon.svg
+isAdminOnly: true
+# The customer editor: everything about one customer in one place. Displays the
+# Shopify customer mirror (profile, wallet, marketing consent, addresses) and
+# lets an operator edit the small set of Shopify-owned fields the shop curates —
+# tags (VIP is just a tag), the internal note, tax exemption and email-marketing
+# consent. Writes go to Shopify via the Admin API (sync.groovy → customerUpdate);
+# the CMS mirror follows through the webhook round-trip. Registers as the editor
+# for the customer mirror's dedicated MIME type, so double-clicking a customer
+# node (in the Content Browser or the Commerce Customers browser) opens it here.
+editor: true
+contentTypes:
+  - application/vnd.mintjams.commerce.customer+json
+actions:
+  open:
+    icon: open
+    label: Open
+minimumWidth: 640
+minimumHeight: 480
+customWindowControls: true

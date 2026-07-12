@@ -8,16 +8,15 @@
 //
 //   GET /bin/cms.cgi/{workspace}/content/commerce/endpoints/dashboard.groovy?days=7&salesDays=30
 
+import commerce.Api
 import commerce.Dashboard
 import commerce.Health
 import commerce.TaskSla
-import commerce.SalesVelocity
 import commerce.SimpleYaml
 import commerce.Backorders
 import commerce.Events
-import commerce.Customers
-import commerce.Checkouts
 import commerce.Reports
+import commerce.Reconciliation
 import commerce.Jcr
 import com.fasterxml.jackson.databind.ObjectMapper
 
@@ -32,10 +31,19 @@ int days = paramInt("days", 7, 1, 90)
 int salesDays = paramInt("salesDays", 30, 1, 365)
 
 try {
-    def out = [generatedAt: java.time.Instant.now().toString()]
+    def out = [generatedAt: Api.now()]
+
+    // ONE sales-fact aggregation serves both the Sales card and the Sales-trend hero
+    // (same window, same population defaults) — computed once, shared below.
+    Map salesRangeShared = null
+    try {
+        long lo = Dashboard.windowStartMs(salesDays)
+        def opts = commerce.SalesQuery.defaults(commerce.SalesQuery.config(repositorySession))
+        salesRangeShared = commerce.SalesQuery.salesRange(repositorySession, lo, System.currentTimeMillis(), opts)
+    } catch (Exception e) { log.warn("dashboard: sales range failed: ${e.message}") }
 
     // Sales + inventory (defensive: each section degrades independently).
-    try { out.sales = Dashboard.salesSummary(repositorySession, salesDays) }
+    try { out.sales = Dashboard.salesSummary(repositorySession, salesDays, salesRangeShared) }
     catch (Exception e) { log.warn("dashboard: sales failed: ${e.message}"); out.sales = [error: true] }
 
     try { out.inventory = Dashboard.inventorySummary(repositorySession) }
@@ -46,9 +54,6 @@ try {
 
     try { out.tasks = taskSummary(PROCESS_KEYS) }
     catch (Exception e) { log.warn("dashboard: tasks failed: ${e.message}"); out.tasks = [error: true] }
-
-    try { out.forecast = forecastSummary() }
-    catch (Exception e) { log.warn("dashboard: forecast failed: ${e.message}"); out.forecast = [error: true] }
 
     try { out.reorders = reorderSummary() }
     catch (Exception e) { log.warn("dashboard: reorders failed: ${e.message}"); out.reorders = [error: true] }
@@ -65,7 +70,7 @@ try {
     try { out.crm = crmSummary() }
     catch (Exception e) { log.warn("dashboard: crm failed: ${e.message}"); out.crm = [error: true] }
 
-    try { out.salesTrend = salesTrendSummary(salesDays) }
+    try { out.salesTrend = salesTrendSummary(salesDays, salesRangeShared) }
     catch (Exception e) { log.warn("dashboard: salesTrend failed: ${e.message}"); out.salesTrend = [error: true] }
 
     try { out.reconciliation = reconciliationSummary() }
@@ -138,54 +143,40 @@ Map taskSummary(List processKeys) {
     return [total: total, unassigned: unassigned, byStatus: byStatus]
 }
 
-// Stockout forecast: count + the most-urgent at-risk variants, from cached velocity.
-Map forecastSummary() {
-    int warnDays = 7
-    def cfgRes = repositorySession.getResource("/etc/commerce/config/velocity.yml")
-    if (cfgRes != null && cfgRes.exists()) {
-        def cfg = SimpleYaml.parse(cfgRes.content?.toString())
-        if (cfg?.stockout?.warnDays != null) {
-            try { warnDays = cfg.stockout.warnDays.toString().trim() as int } catch (Exception ignore) {}
-        }
-    }
-    def perDay = SalesVelocity.loadPerDay(repositorySession)
-    def atRisk = SalesVelocity.forecast(repositorySession, perDay, warnDays)
-    def top = atRisk.take(5).collect {
-        [title: it.title, variantTitle: it.variantTitle, quantity: it.quantity, perDay: it.perDay, days: it.days]
-    }
-    return [warnDays: warnDays, atRisk: atRisk.size(), top: top]
-}
-
-// Replenishment: reorders awaiting approval (open workflow tasks) + recently ordered.
+// Open "stock check + reorder" tasks (stock < fixed threshold)
+// + incoming transfers recorded to Shopify recently (from the outbound audit).
 Map reorderSummary() {
-    long pendingApproval = 0
+    long pendingReview = 0
     try {
-        pendingApproval = ProcessAPI.getEngine().getTaskService().createTaskQuery()
-            .processDefinitionKey("replenishment-flow").active().count()
+        pendingReview = ProcessAPI.getEngine().getTaskService().createTaskQuery()
+            .processDefinitionKey("inventory-alert-flow").active().count()
     } catch (Exception e) {
-        log.warn("dashboard: reorder task query failed: ${e.message}")
+        log.warn("dashboard: review task query failed: ${e.message}")
     }
 
-    // Recently ordered POs (status "ordered"), this + previous month.
+    // Incoming transfers recorded (outbound audit, this + previous month).
     long ordered = 0
     def ym = java.time.format.DateTimeFormatter.ofPattern("yyyy/MM")
     def today = java.time.LocalDate.now()
     for (int i = 0; i <= 1; i++) {
         def folder
-        try { folder = repositorySession.getResource("/content/commerce/purchase-orders/${today.minusMonths(i).format(ym)}") } catch (Exception e) { folder = null }
+        try { folder = repositorySession.getResource("/content/commerce/sync/${today.minusMonths(i).format(ym)}") } catch (Exception e) { folder = null }
         if (folder == null || !folder.exists()) continue
         def it = folder.list()
         while (it.hasNext()) {
             def child = it.next()
             try {
-                if (child.getName().endsWith(".json") && child.hasProperty("commerce:status")
-                        && child.getProperty("commerce:status").getValue()?.toString() == "ordered") {
+                if (child.getName().endsWith(".json")
+                        && child.hasProperty("commerce:action")
+                        && child.getProperty("commerce:action").getValue()?.toString() == "incoming_transfer"
+                        && child.hasProperty("commerce:status")
+                        && child.getProperty("commerce:status").getValue()?.toString() == "ok") {
                     ordered++
                 }
             } catch (Exception ignore) {}
         }
     }
-    return [pendingApproval: pendingApproval, ordered: ordered]
+    return [pendingApproval: pendingReview, ordered: ordered]
 }
 
 // Multi-location inventory: location count, tracked items, and (item,location)
@@ -225,7 +216,7 @@ Map locationsSummary() {
     return [locations: locations, trackedItems: trackedItems, lowLocations: lowLocations]
 }
 
-// Backorders: counts by status (book health) + units still awaited (#12).
+// Backorders: counts by status (book health) + units still awaited.
 Map backorderSummary() {
     def s = Backorders.summary(repositorySession)
     def by = s.byStatus ?: [:]
@@ -237,7 +228,7 @@ Map backorderSummary() {
     ]
 }
 
-// Event ingestion: total events + by-status (failed events need replay) (#1/#4).
+// Event ingestion: total events + by-status (failed events need replay).
 Map eventSummary() {
     def s = Events.summary(repositorySession)
     def by = s.byStatus ?: [:]
@@ -249,97 +240,112 @@ Map eventSummary() {
     ]
 }
 
-// CRM: customer segments + abandoned carts (#13/#14/#15).
+// CRM: total customers for the dashboard card — an inline count of the
+// received customer records.
 Map crmSummary() {
-    def s = Customers.summary(repositorySession)
-    def seg = s.bySegment ?: [:]
-    def rec = s.byRecency ?: [:]
-
-    long abandonedAfterMs = 60L * 60_000L
-    def cfgRes = repositorySession.getResource("/etc/commerce/config/crm.yml")
-    if (cfgRes != null && cfgRes.exists()) {
-        def cfg = SimpleYaml.parse(cfgRes.content?.toString())
-        try { abandonedAfterMs = (cfg?.abandonedCart?.abandonedAfterMinutes ?: 60).toString().trim().toLong() * 60_000L } catch (Exception ignore) {}
+    long customers = 0
+    def stmt = "/jcr:root/content/commerce/customers//element(*, nt:file)[@commerce:status='received']"
+    def jq = repositorySession.getWorkspace().getQueryManager().createQuery(stmt, javax.jcr.query.Query.XPATH)
+    def resources = jq.execute().getResources()
+    if (resources != null) {
+        resources.each { res ->
+            try { if (res.getName().startsWith("customer_") && res.getName().endsWith(".json")) customers++ } catch (Exception ignore) {}
+        }
     }
-    def carts = Checkouts.summary(repositorySession, abandonedAfterMs, System.currentTimeMillis())
-
-    return [
-        customers: (s.total ?: 0) as long,
-        vip      : (s.vip ?: 0) as long,
-        atRisk   : (rec.at_risk ?: 0) as long,
-        dormant  : (rec.dormant ?: 0) as long,
-        newCount : (seg.new ?: 0) as long,
-        abandoned: (carts.abandoned ?: 0) as long,
-    ]
+    return [customers: customers]
 }
 
-// Sales trend: the daily series + top products + AOV for the headline chart (#16/#25).
-Map salesTrendSummary(int salesDays) {
-    def report = Reports.sales(repositorySession, salesDays)
+// Sales trend: the daily series + top products + AOV for the headline chart.
+// Everything comes from the index-backed sales facts (commerce.SalesQuery — uncapped, exact);
+// the top products are the line-grain facet top-N by base gross, labelled with the mirrored
+// product titles (the facts carry only the real product_id dimension key). The range report
+// is shared with the Sales card (computed once per request).
+Map salesTrendSummary(int salesDays, Map shared) {
+    long hi = System.currentTimeMillis()
+    long lo = Dashboard.windowStartMs(salesDays)
+    def opts = commerce.SalesQuery.defaults(commerce.SalesQuery.config(repositorySession))
+    def report = (shared != null) ? shared : commerce.SalesQuery.salesRange(repositorySession, lo, hi, opts)
 
-    // Pick the primary currency (largest total) for the single-series sparkline + AOV.
-    def revenue = (report.totals?.revenue ?: [:])
+    // Pick the primary currency (largest native total) for the single-series sparkline + AOV.
+    // report.totals.revenue is a [{currency, amount}] array (Key-Value shape).
+    def revenue = (report.totals?.revenue ?: [])
     String primary = null
     double best = -1
-    revenue.each { cur, amt ->
-        double a = parseD(amt)
-        if (a > best) { best = a; primary = cur }
+    revenue.each { entry ->
+        double a = parseD(entry.amount)
+        if (a > best) { best = a; primary = entry.currency }
     }
-    double totalRevenue = primary != null ? parseD(revenue[primary]) : 0d
+    double totalRevenue = 0d
+    if (primary != null) {
+        def e = revenue.find { it.currency == primary }
+        if (e != null) totalRevenue = parseD(e.amount)
+    }
     long orders = (report.totals?.orders ?: 0L) as long
     double aov = orders > 0 ? totalRevenue / orders : 0d
 
-    // Per-day value in the primary currency, oldest→newest (chart-ready).
+    // Per-day value: the per-day base-currency rollup (per-day native-by-currency is a 2-dim
+    // grouping the facet clause does not declare) — for a single-currency shop base == native,
+    // and for multi-currency it is the meaningful cross-currency series.
     def points = (report.daily ?: []).collect { d ->
-        [date: d.date, orders: d.orders, revenue: primary != null ? parseD((d.revenue ?: [:])[primary]) : 0d]
+        [date: d.date, orders: d.orders, revenue: parseD(d.baseRevenue)]
+    }
+
+    // TOP5 products by base gross over the same window/population, titled from the product mirror.
+    // The rows carry only the GID — peel to the numeric storage key HERE.
+    def top = commerce.SalesQuery.topProducts(repositorySession, lo, hi, 5, opts)
+    def titles = commerce.Pim.titles(repositorySession, top.collect { Api.legacyId(it.productId) })
+    String baseCurrency = report.totals?.baseCurrency
+    top.each { row ->
+        row.title = titles[Api.legacyId(row.productId)]
+        row.baseCurrency = baseCurrency
     }
 
     return [
         days          : salesDays,
         primaryCurrency: primary,
+        baseCurrency  : baseCurrency,
         totalRevenue  : totalRevenue,
         totalOrders   : orders,
         aov           : aov,
+        metrics       : report.totals?.metrics ?: [:],
         points        : points,
-        topProducts   : (report.topProducts ?: []).take(5),
+        topProducts   : top,
     ]
 }
 
-// Reconciliation: latest drift report + last-run state (#24).
+// Reconciliation: latest drift report + last-run state.
 Map reconciliationSummary() {
     def state = Jcr.readMap(repositorySession, "/content/commerce/reconciliation/state.json")
     def latest = latestReconReport()
     return [
-        lastRunAt        : state.lastRunAt,
+        lastRunAt        : Api.instant(state.lastRunAt),
         productsWithDrift: (latest.productsWithDrift ?: 0) as long,
         totalDiffs       : (latest.totalDiffs ?: 0) as long,
-        healed           : (latest.healed ?: 0) as long,
+        refreshed        : (latest.refreshed ?: 0) as long,
         checked          : (latest.checked ?: 0) as long,
     ]
 }
 
+// Newest DIFF run report whose run did not fail. The batch records EVERY run — including
+// failed ones, whose counters reflect only partial work — so the card summarizes the latest
+// completed inspection rather than letting an error run's numbers mask it. Index-backed
+// (Reconciliation.listRuns over the typed report properties); only this card needs the
+// report BODY, so it reads exactly one document.
 Map latestReconReport() {
-    def ymf = new java.text.SimpleDateFormat("yyyy/MM")
-    def cal = java.util.Calendar.getInstance()
-    String best = null, bestPath = null
-    for (int i = 0; i <= 1; i++) {
-        def folder = repositorySession.getResource("/content/commerce/reconciliation/${ymf.format(cal.getTime())}")
-        if (folder != null && folder.exists()) {
-            def it = folder.list()
-            while (it.hasNext()) {
-                def c = it.next()
-                def n = c.getName()
-                if (n.startsWith("recon_") && n.endsWith(".json") && (best == null || n > best)) { best = n; bestPath = c.getPath() }
-            }
-        }
-        cal.add(java.util.Calendar.MONTH, -1)
-    }
-    return bestPath == null ? [:] : Jcr.readMap(repositorySession, bestPath)
+    def rows = Reconciliation.listRuns(repositorySession,
+        [scope: Reconciliation.SCOPE_DIFF, result: "success", limit: 1L])
+    return rows.isEmpty() ? [:] : Jcr.readMap(repositorySession, rows[0].path)
 }
 
-// Outbound CMS → Shopify writes, tallied by outcome over the window (#2).
+// Outbound CMS → Shopify writes, tallied by outcome over the window.
 Map syncSummary(int windowDays) {
-    def ops = Reports.operations(repositorySession, windowDays, null, 5000)
+    // Reports.operations now filters by an XPath date range (not a day count), so
+    // translate the window into a from-bound (start of day, windowDays ago).
+    def zone = java.time.ZoneId.systemDefault()
+    def fromIso = java.time.LocalDate.now(zone).minusDays(windowDays)
+        .atStartOfDay(zone).toOffsetDateTime()
+        .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+    def ops = Reports.operations(repositorySession, null, fromIso, null, null, 5000)
     long ok = 0, failed = 0, dryrun = 0
     ops.each { o ->
         switch (o.status?.toString()) {

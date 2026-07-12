@@ -1,0 +1,39 @@
+{
+	"app.commerce-reconcile.title": "コマース差分照合",
+
+	"app.commerce-reconcile.toolbar.refresh": "更新",
+	"app.commerce-reconcile.toolbar.toggleSidebar": "サイドバーの表示切替",
+	"app.commerce-reconcile.toolbar.timeRange": "期間",
+
+	"app.commerce-reconcile.adminApi.disabled": "Shopify Admin API が未設定です。Commerce 設定で設定するまで、差分照合は実行できません。",
+	"app.commerce-reconcile.adminApi.required": "先に Shopify Admin API を設定してください。",
+
+	"app.commerce-reconcile.reconcile.target": "対象",
+	"app.commerce-reconcile.reconcile.target.inventory": "在庫",
+	"app.commerce-reconcile.reconcile.target.products": "商品",
+	"app.commerce-reconcile.reconcile.runNow": "今すぐ実行",
+	"app.commerce-reconcile.reconcile.runTitle": "照合を実行",
+	"app.commerce-reconcile.reconcile.runMsg": "商品の差分照合を今すぐ実行しますか？ ドリフトを検出し、CMS ミラーを Shopify から最新化します（Shopify への書き込みはありません）。",
+	"app.commerce-reconcile.reconcile.runMsgInventory": "在庫の全件監査を今すぐ実行しますか？ Bulk オペレーションで全在庫アイテムを Shopify と突合し、CMS ミラーを最新化します（Shopify への書き込みはありません）。",
+	"app.commerce-reconcile.reconcile.runOk": "実行",
+	"app.commerce-reconcile.reconcile.started": "照合を開始しました。まもなく更新されます…",
+	"app.commerce-reconcile.reconcile.startedInventory": "在庫監査ジョブを登録しました。完了すると履歴に表示されます。",
+	"app.commerce-reconcile.reconcile.alreadyRunning": "在庫監査は既に実行中です。",
+	"app.commerce-reconcile.reconcile.couldNotStart": "開始できませんでした（{status}）。",
+
+	"app.commerce-reconcile.download": "CSVダウンロード",
+
+	"app.commerce-reconcile.history.type": "種別",
+	"app.commerce-reconcile.history.type.inventory": "在庫",
+	"app.commerce-reconcile.history.type.products": "商品",
+	"app.commerce-reconcile.history.startedAt": "開始日時",
+	"app.commerce-reconcile.history.finishedAt": "終了日時",
+	"app.commerce-reconcile.history.updated": "更新件数",
+	"app.commerce-reconcile.history.result": "結果",
+	"app.commerce-reconcile.history.success": "成功",
+	"app.commerce-reconcile.history.error": "エラー",
+	"app.commerce-reconcile.history.empty": "選択した期間に実行履歴はありません。",
+
+	"app.commerce-reconcile.statusbar.working": "処理中…",
+	"app.commerce-reconcile.statusbar.ready": "準備完了"
+}

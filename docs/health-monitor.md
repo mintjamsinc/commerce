@@ -26,7 +26,7 @@ API callers   ──(Health.timeApi on the caller's session)──────�
                                                                           │
                                               records metrics (JCR) ──────┤
                                               evaluates thresholds  ──────┤
-                                              fires alerts ──► Notifications.dispatch (#17)
+                                              fires alerts ──► Notifications.dispatch
 ```
 
 `recordHealth.groovy` is the single writer for webhook/route metrics and always

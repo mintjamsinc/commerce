@@ -6,7 +6,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 /**
- * Backorder / pre-order management (feature #12).
+ * Backorder / pre-order management.
  *
  * A <em>backorder</em> is a line-level record that a paid order could not be — or
  * should not yet be — fulfilled from on-hand stock, and is therefore waiting for
@@ -19,7 +19,7 @@ import java.time.format.DateTimeFormatter
  *
  * A backorder is its own resource with its own {@code commerce:status} lifecycle —
  * the same modelling as refunds and purchase orders, so operators read it the same
- * way (see docs/commerce-status.md):
+ * way:
  *
  *   backordered -> ready -> released        (stock arrived, operator released it)
  *   backordered -> cancelled                (order refunded / cancelled)
@@ -168,7 +168,7 @@ class Backorders {
             }
 
             def now = LocalDate.now(ZoneId.systemDefault())
-            def createdAt = java.time.Instant.now().toString()
+            def createdAt = Api.now()
             def path = "${BASE_DIR}/${now.format(YM)}/${recordName(orderId, lineItemId)}".toString()
 
             def record = [:]
@@ -186,12 +186,12 @@ class Backorders {
             res.setProperty("commerce:line_item_id", lineItemId)
             res.setProperty("commerce:variant_id", str(descriptor?.variant_id))
             res.setProperty("commerce:inventory_item_id", str(descriptor?.inventory_item_id))
-            res.setProperty("commerce:quantity", intOr(descriptor?.quantity, 0).toString())
-            res.setProperty("commerce:ordered_quantity", intOr(descriptor?.ordered_quantity, 0).toString())
+            res.setProperty("commerce:quantity", (long) intOr(descriptor?.quantity, 0))
+            res.setProperty("commerce:ordered_quantity", (long) intOr(descriptor?.ordered_quantity, 0))
             res.setProperty("commerce:customer_email", str(descriptor?.customer_email))
             res.setProperty("commerce:title", str(descriptor?.title))
             res.setProperty("commerce:sku", str(descriptor?.sku))
-            res.setProperty("commerce:created_at", createdAt)
+            res.setProperty("commerce:created_at", new java.util.Date())
             session.commit()
             log.info("Backorders: created ${path} (order ${orderId}, item ${descriptor?.inventory_item_id}, awaited ${descriptor?.quantity}, ${descriptor?.reason})")
             return true
@@ -240,7 +240,7 @@ class Backorders {
                     id       : prop(res, "commerce:order_id") + "_" + prop(res, "commerce:line_item_id"),
                     order_id : prop(res, "commerce:order_id"),
                     quantity : intOr(prop(res, "commerce:quantity"), 0),
-                    createdAt: prop(res, "commerce:created_at") ?: createdMs(res),
+                    createdAt: isoProp(res, "commerce:created_at") ?: createdMs(res),
                 ]
             } catch (Exception ignore) {}
         }
@@ -295,9 +295,9 @@ class Backorders {
             if (res == null || !res.exists()) {
                 return false
             }
-            def at = java.time.Instant.now().toString()
+            def at = Api.now()
             res.setProperty("commerce:status", "cancelled")
-            res.setProperty("commerce:cancelled_at", at)
+            res.setProperty("commerce:cancelled_at", new java.util.Date())
             if (reason != null) res.setProperty("commerce:cancel_reason", reason)
             // Keep the JSON body in step with the properties.
             try {
@@ -325,8 +325,8 @@ class Backorders {
             if (res == null || !res.exists()) {
                 return false
             }
-            def at = java.time.Instant.now().toString()
-            res.setProperty("commerce:released_at", at)
+            def at = Api.now()
+            res.setProperty("commerce:released_at", new java.util.Date())
             try {
                 def doc = Jcr.readMap(session, path)
                 if (!doc.isEmpty()) {
@@ -379,12 +379,32 @@ class Backorders {
                 def doc = Jcr.readMap(session, res.getPath())
                 doc.path = res.getPath()
                 if (doc.status == null) doc.status = st
-                if (doc.created_at == null) doc.created_at = prop(res, "commerce:created_at")
+                if (doc.created_at == null) doc.created_at = isoProp(res, "commerce:created_at")
                 rows << doc
             } catch (Exception ignore) {}
         }
         rows.sort { a, b -> (b.created_at?.toString() ?: "") <=> (a.created_at?.toString() ?: "") }
-        return limit > 0 && rows.size() > limit ? rows.subList(0, limit) : rows
+        def page = limit > 0 && rows.size() > limit ? rows.subList(0, limit) : rows
+        // Exit mapping (commerce.Api): the stored record keeps its snake_case
+        // storage shape; the wire row is camelCase with GID ids, numeric
+        // quantities and ms-precision ISO timestamps.
+        return page.collect { wireRow(it) }
+    }
+
+    /** Stored backorder doc → the wire row (commerce.Api contract). */
+    private static Map wireRow(Map doc) {
+        def out = Api.camelize(doc)
+        out.orderId = Api.gid("Order", out.orderId)
+        out.lineItemId = Api.gid("LineItem", out.lineItemId)
+        out.variantId = Api.gid("ProductVariant", out.variantId)
+        out.inventoryItemId = Api.gid("InventoryItem", out.inventoryItemId)
+        ["createdAt", "cancelledAt", "releasedAt"].each { k ->
+            if (out[k] != null) out[k] = Api.instant(out[k])
+        }
+        ["orderedQuantity", "availableAtOrder", "quantity"].each { k ->
+            if (out[k] != null) out[k] = Api.num(out[k])
+        }
+        return out
     }
 
     // -------------------------------------------------------------------------
@@ -432,6 +452,20 @@ class Backorders {
             if (res.hasProperty(name)) {
                 return res.getProperty(name).getValue()?.toString()
             }
+        } catch (Exception ignore) {}
+        return null
+    }
+
+    // Date-typed properties read back as Calendar/Date; legacy nodes hold ISO
+    // strings. Normalize either to an ISO-8601 string (null when absent).
+    private static String isoProp(res, String name) {
+        try {
+            if (!res.hasProperty(name)) return null
+            def v = res.getProperty(name).getValue()
+            if (v == null) return null
+            if (v instanceof java.util.Calendar) return v.getTime().toInstant().toString()
+            if (v instanceof java.util.Date) return v.toInstant().toString()
+            return v.toString()
         } catch (Exception ignore) {}
         return null
     }

@@ -1,15 +1,22 @@
-// CMS → Shopify outbound sync endpoint (admin). Category A (#2 bidirectional sync).
+// CMS → Shopify outbound sync endpoint (admin).
 //
 // Lets operators / tooling push corrections from the CMS back to Shopify via the
 // Admin API: set a variant's stock at a location, set a variant's price, or
 // publish/unpublish a product. Gated on adminApi.enabled (same switch as metafield
-// enrichment and fulfillment write-back); supports dryRun for safe rollout (#28).
+// enrichment and fulfillment write-back); supports dryRun for safe rollout.
 //
 //   GET  — capability/status: whether the Admin API is enabled + the actions.
 //   POST — perform an action:
 //     {"action":"inventory","inventoryItemId":123,"locationId":456,"quantity":10}
 //     {"action":"price","productId":1,"variantId":2,"price":"19.99"}
 //     {"action":"publish","productId":1,"published":true}
+//     {"action":"customer","customerId":123,"fields":{"tags":["vip"],"note":"..."}}
+//     {"action":"product","productId":1,"fields":{"title":"...","status":"ACTIVE"}}
+//     {"action":"media","op":"add","productId":1,"originalSource":"https://...","alt":"..."}
+//     {"action":"media","op":"delete","productId":1,"mediaIds":["gid://.../MediaImage/1"]}
+//     {"action":"media","op":"reorder","productId":1,"orderedMediaIds":["gid://..."]}
+//     {"action":"media","op":"updateAlt","mediaId":"gid://.../MediaImage/1","alt":"..."}
+//     {"action":"order","orderId":123,"fields":{"note":"...","tags":["vip"],"customAttributes":[{"key":"delivery_note","value":"..."}]}}
 //     (add "dryRun":true to validate + echo the plan without calling Shopify)
 //
 // Lives OUTSIDE /content/public, so the CGI enforces authentication and ACLs.
@@ -17,6 +24,7 @@
 //   POST /bin/cms.cgi/{workspace}/content/commerce/endpoints/sync.groovy
 
 import java.net.http.HttpClient
+import commerce.Api
 import commerce.ShopifyAdmin
 import commerce.ShopifyWrite
 import commerce.Pim
@@ -44,7 +52,7 @@ if (request.getMethod() == "GET") {
         enabled   : enabled,
         shopDomain: adminApi?.shopDomain,
         apiVersion: adminApi?.apiVersion,
-        actions   : ["inventory", "price", "publish", "metafields"],
+        actions   : ["inventory", "price", "publish", "metafields", "customer", "product", "media", "order"],
     ]
     response.setStatus(200)
     response.setHeader("Content-Type", "application/json")
@@ -78,12 +86,55 @@ try {
 
 def action = req.action?.toString()
 boolean dryRun = req.dryRun != null && req.dryRun.toString().toLowerCase() == "true"
+// Some edits are audited under a distinct action name (reports key off it):
+// customer edits, product base-field edits, per-op media edits, and order metadata edits.
+String auditAction = action
+if (action == "customer") {
+    auditAction = "customer_update"
+} else if (action == "product") {
+    auditAction = "product_update"
+} else if (action == "media") {
+    auditAction = "media_" + (req.op ?: "op")
+} else if (action == "order") {
+    auditAction = "order_update"
+} else if (action == "publish") {
+    // Distinguish publish vs unpublish so the ops log can show
+    // "product published" / "product unpublished". Same boolean coercion as the switch
+    // handler below, so the audit label can never disagree with the write.
+    boolean published = req.published != null && req.published.toString().toLowerCase() == "true"
+    auditAction = published ? "product_publish" : "product_unpublish"
+}
+
+// WHO: HTTP admin endpoints run AS the logged-in operator (same identity the PIM
+// / reconcile endpoints attribute writes to). WHAT-TARGET: the Shopify entity
+// this action mutates, so the audit is queryable by target.
+String actor = null
+try { actor = repositorySession.getUserID()?.toString() } catch (Exception ignore) {}
+// Ids may arrive from the client as GIDs (the wire form) — peel to the numeric
+// REST form for the audit props (storage keeps numeric ids; the wire re-GIDs
+// them via commerce.Api on the way out).
+String entity = null
+String entityId = null
+switch (action) {
+    case "inventory":
+        entity = "inventory_item"; entityId = Api.legacyId(req.inventoryItemId); break
+    case "price":
+    case "publish":
+    case "metafields":
+    case "product":
+    case "media":
+        entity = "product"; entityId = Api.legacyId(req.productId); break
+    case "customer":
+        entity = "customer"; entityId = Api.legacyId(req.customerId); break
+    case "order":
+        entity = "order"; entityId = Api.legacyId(req.orderId); break
+}
 
 try {
-    // dryRun: validate + echo the plan without touching Shopify (#28 safe rollout).
+    // dryRun: validate + echo the plan without touching Shopify.
     if (dryRun) {
         def plan = planFor(action, req)
-        writeAudit(action, req, "dryrun", plan, null)
+        writeAudit(auditAction, req, "dryrun", plan, null, actor, entity, entityId)
         respond(200, [ok: true, dryRun: true, action: action, plan: plan])
         return
     }
@@ -105,23 +156,57 @@ try {
                 return ShopifyWrite.setPublished(httpClient, endpoint, token,
                     req.productId, req.published != null && req.published.toString().toLowerCase() == "true")
             case "metafields":
-                // Push the product's CMS-authored PIM metafields (#23) to Shopify.
+                // Push the product's CMS-authored PIM metafields to Shopify.
                 def mfs = Pim.metafieldsToPush(Pim.read(repositorySession, req.productId))
                 if (!mfs) throw new IllegalArgumentException("product ${req.productId} has no PIM metafields to push")
                 return ShopifyWrite.setMetafields(httpClient, endpoint, token, req.productId, mfs)
+            case "customer":
+                // Edit a customer's tags / note / tax exemption / marketing consent via Admin API.
+                return ShopifyWrite.updateCustomer(httpClient, endpoint, token,
+                    req.customerId?.toString(), (req.fields instanceof Map) ? req.fields : [:])
+            case "product":
+                // Edit a product's base fields (title / descriptionHtml / vendor /
+                // productType / tags / handle / status) via Admin API (product 360).
+                return ShopifyWrite.updateProduct(httpClient, endpoint, token,
+                    req.productId?.toString(), (req.fields instanceof Map) ? req.fields : [:])
+            case "media":
+                // Edit a product's media (product 360): add-by-URL / delete /
+                // reorder / alt-edit. reorder is ASYNC (mirror follows via job).
+                switch (req.op) {
+                    case "add":
+                        return ShopifyWrite.addProductMedia(httpClient, endpoint, token,
+                            req.productId?.toString(), req.originalSource?.toString(), req.alt?.toString())
+                    case "delete":
+                        return ShopifyWrite.deleteProductMedia(httpClient, endpoint, token,
+                            req.productId?.toString(), req.mediaIds)
+                    case "reorder":
+                        return ShopifyWrite.reorderProductMedia(httpClient, endpoint, token,
+                            req.productId?.toString(), req.orderedMediaIds)
+                    case "updateAlt":
+                        return ShopifyWrite.updateProductMediaAlt(httpClient, endpoint, token,
+                            req.mediaId?.toString(), req.alt?.toString())
+                    default:
+                        throw new IllegalArgumentException("Unknown media op: ${req.op}")
+                }
+            case "order":
+                // Edit an order's metadata (order 3-piece set, v1 = metadata ONLY):
+                // note / tags / customAttributes via Admin API. Line-item / quantity
+                // editing is DEFERRED (no Order Editing session here).
+                return ShopifyWrite.updateOrder(httpClient, endpoint, token,
+                    req.orderId?.toString(), (req.fields instanceof Map) ? req.fields : [:])
             default:
                 throw new IllegalArgumentException("Unknown action: ${action}")
         }
     }
 
-    writeAudit(action, req, "ok", result, null)
+    writeAudit(auditAction, req, "ok", result, null, actor, entity, entityId)
     respond(200, [ok: true, action: action, result: result])
 } catch (IllegalArgumentException e) {
-    writeAudit(action, req, "failed", null, e.message)
+    writeAudit(auditAction, req, "failed", null, e.message, actor, entity, entityId)
     respond(400, [ok: false, action: action, error: e.message])
 } catch (Exception e) {
     log.warn("sync: ${action} failed: ${e.message}")
-    writeAudit(action, req, "failed", null, e.message)
+    writeAudit(auditAction, req, "failed", null, e.message, actor, entity, entityId)
     respond(502, [ok: false, action: action, error: e.message])
 }
 
@@ -161,36 +246,54 @@ Map planFor(String action, Map req) {
             if (!mfs) throw new IllegalArgumentException("product ${req.productId} has no PIM metafields to push")
             return [action: "metafields", productId: ShopifyWrite.gid("Product", req.productId),
                     count: mfs.size(), metafields: mfs]
+        case "customer":
+            def fields = (req.fields instanceof Map) ? req.fields : [:]
+            return [action: "customer",
+                    customerId: ShopifyWrite.gid("Customer", req.customerId),
+                    fields: fields.keySet().findAll { it in ["tags", "note", "taxExempt", "marketingConsent"] }]
+        case "product":
+            def productFields = (req.fields instanceof Map) ? req.fields : [:]
+            return [action: "product",
+                    productId: ShopifyWrite.gid("Product", req.productId),
+                    fields: productFields.keySet().findAll { it in ["title", "descriptionHtml", "vendor", "productType", "tags", "handle", "status"] }]
+        case "media":
+            def mediaOp = req.op?.toString()
+            def mediaPlan = [action: "media", op: mediaOp]
+            switch (mediaOp) {
+                case "add":
+                    mediaPlan.productId = ShopifyWrite.gid("Product", req.productId)
+                    mediaPlan.originalSource = req.originalSource?.toString()
+                    break
+                case "delete":
+                    mediaPlan.productId = ShopifyWrite.gid("Product", req.productId)
+                    mediaPlan.mediaIds = (req.mediaIds instanceof List) ? req.mediaIds.collect { ShopifyWrite.gid("MediaImage", it) } : []
+                    break
+                case "reorder":
+                    mediaPlan.productId = ShopifyWrite.gid("Product", req.productId)
+                    mediaPlan.orderedMediaIds = (req.orderedMediaIds instanceof List) ? req.orderedMediaIds.collect { ShopifyWrite.gid("MediaImage", it) } : []
+                    break
+                case "updateAlt":
+                    mediaPlan.mediaId = ShopifyWrite.gid("MediaImage", req.mediaId)
+                    mediaPlan.alt = req.alt?.toString()
+                    break
+                default:
+                    throw new IllegalArgumentException("Unknown media op: ${req.op}")
+            }
+            return mediaPlan
+        case "order":
+            def orderFields = (req.fields instanceof Map) ? req.fields : [:]
+            return [action: "order",
+                    orderId: ShopifyWrite.gid("Order", req.orderId),
+                    fields: orderFields.keySet().findAll { it in ["note", "tags", "customAttributes"] }]
         default:
             throw new IllegalArgumentException("Unknown action: ${action}")
     }
 }
 
-// Best-effort audit trail of outbound writes (#25). Never breaks the response.
-void writeAudit(String action, Map req, String status, Object result, String error) {
-    try {
-        def now = java.time.Instant.now().toString()
-        def ts = System.currentTimeMillis()
-        def ym = new java.text.SimpleDateFormat("yyyy/MM").format(new Date())
-        def path = "/content/commerce/sync/${ym}/sync_${ts}.json".toString()
-        def record = [
-            at    : now,
-            source: "cms",
-            action: action,
-            request: req,
-            status: status,
-            result: result,
-            error : error,
-        ]
-        def res = Jcr.getOrCreateFile(repositorySession, path)
-        res.write(Jcr.toJson(record))
-        res.setProperty("commerce:status", status)
-        res.setProperty("commerce:action", action ?: "")
-        res.setProperty("commerce:source", "cms")
-        res.setProperty("commerce:created_at", now)
-        repositorySession.commit()
-    } catch (Exception e) {
-        try { repositorySession.rollback() } catch (Exception ignore) {}
-        log.warn("sync: could not write audit record: ${e.message}")
-    }
+// Best-effort audit trail of outbound writes. Never breaks the response.
+// Carries WHO (actor) + WHAT-TARGET (entity / entityId) so the record answers
+// who / against what and stays queryable by operator and target.
+void writeAudit(String action, Map req, String status, Object result, String error,
+                String actor, String entity, String entityId) {
+    commerce.SyncAudit.record(repositorySession, log, action, req, status, result, error, actor, entity, entityId)
 }

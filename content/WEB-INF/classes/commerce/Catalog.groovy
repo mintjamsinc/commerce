@@ -3,28 +3,23 @@ package commerce
 import com.fasterxml.jackson.databind.ObjectMapper
 
 /**
- * Public storefront catalog projection (category F, #20 / #21).
+ * Sanitizer for the public catalog (self-EC embed toolkit).
  *
- * The product catalog lives in the admin area (/content/commerce/products) which an
- * anonymous storefront visitor cannot read. Rather than expose that, the publisher
- * builds a <em>sanitized public projection</em> under /content/public/commerce/catalog/
- * (anonymous-readable) that the ichigo.js storefront consumes directly:
+ * The product catalog lives in the admin area (/content/commerce/products). Every
+ * session — including the anonymous one the public read endpoint
+ * (content/public/commerce/endpoints/catalog.groovy) runs as — has repository READ on
+ * /content (granted to everyone; only /etc is denied), so the endpoint reads the admin
+ * mirror ON DEMAND with the caller's session and runs it through these builders,
+ * emitting ONLY customer-safe fields — no commerce:* admin metadata, costs, or internal
+ * PIM attributes (only the localized marketing overlay). Sanitizing here is what keeps
+ * the raw admin JSON from leaking; there is no pre-built projection, reads are fresh.
  *
- *   catalog/index.json          { meta, products:[ card … ] }   — list/search
- *   catalog/products/{id}.json  full public product detail
- *   catalog/inventory.json      { updatedAt, items:{ itemId: available } } — realtime (#21)
- *   catalog/store.json          { name, shopDomain, currency, lowStock } — store + checkout
- *
- * This class builds the projection objects (pure given the inputs the caller
- * gathers: the product JSON, its PIM overlay and the per-item availability); the
- * publish script does the JCR IO. Only customer-safe fields are included — no
- * commerce:* admin metadata, costs, or internal PIM attributes (only the localized
- * marketing overlay). Lives under /content/WEB-INF/classes; use via
- * {@code import commerce.Catalog}.
+ * PURE builders (no JCR IO): {@link #detail} (full product) and {@link #card} (list
+ * card). The privileged read script gathers the inputs (the product JSON, its PIM
+ * overlay and the per-item availability) and calls these. Lives under
+ * /content/WEB-INF/classes; use via {@code import commerce.Catalog}.
  */
 class Catalog {
-
-    static final String PUBLIC_DIR = "/content/public/commerce/catalog"
 
     private static final ObjectMapper MAPPER = new ObjectMapper()
 
@@ -35,15 +30,17 @@ class Catalog {
      */
     static Map detail(Map product, Map pimOverlay, Map availByItem) {
         def avail = availByItem ?: [:]
+        // Wire rows (commerce.Api): GID ids, NUMBER prices (shop currency —
+        // Shopify REST variant semantics; the client formats with Intl).
         def variants = (product?.variants instanceof List) ? product.variants.collect { v ->
-            def itemId = str(v?.inventory_item_id)
+            def itemId = str(v?.inventory_item_id)   // numeric storage key (internal lookup)
             [
-                id            : str(v?.id),
+                id            : Api.gid("ProductVariant", v?.id),
                 title         : v?.title,
                 sku           : v?.sku,
-                price         : str(v?.price),
-                compareAtPrice: str(v?.compare_at_price),
-                inventoryItemId: itemId,
+                price         : Api.num(v?.price),
+                compareAtPrice: Api.num(v?.compare_at_price),
+                inventoryItemId: Api.gid("InventoryItem", itemId),
                 available     : (itemId != null && avail.containsKey(itemId)) ? toInt(avail[itemId]) : null,
                 options       : [v?.option1, v?.option2, v?.option3].findAll { it != null },
             ]
@@ -61,7 +58,7 @@ class Catalog {
         } : []
 
         def out = [
-            id         : str(product?.id),
+            id         : Api.gid("Product", product?.id),
             handle     : str(product?.handle),
             title      : product?.title,
             bodyHtml   : product?.body_html,
@@ -71,7 +68,7 @@ class Catalog {
             images     : images,
             options    : options,
             variants   : variants,
-            updatedAt  : java.time.Instant.now().toString(),
+            updatedAt  : Api.now(),
         ]
         // Customer-facing PIM overlay only (multi-language). Other PIM attributes are
         // deliberately NOT published.
@@ -99,14 +96,14 @@ class Catalog {
             vendor        : detail.vendor,
             productType   : detail.productType,
             tags          : detail.tags,
-            priceMin      : prices.isEmpty() ? null : prices.min().toString(),
-            priceMax      : prices.isEmpty() ? null : prices.max().toString(),
+            priceMin      : prices.isEmpty() ? null : prices.min(),
+            priceMax      : prices.isEmpty() ? null : prices.max(),
             inventoryItemIds: itemIds,
             available     : agg,
         ]
     }
 
-    /** Serialize a value to JSON (for the publish script). */
+    /** Serialize a value to JSON (for the read script). */
     static String toJson(value) { MAPPER.writeValueAsString(value) }
 
     // --- Helpers ---------------------------------------------------------------
@@ -119,9 +116,10 @@ class Catalog {
 
     private static String str(v) { v == null ? null : v.toString() }
 
-    private static Integer numOrNull(v) {
-        if (v == null) return null
-        try { return (int) Math.round(Double.parseDouble(v.toString())) } catch (Exception e) { return null }
+    // A clean JSON number (or null) — the one implementation is Api.num, which
+    // keeps decimals (no rounding: a 19.99 price must not become 20).
+    private static Number numOrNull(v) {
+        return Api.num(v)
     }
 
     private static int toInt(v) {

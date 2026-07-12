@@ -33,6 +33,51 @@ class Refunds {
         return seen ? total : null
     }
 
+    /**
+     * The refunded total in the SHOP (base) currency — the base counterpart of {@link #amount} for the
+     * refund-period sales view (returnsBasis=refund). Reconstructed from the ONLY parts of a refund that
+     * carry Shopify's own shop_money conversion: refund_line_items[] (goods subtotal + tax) and
+     * order_adjustments[] (shipping etc., stored as a positive magnitude). No external FX. Returns null
+     * when no shop_money is present anywhere, so "base unavailable" is distinguishable from zero.
+     *
+     * NB the native {@link #amount} sums the transactions (cash returned); this sums the line-item
+     * breakdown, the only place shop_money exists — for a single-currency shop they coincide.
+     */
+    static BigDecimal amountBase(refund) {
+        BigDecimal total = BigDecimal.ZERO
+        boolean seen = false
+        for (rli in (refund?.refund_line_items ?: [])) {
+            def sub = Money.toNumber(rli?.subtotal_set?.shop_money?.amount)
+            if (sub != null) { total = total.add(sub); seen = true }
+            def tax = Money.toNumber(rli?.total_tax_set?.shop_money?.amount)
+            if (tax != null) { total = total.add(tax); seen = true }
+        }
+        for (adj in (refund?.order_adjustments ?: [])) {
+            // refund_discrepancy is the restocking fee the store KEPT — income, not money refunded — so it
+            // must NOT be added to the refunded total (adding its magnitude is what overstated returns).
+            if (adj?.kind?.toString()?.toLowerCase() == "refund_discrepancy") continue
+            def amt = Money.toNumber(adj?.amount_set?.shop_money?.amount)
+            if (amt != null) { total = total.add(amt.abs()); seen = true }
+        }
+        return seen ? total : null
+    }
+
+    /**
+     * The consumption-tax portion of the refund in the BASE currency: Σ refund_line_items[].total_tax
+     * (shop_money, falling back to the native scalar). Null when no line carries a tax amount, so
+     * "unavailable" stays distinguishable from a genuine zero-tax refund.
+     */
+    static BigDecimal taxBase(refund) {
+        BigDecimal total = BigDecimal.ZERO
+        boolean seen = false
+        for (rli in (refund?.refund_line_items ?: [])) {
+            def tax = Money.toNumber(rli?.total_tax_set?.shop_money?.amount)
+            if (tax == null) tax = Money.toNumber(rli?.total_tax)
+            if (tax != null) { total = total.add(tax); seen = true }
+        }
+        return seen ? total : null
+    }
+
     /** Currency of the refund transactions (upper-cased), or null if none carry one. */
     static String currency(refund) {
         def txns = refund?.transactions ?: []

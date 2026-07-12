@@ -1,0 +1,53 @@
+{
+	"app.commerce-products.title": "コマース商品一覧",
+
+	"app.commerce-products.toolbar.refresh": "再読み込み",
+	"app.commerce-products.toolbar.clearFilters": "検索・絞り込みをクリア",
+	"app.commerce-products.toolbar.toggleSidebar": "フィルタの表示切替",
+
+	"app.commerce-products.search.placeholder": "商品を検索…",
+
+	"app.commerce-products.sort.title": "並び順",
+	"app.commerce-products.sort.updated": "更新順",
+	"app.commerce-products.sort.sales": "売上順",
+	"app.commerce-products.sort.quantity": "販売数順",
+	"app.commerce-products.sort.windowTitle": "集計期間",
+	"app.commerce-products.sort.window.all": "全期間",
+	"app.commerce-products.sort.window.d30": "過去30日",
+	"app.commerce-products.sort.window.d90": "過去90日",
+	"app.commerce-products.sort.window.d365": "過去365日",
+
+	"app.commerce-products.facet.sourceStatus": "Shopify ステータス",
+	"app.commerce-products.facet.vendor": "ベンダー",
+	"app.commerce-products.facet.productType": "商品タイプ",
+	"app.commerce-products.facet.tags": "タグ",
+	"app.commerce-products.facet.status": "処理ステータス",
+
+	"app.commerce-products.state.loading": "商品を読み込み中…",
+	"app.commerce-products.state.empty": "現在の検索・絞り込みに一致する商品はありません。",
+
+	"app.commerce-products.list.count": "{start}–{end} / {total} 件",
+	"app.commerce-products.list.capped": "カタログが大きいため件数は概算です",
+	"app.commerce-products.list.cappedTitle": "走査が安全上限に達しました。絞り込みを追加すると正確な件数になります。",
+	"app.commerce-products.list.prev": "前のページ",
+	"app.commerce-products.list.next": "次のページ",
+
+	"app.commerce-products.col.title": "商品",
+	"app.commerce-products.col.status": "ステータス",
+	"app.commerce-products.col.vendor": "ベンダー",
+	"app.commerce-products.col.productType": "タイプ",
+	"app.commerce-products.col.tags": "タグ",
+	"app.commerce-products.col.qtySold": "販売数",
+	"app.commerce-products.col.netSales": "純売上",
+	"app.commerce-products.col.grossSales": "総売上",
+	"app.commerce-products.col.updatedAt": "更新日時",
+
+	"app.commerce-products.action.open": "商品エディタで開く",
+
+	"app.commerce-products.statusbar.loading": "読み込み中…",
+	"app.commerce-products.statusbar.count": "{total}件の商品",
+	"app.commerce-products.statusbar.ready": "準備完了",
+
+	"app.commerce-products.err.loadFailed": "商品を読み込めませんでした。",
+	"app.commerce-products.err.noEditor": "コマース商品エディタがインストールされていません。"
+}

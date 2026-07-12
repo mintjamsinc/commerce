@@ -779,10 +779,10 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.75/
 			},
 
 			// Render a screening reason descriptor ({ code, params }) to localized
-			// text. screenRefund.groovy emits raw values (numbers, currency code)
-			// rather than pre-built text, so money/numbers follow the reviewer's
-			// locale and the wording comes from the i18n bundle. A bare string is a
-			// legacy reason from an in-flight task — passed through.
+			// text. The refund-screening service emits raw values (numbers, currency
+			// code) rather than pre-built text, so money/numbers follow the
+			// reviewer's locale and the wording comes from the i18n bundle. A bare
+			// string is a legacy reason from an in-flight task — passed through.
 			reasonText(reason) {
 				if (reason == null) return '';
 				if (typeof reason === 'string') return reason;
@@ -903,9 +903,9 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.75/
 				const refundID = String(variableMap.refund_id || '');
 				if (!refundPath) throw new Error(this.t('form.commerce.shopify.refundReview.noRefundPath', undefined, 'Process variable "refundPath" is not set on this task.'));
 
-				// Reason descriptors ({ code, params }) from screenRefund.groovy;
-				// rendered to localized text by reasonText(). Plain strings are
-				// legacy reasons from in-flight tasks — passed through.
+				// Reason descriptors ({ code, params }) from the refund-screening
+				// service; rendered to localized text by reasonText(). Plain strings
+				// are legacy reasons from in-flight tasks — passed through.
 				let reasons = [];
 				try {
 					const raw = variableMap.reviewReasons;

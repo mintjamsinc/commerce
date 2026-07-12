@@ -11,9 +11,12 @@ needs to step in.
 - **Integration assets** — Groovy webhook endpoint, EIP integration routes,
   BPMN workflow processes, a shared Groovy class layer, task-helper scripts, and
   YAML configuration. Sources under [`content/`](content/) and [`etc/`](etc/).
-- **Commerce apps** — a family of virtual-desktop apps for the Webtop
-  (settings console, dashboard, PIM, operations, publishing) that centralize
-  configuration and day-to-day operations. Source under [`webtop/`](webtop/).
+- **Commerce apps** — a family of virtual-desktop apps for the Webtop that
+  centralize configuration and day-to-day operations: a settings console, a
+  read-only dashboard, three editor + facet-browser pairs (product, customer,
+  order), and four single-concern operations apps (event log, historical
+  import, outbound-write audit, sales reports) plus a dedicated reconciliation
+  console. Source under [`webtop/`](webtop/).
 - **Provisioning** — the identity, group and ACL model the integration runs
   under, applied at first boot. Source under [`provisioning/`](provisioning/).
 
@@ -75,9 +78,11 @@ Two task types make up the flow:
 
 1. **Set Inventory Threshold** — raised the first time a product is seen with
    no threshold yet. The operator decides, per variant, "how few units before
-   we warn."
-2. **Manual Inventory Check** — raised when a variant drops below its
-   threshold. The operator reviews the situation and marks it reviewed.
+   we reorder."
+2. **Inventory & Reorder Review** — raised when a variant drops below its
+   threshold. It shows the current stock, the fixed threshold and the previous
+   order (date + quantity) for reference; the operator enters the order quantity
+   by hand and, on completion, it is recorded in Shopify as incoming stock.
 
 Operators work these in the Webtop **Tasks** app; notifications are posted as
 each task is created. A re-entrancy guard prevents a product with an in-flight
@@ -121,12 +126,15 @@ Settings live in `etc/commerce/config/ingest.yml`. For the full design, see
 ### Bidirectional sync (CMS → Shopify)
 
 The write side: operators / tooling push corrections back to Shopify through the
-Admin API — **set stock at a location**, **update a price**, **publish/unpublish a
-product** — via `content/commerce/endpoints/sync.groovy`. Gated on `adminApi.enabled`
-(the same switch as metafield enrichment and fulfillment write-back), with a
+Admin API via `content/commerce/endpoints/sync.groovy` — **set stock at a
+location**, **update a price**, **publish/unpublish a product**, push PIM
+metafields, edit a product's base fields (title / description / vendor / type /
+tags / handle / status) and media (Product 360's write hub), and edit a
+**customer**'s or **order**'s shop-curated fields. Requires the Admin API to be
+configured (the same as metafield enrichment and fulfillment write-back), with a
 `dryRun` mode for safe rollout, `api` health timing, and an audit trail under
 `/content/commerce/sync/`. These are also the write primitives the reconciliation
-job uses to auto-heal drift. See
+job uses to auto-refresh drift. See
 [`docs/bidirectional-sync.md`](docs/bidirectional-sync.md).
 
 ---
@@ -164,8 +172,8 @@ Shopify (orders/paid) ──→ order-paid route ──→ JCR ──→ order-r
 ```
 
 Screening rules live in `etc/commerce/config/order-review.yml`; the Shopify
-write-back reuses the Admin API settings in `shopify.yml` (gated on
-`adminApi.enabled`). Tasks are worked in the Webtop **Tasks** app and share the
+write-back reuses the Admin API settings in `shopify.yml` (requires the Admin API to
+be configured). Tasks are worked in the Webtop **Tasks** app and share the
 notification destinations with the inventory alert tool. A re-entrancy guard
 prevents duplicate workflows for the same order. For the end-to-end operator
 manual, see [`docs/order-review-tool.md`](docs/order-review-tool.md).
@@ -208,28 +216,27 @@ The basic inventory alert above is the entry point to a fuller inventory layer.
 Each piece is independently configurable and degrades gracefully when its inputs
 are absent, so a shop can adopt as much or as little as it needs.
 
-- **Dynamic thresholds (inventory rules)** — instead of every product needing a
-  manually configured threshold, an **effective threshold** is resolved per
-  variant: a manual per-variant override wins, else the first matching rule in
-  `inventory-rules.yml` (product attributes / calendar / sales velocity), else a
-  config default, else "not monitored." Every alert records *why* a threshold
-  applied. See [`docs/inventory-rules.md`](docs/inventory-rules.md).
+- **Planning layer (per-variant reorder threshold)** — every variant carries a
+  single fixed **reorder threshold** (in units), the stock level at or below which
+  it is reordered. Resolution: explicit per-variant value (`pim.planning`) →
+  `planning.yml` default → "not monitored." The system never derives or rewrites
+  it — operators set it, per variant or in bulk across a search result. See
+  [`docs/planning.md`](docs/planning.md).
 - **Multi-location inventory** — Shopify's per-location stock is ingested
   (`inventory_levels/update`, `locations/*`), aggregated per variant, and exposed
   for cross-location **allocation** decision support (which locations to draw
   from). Advisory only — it does not override Shopify's fulfillment routing. See
   [`docs/multi-location.md`](docs/multi-location.md).
-- **Sales velocity & stockout forecast** — a periodic batch computes units/day
-  per variant from order history, caches it, and predicts when each variant will
-  run out — warning before stock hits zero and feeding the threshold rules. See
-  [`docs/sales-velocity.md`](docs/sales-velocity.md).
-- **Auto-reorder / replenishment** — closes the loop: a batch proposes purchase
-  orders for variants that will run short, an operator approves (and can adjust
-  quantity) via a **Approve Reorder** human task, and the approved PO is recorded
-  and sent to the supplier. See [`docs/auto-reorder.md`](docs/auto-reorder.md).
+- **Reorder review (unified with the alert)** — when stock crosses below the
+  threshold, ONE **Inventory & Reorder Review** task shows the current stock, the
+  fixed threshold and the previous order (date + quantity) for reference. The
+  operator enters the order quantity by hand — there is no system-suggested
+  quantity — purchases through their own channel, and the confirmed quantity is
+  recorded in Shopify as **incoming stock** (inventory transfer); receiving flows
+  back via the `inventory_levels/update` webhook. See
+  [`docs/inventory-alert-tool.md`](docs/inventory-alert-tool.md).
 
-Settings live in `etc/commerce/config/inventory-rules.yml`, `locations.yml`,
-`velocity.yml` and `reorder.yml` respectively.
+Settings live in `etc/commerce/config/planning.yml` and `locations.yml`.
 
 ---
 
@@ -265,52 +272,84 @@ The product mirror is also a **data platform**:
   **ACLs**. A unified view composes Shopify base + metafields + overlay; CMS-authored
   metafields push back through the sync endpoint. See
   [`docs/pim.md`](docs/pim.md).
-- **Reconciliation** — a periodic batch compares the CMS mirror with Shopify
-  (status / price / inventory), reports drift, alerts, and — opt-in, per a per-field
-  source-of-truth — heals it (push via `ShopifyWrite`, or refresh the mirror). Detect
-  + report is the default. See [`docs/reconciliation.md`](docs/reconciliation.md).
-- **Reports & audit export** — sales (daily orders + revenue per currency + top
-  products) and the outbound-write audit trail, as JSON or CSV, built from the JCR
-  audit trails. See [`docs/reports.md`](docs/reports.md).
+- **Reconciliation** — two complementary passes, not one. A lightweight `diff`
+  pass (status / price, `products.updated_at`) runs on a schedule and reports
+  drift; the full inventory audit — where a product's `updated_at` does not
+  change on a stock move, so nothing short of reading everything is correct —
+  runs through the **Bulk job broker**: a durable JCR job queue and guarded
+  state machine (`commerce.BulkJobs`/`BulkQueries`) that drives Shopify Bulk
+  Operations across a Shopify-producer lane and a CMS-consumer lane, serialized
+  per data domain, with an event-driven completion path and a watchdog safety
+  net. Detect + report is the default; healing (push via `ShopifyWrite`, or
+  refresh the mirror) is opt-in per a per-field source-of-truth. See
+  [`docs/reconciliation.md`](docs/reconciliation.md).
+- **Historical backfill** — the same Bulk job broker also drives a one-time (or
+  re-runnable) full import of orders, customers, products and inventory from
+  Shopify. The orders backfill chains in the missing refund detail and then
+  automatically seeds the sales facts below, so a shop's full order history is
+  queryable without a separate replay step. Surfaced in the **Commerce Import**
+  app. See [`docs/reconciliation.md`](docs/reconciliation.md).
+- **Reports & audit export** — sales reports read from an index-backed sales-fact
+  store (`commerce.SalesQuery`, one facet pass, no row cap) and present two
+  deliberately separate views: an order-date P/L (gross → net → total →
+  total charged) and a refund-date cash-out view — plus the outbound-write
+  audit trail — as JSON or CSV. See [`docs/reports.md`](docs/reports.md).
 
 ---
 
-## Customer CRM & marketing
+## Customers
 
-Built on the ingested `customers/*` and `checkouts/*` plus the order history:
+Customers follow the same philosophy as the product mirror: the CMS **mirrors
+what Shopify owns and lets an operator edit it through the Admin API** — it does
+not compute its own view of the customer.
 
-- **Segmentation** — a daily batch rolls up each customer's purchase history
-  from orders and classifies them (`new` / `repeat` / `vip` / `at_risk` / `dormant`)
-  into a CRM store.
-- **Behaviour-change alerts** — operators are notified when a customer becomes
-  newly VIP, at-risk or dormant.
-- **Abandoned cart follow-up** — a batch finds idle, un-completed checkouts and
-  follows up: a customer recovery email (opt-in, off by default) plus a debounced
-  operator summary.
+- **Mirror** — `customers/*` webhooks store the raw Shopify customer JSON as the
+  node body (`/content/commerce/customers/customer_{id}.json`), with profile and
+  lifecycle fields promoted to typed, auto-indexed JCR properties.
+- **No self-maintained wallet, segmentation or scoring** — there is no daily
+  classification batch, no behaviour-change alerting and no abandoned-cart
+  follow-up. **VIP is simply a manual Shopify customer tag**; anything else the
+  shop wants to track about a customer is a tag, a note, or a Shopify-native
+  field.
+- **Editing — Admin API** — operator edits (tags, note, tax exemption, marketing
+  consent) go through the outbound sync endpoint's `customer` action and are
+  pushed to Shopify; the mirror follows on the webhook round-trip.
+- **Two Webtop apps** — **Commerce Customer**, the singular MIME-launched editor
+  and write hub, and **Commerce Customers**, a read-only facet browser (search
+  plus tag / marketing-consent / source-status facets) that hands rows to the
+  editor. A spend-ranking facet (`sort=spend`, exact, uncapped) is computed
+  live from the sales facts, not a stored rollup.
 
-Settings live in `etc/commerce/config/crm.yml`. See [`docs/crm.md`](docs/crm.md).
+There is no dedicated config file for this domain (no `crm.yml`). See
+[`docs/crm.md`](docs/crm.md).
 
 ---
 
-## Headless storefront
+## Public product feed: a read endpoint + a thin JS client
 
-A customer-facing storefront built with ichigo.js, served entirely from
-a public, sanitized catalog projection — the admin product store is never exposed:
+The platform does **not** ship a storefront, a published catalog projection, or
+GSP starter templates — those existed in an earlier design and were retired
+(along with the `commerce-publish` app) in favor of something simpler: you build
+your own promotion / product pages as ordinary same-origin CMS pages, and pull
+product data in on demand.
 
-- **Storefront** — a single ichigo.js page (catalog/search → product → cart)
-  reading `/content/public/commerce/catalog/` (published from the product mirror +
-  PIM + inventory by a service-user batch). **Checkout** redirects to Shopify's
-  hosted checkout via a cart permalink, so no Storefront API token is needed.
-- **Real-time inventory** — the `inventory_levels/update` route refreshes a
-  public `inventory.json` within seconds; the storefront polls it and shows
-  "only a few left" / "sold out" badges live.
-- **Content commerce** — CMS-authored block landing pages (`hero` / `markdown`
-  / `html` / `products`) mix articles with product showcases; the publisher resolves
-  product blocks against the catalog and an ichigo.js renderer serves them, with the
-  embedded cards linking into the storefront and showing live stock. A `welcome` seed
-  page ships.
+- **Read endpoint** — `/content/public/commerce/endpoints/catalog.groovy` reads
+  the admin product mirror directly (everyone has repository read on
+  `/content`) and sanitizes it per request via `commerce.Catalog` — there is no
+  pre-built projection to go stale, so the data is always fresh. Only
+  Shopify-active products are returned, and admin metadata / cost / internal PIM
+  attributes are never emitted. Cacheable (`max-age=30`).
+- **Client SDK — data only** — `/content/public/commerce/sdk/commerce.js` (v2)
+  is a tiny, dependency-free data client: `Commerce.product()` /
+  `Commerce.products()` / `Commerce.checkoutUrl()` / `Commerce.formatMoney()`.
+  It renders nothing and stores no cart — you design and style the page
+  yourself. (An earlier version shipped declarative widgets — buy buttons,
+  banners, a mini cart; those were removed.)
+- **Checkout** — redirects to Shopify's hosted checkout via a cart permalink
+  (no Storefront API token needed).
 
-Settings live in `etc/commerce/config/storefront.yml`. See
+There is no dedicated config file for this domain (no `storefront.yml`) and no
+publish/rebuild console — reads are always on demand. See
 [`docs/storefront.md`](docs/storefront.md).
 
 ---
@@ -321,8 +360,8 @@ Beyond the business workflows, the platform watches itself and gives operators a
 single place to see what is happening:
 
 - **Commerce Dashboard** — a read-only, real-time Webtop app that ties the
-  platform's data together into KPI cards (sales trend, inventory, forecast,
-  reorders, locations, backorders, customers, tasks, integration health, event
+  platform's data together into KPI cards (sales trend, inventory, reorders,
+  locations, backorders, customers, tasks, integration health, event
   ingestion, reconciliation, outbound sync). See
   [`docs/commerce-dashboard.md`](docs/commerce-dashboard.md).
 - **Integration health monitor** — observes webhook intake, route processing
@@ -356,10 +395,12 @@ Write access is **added** on top of the repository-wide read that cms0 already
 grants, on exactly the paths the platform owns:
 
 - `/content/commerce` — business data (event log, orders, inventory, products,
-  CRM, reconciliation, tasks, health, …) and operator edits (PIM/pages,
-  outbound-sync audit, on-demand recompute).
-- `/content/public/commerce` — the public storefront projection (anonymous read
-  via the cms0 public-access rule; the publishers get write).
+  customers, reconciliation, tasks, health, …) and operator edits (the PIM
+  overlay, outbound-sync audit, on-demand recompute).
+- `/content/public/commerce` — the public product feed's read endpoint and
+  client SDK (anonymous read via the cms0 public-access rule). No runtime
+  process publishes here any more — the service group keeps write only so the
+  storefront-retire migration can delete the old, now-removed projection data.
 - `/etc/commerce/config` — read-only config for everyone; the service user
   additionally gets write to cache the Shopify Admin API access token.
 
@@ -383,7 +424,7 @@ closed enumeration.
 
 | Property | Axis | Owner |
 |---|---|---|
-| `commerce:status` | Integration processing lifecycle (`received`, `threshold_pending`, `review_pending`, `monitored`, `approved`, `fulfillment_pending`, `fulfilled`, `resolved`, `backordered`, `ready`, `released`, `cancelled`, `error`, `deleted`) | This pipeline (EIP + BPMN) |
+| `commerce:status` | Integration processing lifecycle (`received`, `threshold_pending`, `review_pending`, `monitored`, `approved`, `fulfillment_pending`, `fulfilled`, `resolved`, `backordered`, `ready`, `released`, `cancelled`, `processed`, `ok`/`failed`/`dryrun`, `error`, `deleted`) | This pipeline (EIP + BPMN) |
 | `commerce:source_status` | Source-system business status, mirrored verbatim from Shopify | Shopify |
 
 The runtime JCR paths these properties live on (orders, products, error
@@ -399,11 +440,13 @@ kept in **separate files** on purpose, so notification destinations can be
 managed without touching API secrets.
 
 The app presents every config below as a section in a grouped sidebar —
-*Connection* (Shop, Notifications), *Intake & sync* (Ingestion, Reconciliation),
-*Inventory* (Locations, Inventory rules, Forecast, Replenishment, Backorders),
-*Workflows* (Order review, Refund review, Task SLA), *Storefront* (Storefront,
-Customers/CRM) and *Monitoring* (Integration health) — each tracking its own
-unsaved-changes marker, all persisted together with a single **Save**.
+*Connection* (Shop, Notifications, Webhooks), *Intake & sync* (Ingestion,
+Reconciliation), *Inventory* (Locations, Inventory alert, Planning, Backorders),
+*Workflows* (Order review, Refund review, Task SLA) and *Monitoring*
+(Integration health) — each tracking its own unsaved-changes marker, all
+persisted together with a single **Save**. (There is no longer a *Storefront*
+group — see [Public product feed](#public-product-feed-a-read-endpoint--a-thin-js-client)
+and [Customers](#customers) above.)
 
 ### Config file index
 
@@ -418,24 +461,29 @@ linked guide.
 | `ingest.yml` | Ingestion | [`docs/ingestion.md`](docs/ingestion.md) |
 | `reconcile.yml` | Reconciliation | [`docs/reconciliation.md`](docs/reconciliation.md) |
 | `locations.yml` | Locations | [`docs/multi-location.md`](docs/multi-location.md) |
-| `inventory-rules.yml` | Inventory rules | [`docs/inventory-rules.md`](docs/inventory-rules.md) |
-| `velocity.yml` | Forecast | [`docs/sales-velocity.md`](docs/sales-velocity.md) |
-| `reorder.yml` | Replenishment | [`docs/auto-reorder.md`](docs/auto-reorder.md) |
+| `inventory-alert.yml` | Inventory alert | [`docs/inventory-alert-tool.md`](docs/inventory-alert-tool.md) |
+| `planning.yml` | Planning | [`docs/planning.md`](docs/planning.md) |
 | `backorder.yml` | Backorders | [`docs/backorders.md`](docs/backorders.md) |
 | `order-review.yml` | Order review | [below](#etccommerceconfigorder-reviewyml--order-screening-rules) · [`docs/order-review-tool.md`](docs/order-review-tool.md) |
 | `refund-review.yml` | Refund review | [`docs/refund-tool.md`](docs/refund-tool.md) |
 | `sla.yml` | Task SLA | [`docs/task-sla.md`](docs/task-sla.md) |
-| `storefront.yml` | Storefront | [`docs/storefront.md`](docs/storefront.md) |
-| `crm.yml` | Customers/CRM | [`docs/crm.md`](docs/crm.md) |
 | `health.yml` | Integration health | [`docs/health-monitor.md`](docs/health-monitor.md) |
+| `sales.yml` | *(no settings-app UI yet)* | [`docs/reports.md`](docs/reports.md) |
+
+There is no longer a `storefront.yml` or a `crm.yml` — those domains were
+simplified down to a read endpoint and an Admin-API mirror with nothing left to
+configure (see [Public product feed](#public-product-feed-a-read-endpoint--a-thin-js-client)
+and [Customers](#customers)). `sales.yml` controls the sales-report population
+(`financialStatus` / `includeCancelled` / `returnsBasis`) but, unlike every
+other file above, has no section in the Commerce settings app yet — it is
+edited directly on disk.
 
 ### `etc/commerce/config/shopify.yml` — Shop
 
 | Group | Field | Required | Purpose |
 |---|---|---|---|
 | Webhook | `webhookSecret` | **yes** | Shared secret from Shopify Admin → Notifications → Webhooks. Verifies incoming webhooks (HMAC-SHA256). Required regardless of the Admin API setting. |
-| Admin API | `adminApi.enabled` | no | When `true`, product webhooks are enriched with metafields from the Shopify Admin API (GraphQL) and completed Fulfill Order tasks are written back as fulfillments. When `false`, no Admin API calls are made and the fields below are ignored. |
-| Admin API | `adminApi.shopDomain` / `apiVersion` / `clientID` / `clientSecret` | yes *(when enabled)* | Connection and OAuth credentials from Shopify Partners. All four are required once the Admin API is enabled. |
+| Admin API | `adminApi.shopDomain` / `apiVersion` / `clientID` / `clientSecret` | **yes** | Connection and OAuth credentials from Shopify Partners. The Admin API is **required** — product-webhook metafield enrichment, the inventory mirror / reconciliation, and fulfillment write-back all use it. It is active once all four fields are filled (there is no enable toggle); until then those features are skipped with a warning. |
 | Admin API | `adminApi.notifyCustomer` | no | When writing a fulfillment back to Shopify, whether Shopify emails the customer a shipping notification. Off by default to avoid surprise/duplicate emails. |
 
 ### `etc/commerce/config/notifications.yml` — Notifications
@@ -483,8 +531,8 @@ Common logic lives in exactly one place: a set of shared Groovy classes under
 classpath root the CMS exposes to the Groovy script engine. The integration
 scripts (BPMN service tasks / listeners and EIP route steps) keep only their own
 business logic and call into these for everything reusable — money formatting,
-order/refund maths, Shopify token + GraphQL, inventory-rule resolution, sales
-velocity, allocation, reconciliation, reports, PIM, the notification channels,
+order/refund maths, Shopify token + GraphQL, inventory threshold resolution,
+allocation, reconciliation, reports, PIM, the notification channels,
 `commerce:status` writes, and so on.
 
 They are `.groovy` **source** — no compilation or `.jar` step; the workspace
@@ -501,18 +549,18 @@ route). For the full catalogue, conventions and design rules, see
 content/        JCR content deployed into the repository
   public/commerce/
     endpoints/shopify/      Shopify webhook receiver (webhook.groovy)
-    storefront/             Public storefront page (ichigo.js)
-    landing/                Published content-commerce landing pages
+    endpoints/              Public product read endpoint (catalog.groovy)
+    sdk/                    Data-only storefront client (commerce.js)
   commerce/
-    endpoints/              Admin/operator endpoints (sync, replay, publish, …)
-    forms/shopify/          Task UI forms (threshold / review / reorder)
-    pages/                  Landing-page editor content
+    endpoints/              Admin/operator endpoints (sync, backfill, reconcile,
+                             events, reports, dashboard, tasks, GDPR, …)
+    forms/shopify/          Task UI forms (threshold / review / fulfillment)
   WEB-INF/classes/commerce/ Shared Groovy class layer (package commerce)
 
 etc/            Server-side integration assets
-  commerce/config/          15 YAML config files (see Config file index)
+  commerce/config/          13 YAML config files (see Config file index)
   commerce/scripts/shopify/ Groovy task/route helper scripts
-  eip/routes/commerce/shopify/   EIP integration routes
+  eip/routes/commerce/shopify/   EIP integration routes (incl. the Bulk job broker)
   bpm/processes/commerce/shopify/  BPMN workflow processes
   i18n/                     Webtop message bundles (EN/JA), one pair per app
 
@@ -531,11 +579,26 @@ require no compilation (the shared Groovy classes included — the workspace
 classloader compiles them on deploy). The published `mintjams/cms` image already
 includes them in its seed.
 
-The **Commerce** Webtop apps are the only buildable component — the **Commerce**
-settings console, the read-only **Commerce Dashboard**, the **Commerce PIM**
-product-enrichment editor, the **Commerce Operations** console (outbound sync /
-reconciliation / event replay), and **Commerce Publishing** (storefront publish
-status / rebuild + landing-page editor). They are self-contained — their only
+The **Commerce** Webtop apps are the only buildable component:
+
+- **Commerce** — the settings console.
+- **Commerce Dashboard** — the read-only KPI overview.
+- **Commerce Product** / **Commerce Products** — the "product 360" editor
+  (content, price/stock, metafields, planning, media; the write hub toward
+  Shopify) and its read-only facet browser.
+- **Commerce Customer** / **Commerce Customers** — the customer editor (Shopify
+  mirror + Admin-API edits; tags/note/tax-exempt/marketing consent) and its
+  read-only facet browser.
+- **Commerce Order** / **Commerce Orders** — the order editor (note/tags/custom
+  attributes) and its read-only facet browser.
+- **Commerce Events**, **Commerce Import**, **Commerce Operation Log**,
+  **Commerce Reconcile**, **Commerce Reports** — five single-concern apps
+  (event log / historical backfill / outbound-write audit / drift detection &
+  mirror refresh / sales reports) that replaced an earlier single "Commerce
+  Operations" console.
+
+(There is no publishing app — the public product feed above needs no rebuild
+step.) All of these apps are self-contained — their only
 build-time dependency is the published
 [`@mintjamsinc/ichigojs`](https://github.com/mintjamsinc/ichigojs) runtime, so
 they build independently of cms0:

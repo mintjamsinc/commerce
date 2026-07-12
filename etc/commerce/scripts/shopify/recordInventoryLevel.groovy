@@ -9,6 +9,7 @@
 // Input (script attribute, mapped from the exchange body):
 //   shopifyPayload : the raw webhook JSON
 
+import commerce.Api
 import commerce.Jcr
 
 def LEVELS_DIR = "/content/commerce/inventory/levels"
@@ -29,8 +30,11 @@ if (!itemId || !locId) {
     log.warn("recordInventoryLevel: missing inventory_item_id / location_id - skipping")
     return
 }
-def available = payload?.available
-def updatedAt = payload?.updated_at?.toString()
+// Coerce at the door (commerce.Api / same rule as Locations.replaceLevels):
+// available is a NUMBER, updated_at collapses to the ms-precision ISO form —
+// the same field must not change type/precision with the write path.
+def available = Api.num(payload?.available)
+def updatedAt = Api.instant(payload?.updated_at) ?: Api.now()
 
 def path = "${LEVELS_DIR}/${itemId}.json".toString()
 for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {

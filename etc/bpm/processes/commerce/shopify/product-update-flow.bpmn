@@ -6,14 +6,14 @@
                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                   xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
                   id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">
-  <!-- Product onboarding flow. Started from the products/create & products/update route
-       (product-update.xml), guarded against duplicate instances per product. Its job is
+  <!-- Product onboarding flow. Started from the products/create & products/update
+       ingestion route, guarded against duplicate instances per product. Its job is
        ONBOARDING: ensure the product has an inventory threshold (prompting an operator when
        it does not), then enqueue the product's inventory items for alert evaluation.
 
        The low-stock ALERT itself is no longer decided here: the trigger moved to
        inventory_levels/update,
-       evaluated by the inventory-alert sweep (sweepInventoryAlerts.groovy) which raises
+       evaluated by the inventory-alert sweep which raises
        inventory-alert-flow. So this flow ends by enqueuing the product's items pending, and
        the sweep evaluates current stock against the threshold (covering an already-low product
        the moment its threshold is first set). -->

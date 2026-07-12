@@ -1,0 +1,29 @@
+<svg viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="commerce products">
+<defs>
+  <clipPath id="clip-cprods"><rect x="0" y="0" width="180" height="180" rx="42" ry="42"></rect></clipPath>
+  <linearGradient id="hl-cprods" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="white" stop-opacity="0.25"></stop>
+    <stop offset="55%" stop-color="white" stop-opacity="0"></stop>
+  </linearGradient>
+  <linearGradient id="bg-cprods" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="#2dd4bf"></stop>
+    <stop offset="100%" stop-color="#0f766e"></stop>
+  </linearGradient>
+</defs>
+<rect x="0" y="0" width="180" height="180" rx="42" ry="42" fill="url(#bg-cprods)"></rect>
+<g clip-path="url(#clip-cprods)">
+  <!-- facet rail -->
+  <rect x="38" y="44" width="14" height="14" rx="4" fill="white" opacity="0.95"></rect>
+  <rect x="38" y="70" width="14" height="14" rx="4" fill="white" opacity="0.7"></rect>
+  <rect x="38" y="96" width="14" height="14" rx="4" fill="white" opacity="0.45"></rect>
+  <!-- result rows -->
+  <rect x="64" y="46" width="78" height="10" rx="5" fill="white" opacity="0.95"></rect>
+  <rect x="64" y="72" width="62" height="10" rx="5" fill="white" opacity="0.7"></rect>
+  <rect x="64" y="98" width="70" height="10" rx="5" fill="white" opacity="0.45"></rect>
+  <!-- magnifier -->
+  <circle cx="112" cy="122" r="17" fill="none" stroke="white" stroke-width="9"></circle>
+  <rect x="124" y="132" width="26" height="10" rx="5" fill="white" transform="rotate(45 124 132)"></rect>
+  <rect x="0" y="0" width="180" height="180" fill="url(#hl-cprods)"></rect>
+  <rect x="0.5" y="0.5" width="179" height="179" rx="41.5" ry="41.5" fill="none" stroke="white" stroke-opacity="0.18" stroke-width="1"></rect>
+</g>
+</svg>

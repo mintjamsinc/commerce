@@ -1,0 +1,15 @@
+# Planning layer — the per-variant fixed reorder threshold
+# Deploy to: /etc/commerce/config/planning.yml
+# Managed by the Commerce app (Webtop > Commerce > Planning).
+#
+# The reorder threshold is a FIXED unit count, EXPLICIT per variant (set in the
+# product editor / onboarding form, stored on the product's pim.planning overlay).
+# This file holds only the GLOBAL DEFAULT a variant falls back to when it has no
+# explicit value. The system never derives or rewrites it (no velocity, no proposal).
+#
+# When the materialized stock total drops below the threshold, the event-driven sweep
+# raises ONE "stock check + reorder" task. Leave threshold unset to keep the "not configured ->
+# onboarding task" behaviour (governed by the inventory alert layer's unconfigured-variant policy).
+
+defaults:
+  # threshold: 5          # fixed reorder threshold fallback; unset = not monitored until configured

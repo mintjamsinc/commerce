@@ -1,16 +1,16 @@
 package commerce
 
-import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 
 /**
- * Read-only aggregations for the Commerce dashboard: sales and inventory KPIs
- * derived from the stored order and product resources. Pure JCR traversal (no
- * Camunda / external calls) so it stays simple and testable; task and health
- * KPIs are assembled by the dashboard endpoint from the engine and
- * {@link Health}.
+ * Read-only aggregations for the Commerce dashboard: sales and inventory KPIs.
+ *
+ * Sales figures come from the index-backed sales facts via
+ * {@link commerce.SalesQuery} (facet accumulate — uncapped, exact, single
+ * source of truth). The lifecycle byStatus breakdown is a facet COUNT over the
+ * typed {@code commerce:status} prop of the raw order store (the facts carry
+ * the Shopify financial status, not the internal lifecycle status).
  *
  * Defensive: a read error on one resource is skipped, never thrown — a dashboard
  * must degrade gracefully rather than fail wholesale.
@@ -46,63 +46,64 @@ class Dashboard {
     }
 
     /**
-     * Sales snapshot over the last {@code days} days (by ingestion time): order
-     * count, revenue per currency, and a breakdown by processing status. Only the
-     * month folders overlapping the window are scanned.
+     * Sales snapshot over the last {@code days} days by ORDERED_AT (business date):
+     * order count, revenue per currency (native), the base-currency rollup and the
+     * component/metric breakdown — all from the index-backed sales facts
+     * ({@link commerce.SalesQuery#salesRange}, uncapped, exact), with the lifecycle
+     * byStatus breakdown counted over the raw order store's typed props.
+     *
+     * Pass {@code range} when the caller already aggregated the same window (the
+     * dashboard endpoint shares ONE salesRange between this card and the trend
+     * chart) — it saves a full facet pass.
      */
-    static Map salesSummary(session, int days = 30) {
+    static Map salesSummary(session, int days = 30, Map range = null) {
         int window = Math.max(days, 1)
         def today = LocalDate.now(ZoneId.systemDefault())
-        long cutoff = today.minusDays(window - 1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-
-        long orders = 0
-        def revenue = [:]   // currency -> BigDecimal
-        def byStatus = [:]
-
-        def ym = DateTimeFormatter.ofPattern("yyyy/MM")
-        def month = today.minusDays(window - 1).withDayOfMonth(1)
-        def lastMonth = today.withDayOfMonth(1)
-        while (!month.isAfter(lastMonth)) {
-            def folder = safeGet(session, "${ORDERS_RAW}/${month.format(ym)}")
-            if (folder != null && folder.exists()) {
-                children(folder).each { child ->
-                    try {
-                        if (!child.getName().endsWith(".json")) {
-                            return
-                        }
-                        if (child.getCreated().getTime() < cutoff) {
-                            return
-                        }
-                        orders++
-                        def status = prop(child, "commerce:status") ?: "unknown"
-                        byStatus[status] = ((byStatus[status] ?: 0) as long) + 1
-
-                        def priceStr = prop(child, "commerce:total_price")
-                        if (priceStr != null) {
-                            def cur = prop(child, "commerce:currency") ?: "?"
-                            try {
-                                def amount = new BigDecimal(priceStr.trim())
-                                revenue[cur] = ((revenue[cur] ?: BigDecimal.ZERO) as BigDecimal).add(amount)
-                            } catch (Exception ignore) {}
-                        }
-                    } catch (Exception ignore) {}
-                }
-            }
-            month = month.plusMonths(1)
+        long cutoff = windowStartMs(days)
+        long now = System.currentTimeMillis()
+        if (range == null) {
+            def opts = SalesQuery.defaults(SalesQuery.config(session)); opts.daily = false
+            range = SalesQuery.salesRange(session, cutoff, now, opts)
         }
-
-        // Render revenue amounts as plain strings for JSON.
-        def revenueOut = [:]
-        revenue.each { k, v -> revenueOut[k] = v.toPlainString() }
-
         return [
-            from    : today.minusDays(window - 1).toString(),
-            to      : today.toString(),
-            days    : window,
-            orders  : orders,
-            revenue : revenueOut,
-            byStatus: byStatus,
+            from        : today.minusDays(window - 1).toString(),
+            to          : today.toString(),
+            days        : window,
+            orders      : range?.totals?.orders ?: 0L,
+            revenue     : range?.totals?.revenue ?: [],
+            baseRevenue : range?.totals?.baseRevenue ?: 0,
+            baseCurrency: range?.totals?.baseCurrency,
+            metrics     : range?.totals?.metrics ?: [:],
+            byStatus    : statusBreakdown(session, cutoff, now),
         ]
+    }
+
+    /** Start-of-day epoch ms of the N-day dashboard window (server zone) — shared with the endpoint. */
+    static long windowStartMs(int days) {
+        int window = Math.max(days, 1)
+        return LocalDate.now(ZoneId.systemDefault()).minusDays(window - 1)
+            .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+    }
+
+    /**
+     * Lifecycle status counts (commerce:status) over the window — the byStatus widget.
+     * A single index-backed facet COUNT over the raw order store, keyed on the same
+     * ordered_at business date the money aggregates use (no folder walk). NB: this
+     * counts raw NODES — an order that (rarely) has a node in two month folders
+     * (e.g. when a re-file lands right at a month boundary) counts twice here
+     * while the fact-based order count stays deduped; acceptable for a status
+     * widget.
+     */
+    private static Map statusBreakdown(session, long fromMs, long toMs) {
+        def stmt = "/jcr:root${ORDERS_RAW}//element(*, nt:file)" +
+                   "[${SalesQuery.rangePredicate('commerce:ordered_at', fromMs, toMs)}]" +
+                   " facet accumulate ${SalesQuery.countExpr('commerce:status')}".toString()
+        def fr = SalesQuery.facets(session, stmt)
+        def byStatus = [:]
+        SalesQuery.groupNumbers(fr, SalesQuery.countDim("commerce:status")).each { label, n ->
+            byStatus[label] = n.longValue()
+        }
+        return byStatus
     }
 
     // --- Helpers ---------------------------------------------------------------

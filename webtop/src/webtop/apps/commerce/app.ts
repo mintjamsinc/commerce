@@ -2,9 +2,9 @@
 //
 // Every config file under /etc/commerce/config is edited as a section (grouped in a
 // sidebar) in memory and persisted together with a single "Save" (the schema-manager
-// model): shopify, notifications, ingest, reconcile, locations, inventory-rules,
-// velocity, reorder, backorder, order-review, refund-review, sla, storefront, crm,
-// health. Each file keeps its own concern (e.g. notification destinations are stored
+// model): shopify, notifications, ingest, reconcile, locations, inventory-alert,
+// planning, backorder, order-review, refund-review, sla, health.
+// Each file keeps its own concern (e.g. notification destinations are stored
 // separately from API secrets) so they can be managed independently.
 //
 // The original sections use parseSimpleYaml (top-level + one nesting level); the
@@ -24,6 +24,7 @@ import {
 	handleLocalizationMessage,
 	translate,
 } from '../../composables/use-localization.js';
+import { utcTimeToZone, zoneTimeToUtc } from '../../composables/wire-datetime.js';
 
 // Type-only: avoid a hard import so the source stays self-contained. The shell
 // passes a fully-featured ApplicationInstance at launch.
@@ -35,35 +36,38 @@ const SHOPIFY_FILE = 'shopify.yml';
 const NOTIF_FILE = 'notifications.yml';
 const HEALTH_FILE = 'health.yml';
 const SLA_FILE = 'sla.yml';
-const VELOCITY_FILE = 'velocity.yml';
-const REORDER_FILE = 'reorder.yml';
+const PLANNING_FILE = 'planning.yml';
 const LOCATIONS_FILE = 'locations.yml';
-const STOREFRONT_FILE = 'storefront.yml';
-const CRM_FILE = 'crm.yml';
 const RECONCILE_FILE = 'reconcile.yml';
 const INGEST_FILE = 'ingest.yml';
 const BACKORDER_FILE = 'backorder.yml';
 const ORDER_REVIEW_FILE = 'order-review.yml';
 const REFUND_REVIEW_FILE = 'refund-review.yml';
-const INVENTORY_RULES_FILE = 'inventory-rules.yml';
 const INVENTORY_ALERT_FILE = 'inventory-alert.yml';
 const SHOPIFY_PATH = CONFIG_DIR + '/' + SHOPIFY_FILE;
 const NOTIF_PATH = CONFIG_DIR + '/' + NOTIF_FILE;
 const HEALTH_PATH = CONFIG_DIR + '/' + HEALTH_FILE;
 const SLA_PATH = CONFIG_DIR + '/' + SLA_FILE;
-const VELOCITY_PATH = CONFIG_DIR + '/' + VELOCITY_FILE;
-const REORDER_PATH = CONFIG_DIR + '/' + REORDER_FILE;
+const PLANNING_PATH = CONFIG_DIR + '/' + PLANNING_FILE;
 const LOCATIONS_PATH = CONFIG_DIR + '/' + LOCATIONS_FILE;
-const STOREFRONT_PATH = CONFIG_DIR + '/' + STOREFRONT_FILE;
-const CRM_PATH = CONFIG_DIR + '/' + CRM_FILE;
 const RECONCILE_PATH = CONFIG_DIR + '/' + RECONCILE_FILE;
 const INGEST_PATH = CONFIG_DIR + '/' + INGEST_FILE;
 const BACKORDER_PATH = CONFIG_DIR + '/' + BACKORDER_FILE;
 const ORDER_REVIEW_PATH = CONFIG_DIR + '/' + ORDER_REVIEW_FILE;
 const REFUND_REVIEW_PATH = CONFIG_DIR + '/' + REFUND_REVIEW_FILE;
-const INVENTORY_RULES_PATH = CONFIG_DIR + '/' + INVENTORY_RULES_FILE;
 const INVENTORY_ALERT_PATH = CONFIG_DIR + '/' + INVENTORY_ALERT_FILE;
 const YAML_MIME = 'application/x-yaml';
+
+// Admin endpoint that create-or-updates the required Shopify webhook subscriptions
+// (idempotent: re-running with a changed URL updates the existing subscriptions'
+// callbackUrl instead of creating duplicates). The "Webhooks" section is an ACTION
+// panel — it calls this endpoint directly over the cgi base URL and does NOT
+// participate in the config Save-all flow.
+const WEBHOOKS_SCRIPT = '/content/commerce/endpoints/webhooks.groovy';
+// GDPR compliance topics are configured in the app's compliance webhook settings
+// (Partner Dashboard), NOT creatable via webhookSubscriptionCreate — shown to the
+// operator as an informational reminder, never registered from here.
+const WEBHOOK_COMPLIANCE_TOPICS = ['customers/redact', 'customers/data_request', 'shop/redact'];
 
 // --- Minimal YAML helpers --------------------------------------------------
 // Purpose-built for the controlled two-level structure of these config files
@@ -170,9 +174,10 @@ function serializeShopify(s: any): string {
 webhookSecret: "${esc(s.webhookSecret)}"
 
 # Admin API integration (REQUIRED).
-# Used to enrich products with metafields, refresh the inventory mirror during
-# reconciliation, and write fulfillments back to Shopify. There is no on/off toggle:
-# the Admin API is active once the four connection fields below are filled in.
+# Used to enrich products with metafields, reconcile the catalog mirror (status / price)
+# and audit inventory via bulk operations, and write fulfillments back to Shopify. There
+# is no on/off toggle: the Admin API is active once the four connection fields below are
+# filled in.
 adminApi:
   # Shop domain
   shopDomain: "${esc(a.shopDomain)}"
@@ -326,54 +331,27 @@ ${priorityLine}  candidateGroup: "${esc(escal.candidateGroup)}"
 `;
 }
 
-function serializeVelocity(v: any): string {
-	const stockout = v.stockout || {};
-	return `# Sales velocity & stockout forecast
-# Deploy to: /etc/commerce/config/velocity.yml
-# Managed by the Commerce app (Webtop > Commerce > Forecast).
-# A periodic batch computes per-variant velocity (units/day) from order history,
-# caches it for the inventory rules, and alerts on imminent stockouts via the
-# Notifications channels.
+function serializePlanning(p: any): string {
+	const d = p.defaults || {};
+	const thresholdLine = (String(d.threshold ?? '').trim() !== '' && Number.isFinite(Number(d.threshold)))
+		? `  threshold: ${Number(d.threshold)}       # fixed reorder threshold fallback; remove to keep "not configured -> onboarding task"\n`
+		: `  # threshold: 5          # fixed reorder threshold fallback; unset = not monitored until configured\n`;
+	return `# Planning layer — the per-variant fixed reorder threshold
+# Deploy to: /etc/commerce/config/planning.yml
+# Managed by the Commerce app (Webtop > Commerce > Planning).
+#
+# The reorder threshold is a FIXED unit count, EXPLICIT per variant (product editor /
+# onboarding form, stored on the product's pim.planning overlay). This file holds only
+# the GLOBAL DEFAULT a variant falls back to. The system never derives or rewrites it
+# (no velocity, no proposal).
+#
+# When the materialized stock total drops below the threshold, the event-driven sweep
+# raises ONE "Stock Check + Reorder" task. Leave threshold unset to keep the "not configured ->
+# onboarding task" behaviour (the inventory alert configuration's unconfigured-threshold
+# policy: prompting to set one, rather than staying silent).
 
-# Master switch (false = the batch does nothing).
-enabled: ${v.enabled === true}
-
-# Averaging window for velocity, in days.
-windowDays: ${num(v.windowDays, 30)}
-
-# Minimum minutes between repeat stockout alerts for the same variant.
-cooldownMinutes: ${num(v.cooldownMinutes, 720)}
-
-stockout:
-  enabled: ${stockout.enabled === true}
-  # Alert when a variant is predicted to run out within this many days.
-  warnDays: ${num(stockout.warnDays, 7)}
-`;
-}
-
-function serializeReorder(r: any): string {
-	const supplier = r.supplier || {};
-	return `# Auto-reorder / replenishment
-# Deploy to: /etc/commerce/config/reorder.yml
-# Managed by the Commerce app (Webtop > Commerce > Replenishment).
-# A batch proposes purchase orders for variants that will not cover the lead time
-# + target cover at the current velocity; an operator approves, then the PO is
-# sent to the supplier. The email transport is reused from notifications.yml.
-
-# Master switch (false = no reorder proposals are created).
-enabled: ${r.enabled === true}
-
-leadTimeDays: ${num(r.leadTimeDays, 7)}
-targetCoverDays: ${num(r.targetCoverDays, 14)}
-minOrderQty: ${num(r.minOrderQty, 1)}
-roundTo: ${num(r.roundTo, 1)}
-
-# Where an approved PO is sent. delivery: none | email | webhook
-supplier:
-  delivery: "${esc(supplier.delivery || 'none')}"
-  email: "${esc(supplier.email)}"
-  webhookUrl: "${esc(supplier.webhookUrl)}"
-`;
+defaults:
+${thresholdLine}`;
 }
 
 function serializeLocations(l: any): string {
@@ -408,67 +386,11 @@ function flowList(items: string[]): string {
 	return '[' + items.map((it) => `"${esc(it)}"`).join(', ') + ']';
 }
 
-function serializeStorefront(s: any): string {
-	return `# Headless storefront (category F: #20 storefront, #21 realtime inventory)
-# Deploy to: /etc/commerce/config/storefront.yml
-# Managed by the Commerce app (Webtop > Commerce > Storefront).
-#
-# The publisher builds a sanitized public catalog projection that the ichigo.js
-# storefront reads; checkout redirects to Shopify's hosted checkout. See docs/storefront.md.
-
-# Master switch for catalog publishing.
-enabled: ${s.enabled === true}
-
-# Store presentation.
-storeName: "${esc(s.storeName)}"
-
-# Fallback display currency (when a product carries none).
-currency: "${esc(s.currency)}"
-
-# "Low stock" threshold: at/below this available quantity the storefront shows a
-# "only a few left" badge; 0 shows "sold out".
-lowStock: ${num(s.lowStock, 5)}
-`;
-}
-
-function serializeCrm(c: any): string {
-	const seg = c.segments || {};
-	const ac = c.abandonedCart || {};
-	return `# Customer CRM & marketing (category D: #13 segmentation, #14 abandoned cart, #15 alerts)
-# Deploy to: /etc/commerce/config/crm.yml
-# Managed by the Commerce app (Webtop > Commerce > CRM). See docs/crm.md.
-
-# Master switch for the CRM batches.
-enabled: ${c.enabled === true}
-
-# Segment thresholds (#13).
-segments:
-  vipMinSpend: ${num(seg.vipMinSpend, 100000)}
-  vipMinOrders: ${num(seg.vipMinOrders, 10)}
-  newMaxOrders: ${num(seg.newMaxOrders, 1)}
-  atRiskDays: ${num(seg.atRiskDays, 60)}
-  dormantDays: ${num(seg.dormantDays, 120)}
-
-# Operator alerts on behaviour changes (#15): newly VIP / at-risk / dormant.
-alert:
-  enabled: ${(c.alert || {}).enabled === true}
-
-# Abandoned cart follow-up (#14).
-abandonedCart:
-  enabled: ${ac.enabled === true}
-  abandonedAfterMinutes: ${num(ac.abandonedAfterMinutes, 60)}
-  reminderIntervalMinutes: ${num(ac.reminderIntervalMinutes, 1440)}
-  maxReminders: ${num(ac.maxReminders, 2)}
-  # Customer-facing reminder emails (outward-facing). OFF by default.
-  sendToCustomer: ${ac.sendToCustomer === true}
-`;
-}
-
 function serializeReconcile(r: any): string {
 	const schedules = (r.schedules || []).filter((s: any) => String(s.at || '').trim());
-	let body = `# CMS <- Shopify reconciliation (category G, #24)
+	let body = `# Shopify -> CMS reconciliation
 # Deploy to: /etc/commerce/config/reconcile.yml
-# Managed by the Commerce app (Webtop > Commerce > Reconciliation). See docs/reconciliation.md.
+# Managed by the Commerce app (Webtop > Commerce > Reconciliation).
 
 # Master switch for the reconciliation batch.
 enabled: ${r.enabled === true}
@@ -477,14 +399,9 @@ enabled: ${r.enabled === true}
 maxPerRun: ${num(r.maxPerRun, 50)}
 
 # Shopify is the single source of truth: reconciliation only refreshes the CMS mirror
-# FROM Shopify (status / price / inventory) and reports drift — there is no CMS->Shopify push.
-
-# Send a (debounced) notification when drift is detected.
-alert: ${r.alert === true}
-
-# Refresh the per-location inventory mirror from Shopify each pass — the "nothing missed"
-# backstop for missed inventory webhooks. On by default.
-refreshInventoryMirror: ${r.refreshInventoryMirror !== false}
+# FROM Shopify (status / price) and records every run — there is no CMS->Shopify push.
+# Inventory is not part of the diff scope; the full inventory audit is the Bulk job
+# broker (inventory schedule scope).
 
 # Diff throttle: leave reserveBudgetPercent of the cost bucket free for foreground ops; an
 # optional fixed floor (ms) between per-product calls.
@@ -495,9 +412,9 @@ minDelayMsPerCall: ${num(r.minDelayMsPerCall, 0)}
 bulkWatchdogTimeoutMinutes: ${num(r.bulkWatchdogTimeoutMinutes, 90)}
 bulkProcessingTimeoutMinutes: ${num(r.bulkProcessingTimeoutMinutes, 180)}
 
-# Additional wall-clock passes (local HH:mm). scope: diff = products changed in Shopify
-# since the last pass (status/price; cheap); inventory = a full inventory audit via the
-# Bulk job broker. Empty = none.
+# Additional wall-clock passes (HH:mm in UTC, fixed — independent of the server's
+# timezone). scope: diff = products changed in Shopify since the last pass (status/price;
+# cheap); inventory = a full inventory audit via the Bulk job broker. Empty = none.
 schedules:`;
 	if (!schedules.length) { body += ' []\n'; return body; }
 	body += '\n';
@@ -510,9 +427,9 @@ schedules:`;
 
 function serializeIngest(g: any): string {
 	const rep = g.replay || {};
-	return `# Event ingestion (category A: all-topics intake, multi-backend, replay)
+	return `# Event ingestion (all-topics intake, multi-backend, replay)
 # Deploy to: /etc/commerce/config/ingest.yml
-# Managed by the Commerce app (Webtop > Commerce > Ingestion). See docs/ingestion.md.
+# Managed by the Commerce app (Webtop > Commerce > Ingestion).
 
 # Master switch for the replay/housekeeping batch (live ingestion is always on; this
 # only governs automatic replay + pruning).
@@ -529,9 +446,9 @@ replay:
 
 function serializeBackorder(b: any): string {
 	const notify = b.notify || {};
-	return `# Backorder / pre-order management (feature #12)
+	return `# Backorder / pre-order management
 # Deploy to: /etc/commerce/config/backorder.yml
-# Managed by the Commerce app (Webtop > Commerce > Backorders). See docs/backorders.md.
+# Managed by the Commerce app (Webtop > Commerce > Backorders).
 
 # Master switch (false = no backorders are detected or released).
 enabled: ${b.enabled === true}
@@ -558,7 +475,7 @@ function serializeOrderReview(o: any): string {
 	const hv = o.highValue || {}, ff = o.flaggedFinancialStatus || {}, lq = o.largeQuantity || {}, nc = o.newCustomer || {}, am = o.addressMismatch || {};
 	return `# Order review (screening) rules for the Shopify order-review workflow
 # Deploy to: /etc/commerce/config/order-review.yml
-# Managed by the Commerce app (Webtop > Commerce > Order review). See docs/order-review-tool.md.
+# Managed by the Commerce app (Webtop > Commerce > Order review).
 
 # Master switch. When false, every order is auto-approved (no screening).
 enabled: ${o.enabled === true}
@@ -596,7 +513,7 @@ function serializeRefundReview(r: any): string {
 	const hv = r.highRefundValue || {}, fr = r.fullRefund || {}, nr = r.noRestock || {};
 	return `# Refund review (screening) rules for the Shopify refund-review workflow
 # Deploy to: /etc/commerce/config/refund-review.yml
-# Managed by the Commerce app (Webtop > Commerce > Refund review). See docs/refund-tool.md.
+# Managed by the Commerce app (Webtop > Commerce > Refund review).
 #
 # A refund is already executed in Shopify by the time this fires; review here is for
 # audit / fraud-monitoring, NOT for issuing money. Nothing is written back to Shopify.
@@ -622,56 +539,22 @@ ${thresholdLines(hv.thresholds, '      ')}
 `;
 }
 
-function serializeInventoryRules(ir: any): string {
-	let body = `# Inventory threshold rules
-# Deploy to: /etc/commerce/config/inventory-rules.yml
-# Managed by the Commerce app (Webtop > Commerce > Inventory rules). See docs/inventory-rules.md.
-#
-# Effective threshold precedence: manual override > first matching rule > default > none.
-`;
-	if (String(ir.default ?? '').trim() !== '' && Number.isFinite(Number(ir.default))) {
-		body += `\n# Effective threshold when no rule matches. Remove to leave unmatched variants unmonitored.\ndefault: ${num(ir.default, 5)}\n`;
-	}
-	body += `\nrules:`;
-	const rules = ir.rules || [];
-	if (!rules.length) { body += ' []\n'; return body; }
-	body += '\n';
-	for (const r of rules) {
-		body += `  - name: "${esc(r.name || '')}"\n`;
-		const crit: string[] = [];
-		const pt = csvList(r.productType), vn = csvList(r.vendor), tg = csvList(r.tags);
-		if (pt.length) crit.push(`      productType: ${flowList(pt)}`);
-		if (vn.length) crit.push(`      vendor: ${flowList(vn)}`);
-		if (tg.length) crit.push(`      tags: ${flowList(tg)}`);
-		const from = String(r.seasonFrom || '').trim(), to = String(r.seasonTo || '').trim();
-		if (from || to) crit.push(`      season:\n        from: "${esc(from)}"\n        to: "${esc(to)}"`);
-		if (String(r.minVelocityPerDay ?? '').trim() !== '') crit.push(`      minVelocityPerDay: ${num(r.minVelocityPerDay, 0)}`);
-		if (crit.length) body += `    match:\n${crit.join('\n')}\n`;
-		body += `    threshold: ${num(r.threshold, 0)}\n`;
-	}
-	return body;
-}
-
 function serializeInventoryAlert(ia: any): string {
-	const policy = ['prompt', 'default', 'silent'].includes(String(ia.unconfiguredPolicy)) ? String(ia.unconfiguredPolicy) : 'prompt';
+	const policy = String(ia.unconfiguredPolicy) === 'silent' ? 'silent' : 'prompt';
 	return `# Inventory alert behaviour.
 # Managed by the Commerce app (Webtop > Commerce > Inventory alert).
 #
 # unconfiguredPolicy — how to treat a variant that resolves to NO effective threshold
-# (no manual override, no matching rule in inventory-rules.yml, and no default there):
+# (no per-variant planning value, no legacy manual override, and no default in planning.yml):
 #   prompt  : raise the "Set Inventory Threshold" task so an operator sets it
 #             (default; matches the public commerce.gsp promise). No alert until set.
-#   default : monitor it using defaultThreshold below.
 #   silent  : do not monitor — no task, no alert.
+# For a blanket baseline instead, set \`defaults.threshold\` in planning.yml.
 unconfiguredPolicy: ${policy}
-
-# Threshold used only when unconfiguredPolicy is "default".
-defaultThreshold: ${num(ia.defaultThreshold, 0)}
 
 # Debounce window for the alert sweep, in SECONDS. Bursts of inventory_levels/update for the
 # same item that arrive within the window collapse into a single evaluation.
-#   0 : evaluate on every sweep heartbeat (~15s; the timer period on
-#       etc/eip/routes/commerce/shopify/inventory-alert-sweep.xml). This is the default.
+#   0 : evaluate on every sweep heartbeat (~15s, the sweep's default period).
 #   N : leave at least N seconds between sweeps. Values at or below the heartbeat behave like 0.
 sweepDebounceSeconds: ${Math.max(0, num(ia.sweepDebounceSeconds, 0))}
 `;
@@ -691,6 +574,7 @@ const NAV_GROUPS = [
 	{ labelKey: 'app.commerce.nav.group.connection', items: [
 		{ key: 'shop', labelKey: 'app.commerce.nav.shop', icon: 'bi-shop' },
 		{ key: 'notifications', labelKey: 'app.commerce.nav.notifications', icon: 'bi-bell' },
+		{ key: 'webhooks', labelKey: 'app.commerce.nav.webhooks', icon: 'bi-broadcast' },
 	] },
 	{ labelKey: 'app.commerce.nav.group.intakeSync', items: [
 		{ key: 'ingestion', labelKey: 'app.commerce.nav.ingestion', icon: 'bi-inbox' },
@@ -698,20 +582,14 @@ const NAV_GROUPS = [
 	] },
 	{ labelKey: 'app.commerce.nav.group.inventory', items: [
 		{ key: 'locations', labelKey: 'app.commerce.nav.locations', icon: 'bi-geo-alt' },
-		{ key: 'inventoryRules', labelKey: 'app.commerce.nav.inventoryRules', icon: 'bi-sliders' },
 		{ key: 'inventoryAlert', labelKey: 'app.commerce.nav.inventoryAlert', icon: 'bi-exclamation-triangle' },
-		{ key: 'forecast', labelKey: 'app.commerce.nav.forecast', icon: 'bi-graph-down-arrow' },
-		{ key: 'replenishment', labelKey: 'app.commerce.nav.replenishment', icon: 'bi-cart-plus' },
+		{ key: 'planning', labelKey: 'app.commerce.nav.planning', icon: 'bi-rulers' },
 		{ key: 'backorders', labelKey: 'app.commerce.nav.backorders', icon: 'bi-hourglass-split' },
 	] },
 	{ labelKey: 'app.commerce.nav.group.workflows', items: [
 		{ key: 'orderReview', labelKey: 'app.commerce.nav.orderReview', icon: 'bi-clipboard-check' },
 		{ key: 'refundReview', labelKey: 'app.commerce.nav.refundReview', icon: 'bi-receipt' },
 		{ key: 'tasks', labelKey: 'app.commerce.nav.tasks', icon: 'bi-list-check' },
-	] },
-	{ labelKey: 'app.commerce.nav.group.storefront', items: [
-		{ key: 'storefront', labelKey: 'app.commerce.nav.storefront', icon: 'bi-shop-window' },
-		{ key: 'crm', labelKey: 'app.commerce.nav.crm', icon: 'bi-people' },
 	] },
 	{ labelKey: 'app.commerce.nav.group.monitoring', items: [
 		{ key: 'health', labelKey: 'app.commerce.nav.health', icon: 'bi-heart-pulse' },
@@ -720,11 +598,10 @@ const NAV_GROUPS = [
 // Section key → the dirty computed that tracks it (for the nav unsaved markers).
 const SECTION_DIRTY: Record<string, string> = {
 	shop: 'shopDirty', notifications: 'notifDirty', health: 'healthDirty', tasks: 'slaDirty',
-	forecast: 'velocityDirty', replenishment: 'reorderDirty', locations: 'locationsDirty',
-	ingestion: 'ingestDirty', reconciliation: 'reconcileDirty', inventoryRules: 'inventoryRulesDirty',
+	planning: 'planningDirty', locations: 'locationsDirty',
+	ingestion: 'ingestDirty', reconciliation: 'reconcileDirty',
 	inventoryAlert: 'inventoryAlertDirty',
 	backorders: 'backorderDirty', orderReview: 'orderReviewDirty', refundReview: 'refundReviewDirty',
-	storefront: 'storefrontDirty', crm: 'crmDirty',
 };
 
 const App = {
@@ -734,7 +611,6 @@ const App = {
 			content: null as AnyInstance,
 			// Reactive localization snapshot — drives every t() binding so the app
 			// repaints when the user switches language or a bundle is hot-reloaded.
-			// See composables/use-localization.ts.
 			localization: createLocalizationSnapshot(),
 
 			section: 'shop' as string,
@@ -815,22 +691,11 @@ const App = {
 				escalation: { bumpPriority: true, priority: 75, candidateGroup: '' },
 			},
 
-			// Sales velocity & stockout forecast (velocity.yml).
-			velocity: {
-				enabled: true,
-				windowDays: 30,
-				cooldownMinutes: 720,
-				stockout: { enabled: true, warnDays: 7 },
-			},
-
-			// Auto-reorder / replenishment (reorder.yml).
-			reorder: {
-				enabled: false,
-				leadTimeDays: 7,
-				targetCoverDays: 14,
-				minOrderQty: 1,
-				roundTo: 1,
-				supplier: { delivery: 'none', email: '', webhookUrl: '' },
+			// Planning layer: the global default reorder threshold (planning.yml).
+			// Per-variant thresholds live on each product (pim.planning) and are edited
+			// in the product editor; the system never derives or rewrites them.
+			planning: {
+				defaults: { threshold: '' as any },
 			},
 
 			// Multi-location inventory & allocation (locations.yml).
@@ -840,23 +705,10 @@ const App = {
 				defaultSafetyStock: 0,
 			},
 
-			// Headless storefront / catalog publishing (storefront.yml).
-			storefront: { enabled: true, storeName: '', currency: '', lowStock: 5 },
-
-			// Customer CRM & marketing (crm.yml).
-			crm: {
-				enabled: true,
-				segments: { vipMinSpend: 100000, vipMinOrders: 10, newMaxOrders: 1, atRiskDays: 60, dormantDays: 120 },
-				alert: { enabled: true },
-				abandonedCart: { enabled: true, abandonedAfterMinutes: 60, reminderIntervalMinutes: 1440, maxReminders: 2, sendToCustomer: false },
-			},
-
-			// CMS <-> Shopify reconciliation (reconcile.yml).
+			// Shopify -> CMS reconciliation (reconcile.yml).
 			reconcile: {
 				enabled: true,
 				maxPerRun: 50,
-				alert: true,
-				refreshInventoryMirror: true,
 				reserveBudgetPercent: 50,
 				minDelayMsPerCall: 0,
 				bulkWatchdogTimeoutMinutes: 90,
@@ -888,31 +740,46 @@ const App = {
 				noRestock: { enabled: true },
 			},
 
-			// Inventory threshold rules (inventory-rules.yml). Dynamic rule list; list
-			// criteria edited as CSV, season as from/to.
-			inventoryRules: { default: 5 as any, rules: [] as any[] },
-
 			// Inventory alert behaviour (inventory-alert.yml): unconfigured-threshold
-			// policy, its default threshold, and the sweep debounce window (seconds).
-			inventoryAlert: { unconfiguredPolicy: 'prompt', defaultThreshold: 0, sweepDebounceSeconds: 0 },
+			// policy and the sweep debounce window (seconds).
+			inventoryAlert: { unconfiguredPolicy: 'prompt', sweepDebounceSeconds: 0 },
+
+			// Webhook registration — an ACTION panel, NOT a saved config section. The
+			// operator pastes the public callback URL and clicks Register; the endpoint
+			// create-or-updates every required Shopify topic subscription idempotently.
+			// State here is the endpoint's GET snapshot (current subscriptions +
+			// suggested URL + Admin-API gate) plus the last POST's per-topic results.
+			webhooks: {
+				loaded: false,
+				checked: false,           // the first status GET has completed (success OR failure)
+				loading: false,
+				running: false,
+				enabled: false,           // Admin API configured (from the endpoint)
+				shopDomain: '',
+				apiVersion: '',
+				callbackUrl: '',          // v-model — edited by the operator
+				suggestedCallbackUrl: '', // placeholder / prefill from the endpoint
+				current: [] as any[],     // [{ topic, subscribed, callbackUrl }]
+				results: [] as any[],     // [{ topic, action, message }]
+				compliance: WEBHOOK_COMPLIANCE_TOPICS.slice(),
+				ran: false,
+				error: '',
+			},
 
 			// Snapshots for dirty detection (the in-memory edit model).
 			_origShop: '',
 			_origNotif: '',
 			_origHealth: '',
 			_origSla: '',
-			_origVelocity: '',
-			_origReorder: '',
+			_origPlanning: '',
 			_origLocations: '',
-			_origStorefront: '',
-			_origCrm: '',
 			_origReconcile: '',
 			_origIngest: '',
 			_origBackorder: '',
 			_origOrderReview: '',
 			_origRefundReview: '',
-			_origInventoryRules: '',
 			_origInventoryAlert: '',
+			_base: '' as string,
 			_messageListener: null as any,
 			_toastTimer: null as any,
 		};
@@ -923,22 +790,18 @@ const App = {
 		notifDirty(): boolean { return JSON.stringify(this.notif) !== this._origNotif; },
 		healthDirty(): boolean { return JSON.stringify(this.health) !== this._origHealth; },
 		slaDirty(): boolean { return JSON.stringify(this.sla) !== this._origSla; },
-		velocityDirty(): boolean { return JSON.stringify(this.velocity) !== this._origVelocity; },
-		reorderDirty(): boolean { return JSON.stringify(this.reorder) !== this._origReorder; },
+		planningDirty(): boolean { return JSON.stringify(this.planning) !== this._origPlanning; },
 		locationsDirty(): boolean { return JSON.stringify(this.locations) !== this._origLocations; },
-		storefrontDirty(): boolean { return JSON.stringify(this.storefront) !== this._origStorefront; },
-		crmDirty(): boolean { return JSON.stringify(this.crm) !== this._origCrm; },
 		reconcileDirty(): boolean { return JSON.stringify(this.reconcile) !== this._origReconcile; },
 		ingestDirty(): boolean { return JSON.stringify(this.ingest) !== this._origIngest; },
 		backorderDirty(): boolean { return JSON.stringify(this.backorder) !== this._origBackorder; },
 		orderReviewDirty(): boolean { return JSON.stringify(this.orderReview) !== this._origOrderReview; },
 		refundReviewDirty(): boolean { return JSON.stringify(this.refundReview) !== this._origRefundReview; },
-		inventoryRulesDirty(): boolean { return JSON.stringify(this.inventoryRules) !== this._origInventoryRules; },
 		inventoryAlertDirty(): boolean { return JSON.stringify(this.inventoryAlert) !== this._origInventoryAlert; },
 		hasChanges(): boolean {
-			return this.shopDirty || this.notifDirty || this.healthDirty || this.slaDirty || this.velocityDirty || this.reorderDirty || this.locationsDirty
-				|| this.storefrontDirty || this.crmDirty || this.reconcileDirty || this.ingestDirty || this.backorderDirty
-				|| this.orderReviewDirty || this.refundReviewDirty || this.inventoryRulesDirty || this.inventoryAlertDirty;
+			return this.shopDirty || this.notifDirty || this.healthDirty || this.slaDirty || this.planningDirty || this.locationsDirty
+				|| this.reconcileDirty || this.ingestDirty || this.backorderDirty
+				|| this.orderReviewDirty || this.refundReviewDirty || this.inventoryAlertDirty;
 		},
 
 		// The Admin API is required, but "not configured yet" (all four fields empty) is
@@ -1024,6 +887,9 @@ const App = {
 				}
 
 				await vm.loadUiState();
+				// Resolve the cgi base URL up front so the Webhooks action panel can
+				// reach its endpoint the moment the operator opens that section.
+				await vm.resolveBase();
 				await vm.loadAll();
 
 				vm.$nextTick(() => { try { instance.notifyLaunched(); } catch (_) {} });
@@ -1038,7 +904,21 @@ const App = {
 			if (this._boundSidebarResizeUp) document.removeEventListener('mouseup', this._boundSidebarResizeUp);
 		},
 
-		selectSection(section: string) { this.section = section; },
+		selectSection(section: string) {
+			this.section = section;
+			// The Webhooks panel is an action console, not a config file: lazy-load its
+			// current-state snapshot the first time it is opened.
+			if (section === 'webhooks' && !this.webhooks.loaded && !this.webhooks.loading) {
+				this.loadWebhooks();
+			}
+			// Reset the main panel to the top after the new section renders, so a
+			// tab switch always starts at the top (the .content-main island is the
+			// scroll container).
+			this.$nextTick(() => {
+				const el = document.querySelector('.content-main');
+				if (el) el.scrollTop = 0;
+			});
+		},
 
 		// ---- Left sidebar (toggle / collapse / resize) -----------------------
 		toggleSidebar() {
@@ -1112,10 +992,26 @@ const App = {
 		// Dynamic rows for the rule editors.
 		addThreshold(rows: any[]) { rows.push({ currency: '', value: 0 }); },
 		removeThreshold(rows: any[], i: number) { rows.splice(i, 1); },
-		addRule() { this.inventoryRules.rules.push({ name: '', productType: '', vendor: '', tags: '', seasonFrom: '', seasonTo: '', minVelocityPerDay: '', threshold: 0 }); },
-		removeRule(i: number) { this.inventoryRules.rules.splice(i, 1); },
 			addSchedule() { this.reconcile.schedules.push({ at: '00:00', scope: 'diff' }); },
 			removeSchedule(i: number) { this.reconcile.schedules.splice(i, 1); },
+			// Schedule times are stored/evaluated in UTC (scheduleReconcile.groovy) but shown
+			// and edited in the operator's effective Preferences time zone — like the
+			// commerce-events date filters — so `at` is converted to the display zone for the
+			// `<input type="time">` and converted back to UTC on change. Falls back to the
+			// browser zone when Preferences hasn't loaded.
+			effectiveTimeZone(): string {
+				let zone = this.localization.timeZone;
+				if (!zone) {
+					try { zone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch (_) { zone = 'UTC'; }
+				}
+				return zone;
+			},
+			scheduleDisplayTime(at: string): string {
+				return utcTimeToZone(at, this.effectiveTimeZone());
+			},
+			onScheduleTimeChange(s: any, value: string) {
+				s.at = zoneTimeToUtc(value, this.effectiveTimeZone());
+			},
 
 		// ---- Window controls -------------------------------------------------
 		onMinimizeWindow() { this.instance?.minimize(); },
@@ -1179,23 +1075,19 @@ const App = {
 
 		async loadAll() {
 			try {
-				const [shopText, notifText, healthText, slaText, velocityText, reorderText, locationsText,
-					storefrontText, crmText, reconcileText, ingestText, backorderText, orderReviewText, refundReviewText, inventoryRulesText, inventoryAlertText] = await Promise.all([
+				const [shopText, notifText, healthText, slaText, planningText, locationsText,
+					reconcileText, ingestText, backorderText, orderReviewText, refundReviewText, inventoryAlertText] = await Promise.all([
 					this.readText(SHOPIFY_PATH),
 					this.readText(NOTIF_PATH),
 					this.readText(HEALTH_PATH),
 					this.readText(SLA_PATH),
-					this.readText(VELOCITY_PATH),
-					this.readText(REORDER_PATH),
+					this.readText(PLANNING_PATH),
 					this.readText(LOCATIONS_PATH),
-					this.readText(STOREFRONT_PATH),
-					this.readText(CRM_PATH),
 					this.readText(RECONCILE_PATH),
 					this.readText(INGEST_PATH),
 					this.readText(BACKORDER_PATH),
 					this.readText(ORDER_REVIEW_PATH),
 					this.readText(REFUND_REVIEW_PATH),
-					this.readText(INVENTORY_RULES_PATH),
 					this.readText(INVENTORY_ALERT_PATH),
 				]);
 
@@ -1302,31 +1194,12 @@ const App = {
 					},
 				};
 
-				const vel = parseSimpleYaml(velocityText || '');
-				const vstockout = (vel.stockout && typeof vel.stockout === 'object') ? vel.stockout : {};
-				const hasVel = !!velocityText;
-				this.velocity = {
-					enabled: hasVel ? (vel.enabled === true) : true,
-					windowDays: Number(vel.windowDays) || 30,
-					cooldownMinutes: Number(vel.cooldownMinutes) || 720,
-					stockout: {
-						enabled: hasVel ? (vstockout.enabled === true) : true,
-						warnDays: Number(vstockout.warnDays) || 7,
-					},
-				};
-
-				const ro = parseSimpleYaml(reorderText || '');
-				const rsupplier = (ro.supplier && typeof ro.supplier === 'object') ? ro.supplier : {};
-				this.reorder = {
-					enabled: ro.enabled === true,
-					leadTimeDays: Number(ro.leadTimeDays) || 7,
-					targetCoverDays: Number(ro.targetCoverDays) || 14,
-					minOrderQty: Number(ro.minOrderQty) || 1,
-					roundTo: Number(ro.roundTo) || 1,
-					supplier: {
-						delivery: String(rsupplier.delivery || 'none'),
-						email: String(rsupplier.email || ''),
-						webhookUrl: String(rsupplier.webhookUrl || ''),
+				const pl = parseSimpleYaml(planningText || '');
+				const plsec = (key: string) => ((pl as any)[key] && typeof (pl as any)[key] === 'object') ? (pl as any)[key] : {};
+				const plDefaults = plsec('defaults');
+				this.planning = {
+					defaults: {
+						threshold: (plDefaults.threshold == null || plDefaults.threshold === '') ? '' : Number(plDefaults.threshold),
 					},
 				};
 
@@ -1339,44 +1212,11 @@ const App = {
 
 				const obj = (v: any) => (v && typeof v === 'object' && !Array.isArray(v)) ? v : {};
 
-				const sf = parseYaml(storefrontText || '');
-				const hasSf = !!storefrontText;
-				this.storefront = {
-					enabled: hasSf ? (sf.enabled === true) : true,
-					storeName: String(sf.storeName || ''),
-					currency: String(sf.currency || ''),
-					lowStock: Number(sf.lowStock) || 0,
-				};
-
-				const cr = parseYaml(crmText || '');
-				const seg = obj(cr.segments), crAc = obj(cr.abandonedCart);
-				const hasCrm = !!crmText;
-				this.crm = {
-					enabled: hasCrm ? (cr.enabled === true) : true,
-					segments: {
-						vipMinSpend: Number(seg.vipMinSpend) || 0,
-						vipMinOrders: Number(seg.vipMinOrders) || 0,
-						newMaxOrders: Number(seg.newMaxOrders) || 0,
-						atRiskDays: Number(seg.atRiskDays) || 0,
-						dormantDays: Number(seg.dormantDays) || 0,
-					},
-					alert: { enabled: hasCrm ? (obj(cr.alert).enabled === true) : true },
-					abandonedCart: {
-						enabled: hasCrm ? (crAc.enabled === true) : true,
-						abandonedAfterMinutes: Number(crAc.abandonedAfterMinutes) || 60,
-						reminderIntervalMinutes: Number(crAc.reminderIntervalMinutes) || 1440,
-						maxReminders: Number(crAc.maxReminders) || 2,
-						sendToCustomer: crAc.sendToCustomer === true,
-					},
-				};
-
 				const rc = parseYaml(reconcileText || '');
 				const hasRc = !!reconcileText;
 				this.reconcile = {
 					enabled: hasRc ? (rc.enabled === true) : true,
 					maxPerRun: Number(rc.maxPerRun) || 50,
-					alert: hasRc ? (rc.alert === true) : true,
-					refreshInventoryMirror: hasRc ? (rc.refreshInventoryMirror !== false) : true,
 					reserveBudgetPercent: Number.isFinite(Number(rc.reserveBudgetPercent)) ? Number(rc.reserveBudgetPercent) : 50,
 					minDelayMsPerCall: Number.isFinite(Number(rc.minDelayMsPerCall)) ? Number(rc.minDelayMsPerCall) : 0,
 					bulkWatchdogTimeoutMinutes: Number(rc.bulkWatchdogTimeoutMinutes) || 90,
@@ -1432,30 +1272,10 @@ const App = {
 					noRestock: { enabled: rrNr.enabled === true },
 				};
 
-				const ivr = parseYaml(inventoryRulesText || '');
-				this.inventoryRules = {
-					default: (ivr.default == null || ivr.default === '') ? '' : Number(ivr.default),
-					rules: (Array.isArray(ivr.rules) ? ivr.rules : []).map((r: any) => {
-						const match = obj(r.match), season = obj(match.season);
-						const csv = (v: any) => Array.isArray(v) ? v.join(', ') : (v == null ? '' : String(v));
-						return {
-							name: String(r.name || ''),
-							productType: csv(match.productType),
-							vendor: csv(match.vendor),
-							tags: csv(match.tags),
-							seasonFrom: String(season.from || ''),
-							seasonTo: String(season.to || ''),
-							minVelocityPerDay: (match.minVelocityPerDay == null || match.minVelocityPerDay === '') ? '' : Number(match.minVelocityPerDay),
-							threshold: Number(r.threshold) || 0,
-						};
-					}),
-				};
-
 				const ia = parseSimpleYaml(inventoryAlertText || '');
 				const iaPolicy = String(ia.unconfiguredPolicy || 'prompt').trim().toLowerCase();
 				this.inventoryAlert = {
-					unconfiguredPolicy: (iaPolicy === 'default' || iaPolicy === 'silent') ? iaPolicy : 'prompt',
-					defaultThreshold: Number(ia.defaultThreshold) || 0,
+					unconfiguredPolicy: (iaPolicy === 'silent') ? 'silent' : 'prompt',
 					sweepDebounceSeconds: Math.max(0, Number(ia.sweepDebounceSeconds) || 0),
 				};
 
@@ -1506,20 +1326,11 @@ const App = {
 				if (this.slaDirty) {
 					await this.writeText(CONFIG_DIR, SLA_FILE, serializeSla(this.sla));
 				}
-				if (this.velocityDirty) {
-					await this.writeText(CONFIG_DIR, VELOCITY_FILE, serializeVelocity(this.velocity));
-				}
-				if (this.reorderDirty) {
-					await this.writeText(CONFIG_DIR, REORDER_FILE, serializeReorder(this.reorder));
+				if (this.planningDirty) {
+					await this.writeText(CONFIG_DIR, PLANNING_FILE, serializePlanning(this.planning));
 				}
 				if (this.locationsDirty) {
 					await this.writeText(CONFIG_DIR, LOCATIONS_FILE, serializeLocations(this.locations));
-				}
-				if (this.storefrontDirty) {
-					await this.writeText(CONFIG_DIR, STOREFRONT_FILE, serializeStorefront(this.storefront));
-				}
-				if (this.crmDirty) {
-					await this.writeText(CONFIG_DIR, CRM_FILE, serializeCrm(this.crm));
 				}
 				if (this.reconcileDirty) {
 					await this.writeText(CONFIG_DIR, RECONCILE_FILE, serializeReconcile(this.reconcile));
@@ -1535,9 +1346,6 @@ const App = {
 				}
 				if (this.refundReviewDirty) {
 					await this.writeText(CONFIG_DIR, REFUND_REVIEW_FILE, serializeRefundReview(this.refundReview));
-				}
-				if (this.inventoryRulesDirty) {
-					await this.writeText(CONFIG_DIR, INVENTORY_RULES_FILE, serializeInventoryRules(this.inventoryRules));
 				}
 				if (this.inventoryAlertDirty) {
 					await this.writeText(CONFIG_DIR, INVENTORY_ALERT_FILE, serializeInventoryAlert(this.inventoryAlert));
@@ -1560,17 +1368,13 @@ const App = {
 			this._origNotif = JSON.stringify(this.notif);
 			this._origHealth = JSON.stringify(this.health);
 			this._origSla = JSON.stringify(this.sla);
-			this._origVelocity = JSON.stringify(this.velocity);
-			this._origReorder = JSON.stringify(this.reorder);
+			this._origPlanning = JSON.stringify(this.planning);
 			this._origLocations = JSON.stringify(this.locations);
-			this._origStorefront = JSON.stringify(this.storefront);
-			this._origCrm = JSON.stringify(this.crm);
 			this._origReconcile = JSON.stringify(this.reconcile);
 			this._origIngest = JSON.stringify(this.ingest);
 			this._origBackorder = JSON.stringify(this.backorder);
 			this._origOrderReview = JSON.stringify(this.orderReview);
 			this._origRefundReview = JSON.stringify(this.refundReview);
-			this._origInventoryRules = JSON.stringify(this.inventoryRules);
 			this._origInventoryAlert = JSON.stringify(this.inventoryAlert);
 		},
 
@@ -1579,6 +1383,226 @@ const App = {
 			this.toastError = !!isError;
 			if (this._toastTimer) clearTimeout(this._toastTimer);
 			this._toastTimer = setTimeout(() => { this.toast = ''; }, 4000);
+		},
+
+		// ---- Webhook registration (action panel) -----------------------------
+		// This section talks to a cgi endpoint directly (not the content service
+		// used by the config editors), so it needs the cgi base URL + small JSON
+		// fetch helpers — mirroring the commerce-import console. Kept entirely out
+		// of the config Save flow.
+		async resolveBase() {
+			let ws: string | null = null;
+			try { ws = this.instance?.api?.workspace || null; } catch (_) {}
+			if (ws) { this._base = `/bin/cms.cgi/${ws}`; return; }
+			try {
+				const node = await this.instance.api.content.getNode('/content');
+				const m = String(node?.downloadUrl || '').match(/\/bin\/[^/]*cgi\/([^/?#]+)/);
+				if (m) { this._base = `/bin/cms.cgi/${m[1]}`; return; }
+			} catch (_) {}
+			this._base = '';
+		},
+		async getJson(path: string): Promise<any> {
+			const res = await fetch(`${this._base}${path}`, { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
+			if (!res.ok) throw new Error(`Request failed (${res.status})`);
+			return res.json();
+		},
+		async postJson(path: string, body: any): Promise<{ status: number; json: any }> {
+			const res = await fetch(`${this._base}${path}`, {
+				method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+				credentials: 'same-origin', body: JSON.stringify(body),
+			});
+			const json = await res.json().catch(() => ({}));
+			return { status: res.status, json };
+		},
+
+		// GET the current subscription snapshot + suggested callback URL. Lazy —
+		// called the first time the Webhooks section is opened (and by Refresh).
+		async loadWebhooks() {
+			const vm = this;
+			vm.webhooks.loading = true;
+			vm.webhooks.error = '';
+			try {
+				if (!vm._base) await vm.resolveBase();
+				const j = await vm.getJson(WEBHOOKS_SCRIPT);
+				vm.webhooks.enabled = j.enabled === true;
+				// The Admin API can be enabled but the live subscription LISTING still fail
+				// (e.g. the app's token lacks the read_webhooks scope) — surface that real
+				// error instead of the misleading "Admin API not configured" banner.
+				if (j.listError) vm.webhooks.error = String(j.listError);
+				vm.webhooks.shopDomain = String(j.shopDomain || '');
+				vm.webhooks.apiVersion = String(j.apiVersion || '');
+				vm.webhooks.suggestedCallbackUrl = String(j.suggestedCallbackUrl || '');
+				vm.webhooks.current = vm.$markRaw(Array.isArray(j.operational) ? j.operational : []);
+				if (Array.isArray(j.compliance) && j.compliance.length) vm.webhooks.compliance = vm.$markRaw(j.compliance);
+				// Prefill the URL once (an already-registered callbackUrl wins over the
+				// suggestion); never clobber an edit the operator has already made.
+				if (!vm.webhooks.callbackUrl) {
+					vm.webhooks.callbackUrl = String(j.callbackUrl || j.suggestedCallbackUrl || '');
+				}
+				vm.webhooks.loaded = true;
+			} catch (e: any) {
+				vm.webhooks.error = (e && e.message) ? e.message : String(e);
+			} finally {
+				vm.webhooks.loading = false;
+				vm.webhooks.checked = true;
+			}
+		},
+
+		// POST the callback URL → the endpoint create-or-updates every required topic
+		// subscription idempotently and returns per-topic results + the refreshed
+		// current state.
+		async runWebhookRegister() {
+			const vm = this;
+			if (vm.webhooks.running) return;
+			if (!vm.webhooks.enabled) {
+				vm.showToast(vm.t('app.commerce.webhooks.adminApiOff', undefined, 'Configure the Shopify Admin API first (Shop section).'), true);
+				return;
+			}
+			const url = String(vm.webhooks.callbackUrl || '').trim();
+			if (!url) {
+				vm.showToast(vm.t('app.commerce.webhooks.urlRequired', undefined, 'Enter the callback URL.'), true);
+				return;
+			}
+			vm.webhooks.running = true;
+			vm.status = '';
+			vm.statusKind = '';
+			try {
+				if (!vm._base) await vm.resolveBase();
+				const { status, json } = await vm.postJson(WEBHOOKS_SCRIPT, { callbackUrl: url });
+				if (status === 200 || status === 202) {
+					vm.webhooks.results = vm.$markRaw(Array.isArray(json.results) ? json.results : []);
+					vm.webhooks.ran = true;
+					// The POST returns per-topic results + summary (not the list); refresh the
+					// current-state table from a fresh GET so the "subscribed" column updates.
+					await vm.loadWebhooks();
+					const errors = vm.webhooks.results.filter((r: any) => String(r && r.action) === 'error').length;
+					if (errors > 0) {
+						vm.status = vm.t('app.commerce.webhooks.doneWithErrors', { count: errors }, 'Completed with {count} error(s).');
+						vm.statusKind = 'err';
+						vm.showToast(vm.status, true);
+					} else {
+						vm.status = vm.t('app.commerce.webhooks.done', undefined, 'Webhook subscriptions registered / updated.');
+						vm.statusKind = 'ok';
+						vm.showToast(vm.status, false);
+					}
+				} else {
+					const msg = (json && (json.message || json.error)) ? (json.message || json.error) : String(status);
+					vm.showToast(vm.t('app.commerce.webhooks.failed', { message: msg }, 'Registration failed: {message}'), true);
+				}
+			} catch (e: any) {
+				vm.showToast(e?.message || vm.t('app.commerce.webhooks.failed', { message: '?' }, 'Registration failed.'), true);
+			} finally {
+				vm.webhooks.running = false;
+			}
+		},
+
+		// Map a per-topic action to the shared status-pill palette / a localized label.
+		webhookActionClass(action: any): string {
+			const v = String(action || '').toLowerCase();
+			if (v === 'created') return 'st-ok';
+			if (v === 'updated') return 'st-received';
+			if (v === 'error') return 'st-error';
+			return 'st-report'; // skipped / unknown
+		},
+		webhookActionLabel(action: any): string {
+			const v = String(action || '').toLowerCase();
+			if (v === 'created') return this.t('app.commerce.webhooks.action.created', undefined, 'Created');
+			if (v === 'updated') return this.t('app.commerce.webhooks.action.updated', undefined, 'Updated');
+			if (v === 'skipped') return this.t('app.commerce.webhooks.action.skipped', undefined, 'Skipped');
+			if (v === 'error') return this.t('app.commerce.webhooks.action.error', undefined, 'Error');
+			return String(action || '—');
+		},
+
+		// ---- wt-select popups (shell menu anchored to the trigger) -----------
+		// House convention: the shell apps have no native <select>. Each opener
+		// mirrors content-browser's Date filter (openFilterDateDropdown) — it
+		// anchors a shell popup to the trigger's rect and writes the chosen id
+		// back to the same model the <select> used. A paired *Label helper
+		// renders the current value inside the trigger button.
+		async openEmailSecurityMenu(event: MouseEvent) {
+			const trigger = event.currentTarget as HTMLElement;
+			if (!trigger || !this.instance) return;
+			const rect = trigger.getBoundingClientRect();
+			const cur = this.notif.email.security;
+			const items = [
+				{ id: 'starttls', label: this.t('app.commerce.notifications.email.security.starttls'), selected: cur === 'starttls' },
+				{ id: 'ssl', label: this.t('app.commerce.notifications.email.security.ssl'), selected: cur === 'ssl' },
+				{ id: 'none', label: this.t('app.commerce.notifications.email.security.none'), selected: cur === 'none' },
+			];
+			const handle = this.instance.popup.open({ anchor: rect, placement: 'bottom-start', minWidth: rect.width, items });
+			const result = await handle.result;
+			if (result == null) return;
+			this.notif.email.security = String(result);
+		},
+		emailSecurityLabel(v: string): string {
+			switch (v) {
+				case 'ssl': return this.t('app.commerce.notifications.email.security.ssl');
+				case 'none': return this.t('app.commerce.notifications.email.security.none');
+				default: return this.t('app.commerce.notifications.email.security.starttls');
+			}
+		},
+
+		async openStrategyMenu(event: MouseEvent) {
+			const trigger = event.currentTarget as HTMLElement;
+			if (!trigger || !this.instance) return;
+			const rect = trigger.getBoundingClientRect();
+			const cur = this.locations.strategy;
+			const items = [
+				{ id: 'most_stock', label: this.t('app.commerce.locations.strategy.mostStock'), selected: cur === 'most_stock' },
+				{ id: 'priority', label: this.t('app.commerce.locations.strategy.priority'), selected: cur === 'priority' },
+			];
+			const handle = this.instance.popup.open({ anchor: rect, placement: 'bottom-start', minWidth: rect.width, items });
+			const result = await handle.result;
+			if (result == null) return;
+			this.locations.strategy = String(result);
+		},
+		strategyLabel(v: string): string {
+			switch (v) {
+				case 'priority': return this.t('app.commerce.locations.strategy.priority');
+				default: return this.t('app.commerce.locations.strategy.mostStock');
+			}
+		},
+
+		async openScopeMenu(event: MouseEvent, s: any) {
+			const trigger = event.currentTarget as HTMLElement;
+			if (!trigger || !this.instance) return;
+			const rect = trigger.getBoundingClientRect();
+			const cur = s.scope;
+			const items = [
+				{ id: 'diff', label: this.t('app.commerce.reconciliation.schedules.scope.diff'), selected: cur === 'diff' },
+				{ id: 'inventory', label: this.t('app.commerce.reconciliation.schedules.scope.inventory'), selected: cur === 'inventory' },
+			];
+			const handle = this.instance.popup.open({ anchor: rect, placement: 'bottom-start', minWidth: rect.width, items });
+			const result = await handle.result;
+			if (result == null) return;
+			s.scope = String(result);
+		},
+		scopeLabel(v: string): string {
+			switch (v) {
+				case 'inventory': return this.t('app.commerce.reconciliation.schedules.scope.inventory');
+				default: return this.t('app.commerce.reconciliation.schedules.scope.diff');
+			}
+		},
+
+		async openUnconfiguredPolicyMenu(event: MouseEvent) {
+			const trigger = event.currentTarget as HTMLElement;
+			if (!trigger || !this.instance) return;
+			const rect = trigger.getBoundingClientRect();
+			const cur = this.inventoryAlert.unconfiguredPolicy;
+			const items = [
+				{ id: 'prompt', label: this.t('app.commerce.inventoryAlert.unconfiguredPolicy.prompt'), selected: cur === 'prompt' },
+				{ id: 'silent', label: this.t('app.commerce.inventoryAlert.unconfiguredPolicy.silent'), selected: cur === 'silent' },
+			];
+			const handle = this.instance.popup.open({ anchor: rect, placement: 'bottom-start', minWidth: rect.width, items });
+			const result = await handle.result;
+			if (result == null) return;
+			this.inventoryAlert.unconfiguredPolicy = String(result);
+		},
+		unconfiguredPolicyLabel(v: string): string {
+			switch (v) {
+				case 'silent': return this.t('app.commerce.inventoryAlert.unconfiguredPolicy.silent');
+				default: return this.t('app.commerce.inventoryAlert.unconfiguredPolicy.prompt');
+			}
 		},
 	},
 };

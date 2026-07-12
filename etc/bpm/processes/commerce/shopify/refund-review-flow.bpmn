@@ -6,8 +6,8 @@
                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                   xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
                   id="Definitions_refund_review" targetNamespace="http://bpmn.io/schema/bpmn">
-  <!-- Refund processing workflow. Started by the order-paid sibling route
-       refund-created.xml when a refunds/create webhook arrives. A refund is
+  <!-- Refund processing workflow. Started by the refund-created ingestion route
+       (a sibling of the order-paid route) when a refunds/create webhook arrives. A refund is
        already executed in Shopify by the time we hear about it, so this flow is
        audit/triage only: screen the refund, raise a manual "Refund Review" task
        when a rule matches, then record the refund (and update the linked order's

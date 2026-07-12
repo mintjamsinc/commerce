@@ -1,5 +1,5 @@
 // Advance the integration processing status (commerce:status) of a backorder as it
-// moves through the release workflow (backorder-release-flow.bpmn). Feature #12.
+// moves through the release workflow (backorder-release-flow.bpmn).
 //
 // commerce:status is the processing lifecycle of our integration - the single axis
 // an operator reads to answer "is this done, waiting on someone, or broken?". For a
@@ -8,8 +8,6 @@
 //
 //   backordered -> ready      (stock arrived; "Release Backorder" task raised)
 //   ready       -> released   (operator released it; terminal)
-//
-// See docs/commerce-status.md for the authoritative status list.
 //
 // Wiring (mirrors setOrderWorkflowStatus): this one script is attached at two
 // points via org.mintjams.script.bpm.CmsDelegate and resolves the target status

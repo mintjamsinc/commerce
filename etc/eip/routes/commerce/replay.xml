@@ -14,13 +14,11 @@
     </routeConfiguration>
 
     <!--
-      Automatic event replay + housekeeping (category A, #4). Fires every 5 minutes
-      (after a 2-minute warm-up) and runs replayEvents.groovy as the service user:
+      Automatic event replay + housekeeping. Fires every 5 minutes
+      (after a 2-minute warm-up) and runs the replay task as the service user:
       it re-dispatches events that ended in "error" (bounded attempts, after a
       backoff) back through direct:commerce-ingest, then prunes old processed events.
-      Manual, on-demand replay uses the same ingest path from the events endpoint
-      (content/commerce/endpoints/events.groovy). Settings live in
-      /etc/commerce/config/ingest.yml.
+      Manual, on-demand replay uses the same ingest path from the events endpoint.
     -->
     <route id="commerce-replay" routeConfigurationId="commerce-replay-error-handler">
         <from uri="timer:commerce-replay?period=300000&amp;delay=120000"/>
@@ -29,7 +27,7 @@
             <constant>commerce-service-user</constant>
         </setHeader>
 
-        <toD uri="cms:/etc/commerce/scripts/commerce/replayEvents.groovy"/>
+        <toD uri="cms:/etc/commerce/scripts/replayEvents.groovy"/>
     </route>
 
 </camel>

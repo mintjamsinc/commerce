@@ -1,6 +1,8 @@
+import commerce.Api
 import java.net.http.HttpClient
 import commerce.ShopifyAdmin
 import commerce.Health
+import commerce.SyncAudit
 
 // Record the fulfillment of an order at the end of order-review-flow.bpmn.
 //
@@ -25,10 +27,15 @@ import commerce.Health
 //
 // Records on the order resource:
 //   - commerce:tracking_number, commerce:tracking_company  (when provided)
-//   - commerce:fulfilled_at        ISO timestamp of fulfilment
+//   - commerce:fulfilled_at        fulfilment timestamp (typed Date)
 //   - commerce:fulfillment_writeback   ok | skipped | failed
-//   - commerce:fulfillment_id      Shopify fulfillment GID (on a successful write-back)
+//   - commerce:fulfillment_id      Shopify fulfillment id, numeric (on a successful write-back)
 //   - commerce:fulfillment_error   error detail (on a failed write-back)
+//
+// Every write-back outcome is ALSO recorded in the outbound-write audit trail
+// (commerce.SyncAudit, action "fulfillment") so the ops "operation log" app can answer
+// who / when / against what / what action: WHO = the fulfiller captured on the order node
+// (commerce:fulfilled_by, "workflow" if absent), WHAT-TARGET = this order.
 
 if (!orderPath) {
     throw new IllegalArgumentException("Required variable 'orderPath' is missing")
@@ -60,7 +67,7 @@ try {
 try {
     if (trackingNumber != null) orderResource.setProperty("commerce:tracking_number", trackingNumber)
     if (trackingCompany != null) orderResource.setProperty("commerce:tracking_company", trackingCompany)
-    orderResource.setProperty("commerce:fulfilled_at", java.time.Instant.now().toString())
+    orderResource.setProperty("commerce:fulfilled_at", new java.util.Date())
     repositorySession.commit()
 } catch (Exception e) {
     try { repositorySession.rollback() } catch (Exception ignore) {}
@@ -100,7 +107,7 @@ try {
     // into fulfillment orders; a fulfillment is created against those).
     def foQuery = """
 query {
-  order(id: "gid://shopify/Order/${order_id}") {
+  order(id: "${Api.gid('Order', order_id)}") {
     fulfillmentOrders(first: 10, query: "status:open OR status:in_progress OR status:scheduled") {
       edges { node { id status } }
     }
@@ -162,8 +169,10 @@ mutation fulfillmentCreate(\$fulfillment: FulfillmentV2Input!) {
         return
     }
 
-    def fulfillmentId = result?.fulfillment?.id
-    setWriteback(orderPath, "ok", fulfillmentId?.toString(), null)
+    // Storage keeps the NUMERIC id (same convention as commerce:order_id — the
+    // GraphQL GID is peeled here, the wire re-GIDs on the way out; commerce.Api).
+    def fulfillmentId = Api.legacyId(result?.fulfillment?.id)
+    setWriteback(orderPath, "ok", fulfillmentId, null)
     log.info("recordFulfillment: created Shopify fulfillment ${fulfillmentId} for order ${order_id}")
 } catch (Exception e) {
     // Best-effort: never break the workflow on a write-back failure.
@@ -174,21 +183,48 @@ mutation fulfillmentCreate(\$fulfillment: FulfillmentV2Input!) {
 // --- Helpers -----------------------------------------------------------------
 
 // Persist the write-back outcome on the order resource. Swallows its own errors.
+// This is the single funnel every terminal outcome (ok / skipped / failed)
+// routes through, so it also emits the outbound-write audit record here.
 void setWriteback(String orderPath, String state, String fulfillmentId, String error) {
     try {
         def r = repositorySession.getResource(orderPath)
-        if (r == null || !r.exists()) return
-        r.setProperty("commerce:fulfillment_writeback", state)
-        if (fulfillmentId != null) r.setProperty("commerce:fulfillment_id", fulfillmentId)
-        if (error != null) {
-            def msg = error.length() > 2048 ? error.substring(0, 2048) : error
-            r.setProperty("commerce:fulfillment_error", msg)
+        if (r != null && r.exists()) {
+            r.setProperty("commerce:fulfillment_writeback", state)
+            // Lifecycle rule: a state mutation records WHEN it happened.
+            r.setProperty("commerce:fulfillment_writeback_at", new java.util.Date())
+            if (fulfillmentId != null) r.setProperty("commerce:fulfillment_id", fulfillmentId)
+            if (error != null) {
+                def msg = error.length() > 2048 ? error.substring(0, 2048) : error
+                r.setProperty("commerce:fulfillment_error", msg)
+            }
+            repositorySession.commit()
         }
-        repositorySession.commit()
     } catch (Exception e) {
         try { repositorySession.rollback() } catch (Exception ignore) {}
         log.warn("recordFulfillment: could not record write-back state '${state}': ${e.message}")
     }
+    auditFulfillment(orderPath, state, fulfillmentId, error)
+}
+
+// Record the fulfillment write-back in the outbound-write audit trail with
+// WHO (the fulfiller captured on the order node, else "workflow") + WHAT-TARGET
+// (this order). Best-effort — SyncAudit.record itself never throws, but the
+// actor read / binding lookups are guarded so this can never break the workflow.
+void auditFulfillment(String orderPath, String state, String fulfillmentId, String error) {
+    try {
+        def actor = "workflow"
+        try {
+            def r = repositorySession.getResource(orderPath)
+            if (r != null && r.exists() && r.hasProperty("commerce:fulfilled_by")) {
+                def v = r.getProperty("commerce:fulfilled_by").getValue()?.toString()
+                if (v != null && !v.trim().isEmpty()) actor = v
+            }
+        } catch (Exception ignore) {}
+        def oid = binding.hasVariable("order_id") ? binding.getVariable("order_id")?.toString() : null
+        def request = [orderId: oid, fulfillmentId: fulfillmentId]
+        SyncAudit.record(repositorySession, log, "fulfillment", request, state, fulfillmentId, error,
+            actor, "order", oid)
+    } catch (Exception ignore) {}
 }
 
 String trimToNull(value) {

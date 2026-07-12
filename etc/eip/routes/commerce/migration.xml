@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<camel>
+
+    <!-- Swallow failures: a migration problem must never destabilize the routes.
+         An unapplied migration simply retries on the next boot. -->
+    <routeConfiguration id="commerce-migration-error-handler">
+        <onException>
+            <exception>java.lang.Exception</exception>
+            <handled>
+                <constant>true</constant>
+            </handled>
+            <log message="commerce-migrate error: ${exception.message}"
+                 loggingLevel="WARN"/>
+        </onException>
+    </routeConfiguration>
+
+    <!--
+      Boot-time one-shot migrations. Fires ONCE per
+      boot (repeatCount=1), two minutes after the routes come up so the repository
+      and cluster services are warm, and runs the ordered migration registry
+      (commerce.Migrations) as the service user. Each migration is additionally
+      guarded by a permanent JCR marker (/content/commerce/migrations/{id}.json),
+      so a redeploy re-fires this timer but applied migrations are skipped; a
+      cluster.tryLock in the script keeps it to one node.
+    -->
+    <route id="commerce-migrate" routeConfigurationId="commerce-migration-error-handler">
+        <from uri="timer:commerce-migrate?repeatCount=1&amp;delay=120000"/>
+
+        <setHeader name="runAs">
+            <constant>commerce-service-user</constant>
+        </setHeader>
+
+        <toD uri="cms:/etc/commerce/scripts/runMigrations.groovy"/>
+    </route>
+
+</camel>

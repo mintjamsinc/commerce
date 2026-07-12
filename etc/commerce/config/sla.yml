@@ -4,7 +4,7 @@
 #
 # A periodic scan (every 15 min) checks the open human tasks of the commerce
 # workflows (order review, refund review, inventory) against the rules below and
-# escalates breaches: an alert through the channels in notifications.yml plus the
+# escalates breaches: an alert through the configured notification channels plus the
 # optional engine-side action under `escalation`. Escalations are debounced per
 # task (cooldownMinutes) so a standing breach is not re-announced every scan.
 #

@@ -1,0 +1,29 @@
+<svg viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="commerce orders">
+<defs>
+  <clipPath id="clip-cord"><rect x="0" y="0" width="180" height="180" rx="42" ry="42"></rect></clipPath>
+  <linearGradient id="hl-cord" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="white" stop-opacity="0.25"></stop>
+    <stop offset="55%" stop-color="white" stop-opacity="0"></stop>
+  </linearGradient>
+  <linearGradient id="bg-cord" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="#60a5fa"></stop>
+    <stop offset="100%" stop-color="#1d4ed8"></stop>
+  </linearGradient>
+</defs>
+<rect x="0" y="0" width="180" height="180" rx="42" ry="42" fill="url(#bg-cord)"></rect>
+<g clip-path="url(#clip-cord)">
+  <!-- receipt body with a torn / zigzag bottom edge -->
+  <path d="M 56 48 Q 56 40 64 40 L 116 40 Q 124 40 124 48 L 124 142 L 115 134 L 106 142 L 97 134 L 90 142 L 81 134 L 72 142 L 63 134 L 56 142 Z" fill="white"></path>
+  <!-- line items -->
+  <rect x="68" y="58" width="44" height="9" rx="4.5" fill="#1d4ed8" opacity="0.9"></rect>
+  <rect x="68" y="78" width="30" height="6" rx="3" fill="#93a3c9" opacity="0.85"></rect>
+  <rect x="68" y="92" width="40" height="6" rx="3" fill="#93a3c9" opacity="0.85"></rect>
+  <rect x="68" y="106" width="26" height="6" rx="3" fill="#93a3c9" opacity="0.85"></rect>
+  <!-- confirmed badge -->
+  <circle cx="122" cy="120" r="20" fill="#1d4ed8"></circle>
+  <circle cx="122" cy="120" r="20" fill="none" stroke="white" stroke-width="4"></circle>
+  <path d="M 113 120 L 119 126 L 131 113" fill="none" stroke="white" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"></path>
+  <rect x="0" y="0" width="180" height="180" fill="url(#hl-cord)"></rect>
+  <rect x="0.5" y="0.5" width="179" height="179" rx="41.5" ry="41.5" fill="none" stroke="white" stroke-opacity="0.18" stroke-width="1"></rect>
+</g>
+</svg>

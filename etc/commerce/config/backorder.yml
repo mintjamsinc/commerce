@@ -1,4 +1,4 @@
-# Backorder / pre-order management (feature #12)
+# Backorder / pre-order management
 # Deploy to: /etc/commerce/config/backorder.yml
 # Managed by the Commerce app (Webtop > Commerce).
 #
@@ -6,7 +6,7 @@
 # ahead of stock as a pre-order — a line-level backorder record is created and
 # tracked through its own lifecycle (backordered -> ready -> released, or
 # cancelled). When stock later arrives, covered backorders are raised as a
-# "Release Backorder" task for an operator. See docs/backorders.md.
+# "Release Backorder" task for an operator.
 #
 # A shortfall backorder is only raised for STOCK-TRACKED items (those we hold
 # inventory levels for, from the inventory_levels/update webhook). Items we hold
@@ -24,7 +24,7 @@ preorderTags:
   - "preorder"
   - "pre-order"
 
-# Operator notifications (delivered through the channels in notifications.yml).
+# Operator notifications (delivered through the configured notification channels).
 notify:
   onCreated: true   # one summary per order when items go on backorder
   onReady: true     # when a backorder has stock and a release task is raised

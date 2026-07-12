@@ -15,7 +15,7 @@ package commerce
  *       { inventory_item_id, alertState: "ok"|"low", lastEvaluatedTotal,
  *         threshold, thresholdSource, thresholdRule, evaluatedAt }
  *   The threshold trio is the EFFECTIVE threshold the sweep resolved (manual / rule /
- *   default / policy-default), recorded so the review form can show the same value the
+ *   default), recorded so the review form can show the same value the
  *   alert decision used rather than re-resolving rules client-side.
  *
  * The JCR methods are DEFENSIVE (a bookkeeping failure must never break the sweep or the
@@ -45,7 +45,7 @@ class InventoryAlert {
         }
         try {
             def res = Jcr.getOrCreateFile(session, "${PENDING_DIR}/${id}.json".toString())
-            res.write(Jcr.toJson([inventory_item_id: id, at: java.time.Instant.now().toString()]))
+            res.write(Jcr.toJson([inventory_item_id: id, at: Api.now()]))
             session.commit()
         } catch (Exception e) {
             try { session.rollback() } catch (Exception ignore) {}
@@ -64,7 +64,7 @@ class InventoryAlert {
         }
         try {
             def res = Jcr.getOrCreateFile(session, "${PENDING_DIR}/${id}.json".toString())
-            res.write(Jcr.toJson([inventory_item_id: id, at: java.time.Instant.now().toString()]))
+            res.write(Jcr.toJson([inventory_item_id: id, at: Api.now()]))
             return true
         } catch (Exception e) {
             try { log.warn("InventoryAlert.writePending ${id}: ${e.message}") } catch (Exception ignore) {}
@@ -139,7 +139,7 @@ class InventoryAlert {
                 threshold         : threshold,
                 thresholdSource   : thresholdSource,
                 thresholdRule     : thresholdRule,
-                evaluatedAt       : java.time.Instant.now().toString(),
+                evaluatedAt       : Api.now(),
             ]))
             session.commit()
         } catch (Exception e) {
@@ -150,21 +150,16 @@ class InventoryAlert {
 
     // --- Config (caller parses the YAML and passes the map) --------------------
 
-    /** unconfiguredPolicy: "prompt" (default) | "default" | "silent". */
+    /** unconfiguredPolicy: "prompt" (default) | "silent". */
     static String unconfiguredPolicy(Map cfg) {
         def p = cfg?.unconfiguredPolicy?.toString()?.trim()?.toLowerCase()
-        return (p == "default" || p == "silent") ? p : "prompt"
-    }
-
-    /** Threshold used when unconfiguredPolicy == "default" (else null). */
-    static Integer defaultThreshold(Map cfg) {
-        return intOrNull(cfg?.defaultThreshold)
+        return (p == "silent") ? "silent" : "prompt"
     }
 
     /**
      * Debounce window for the sweep, in seconds. 0 (the default) evaluates on every sweep
      * heartbeat; a larger value spaces sweeps out so bursts coalesce into one evaluation.
-     * Values at or below the heartbeat behave like 0. See sweepInventoryAlerts.groovy.
+     * Values at or below the heartbeat behave like 0.
      */
     static int sweepDebounceSeconds(Map cfg) {
         def v = intOrNull(cfg?.sweepDebounceSeconds)

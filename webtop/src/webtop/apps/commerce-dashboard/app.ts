@@ -26,9 +26,15 @@ import {
 type AnyInstance = any;
 
 const DASHBOARD_SCRIPT = '/content/commerce/endpoints/dashboard.groovy';
-// Commerce Operations app (app.yml `identifier`) — the operator console the
+// Commerce Operations app (its own app identifier) — the operator console the
 // dashboard drills into for the outbound-sync / reconciliation / event surfaces.
-const OPS_APP_ID = '2a8f6d14-9c73-4b51-8e0a-6d2f4c7b9a38';
+// commerce-ops was split into 4 single-concern apps; the dashboard drill-downs
+// route each section to its own app.
+const OPS_APPS: Record<string, string> = {
+	sync: 'b2d0f3a5-4c8e-4f29-8b63-7d1a9c2e5f4a',       // commerce-oplog (operation log / outbound audit)
+	reconcile: 'f7b9d2e4-8c3a-4e6f-b1a5-2d9c7e0f4a83', // commerce-reconcile (discrepancy reconciliation — split out of commerce-import)
+	events: 'd4f2b5c7-6e0a-4b4c-8d85-9f3c1e4a7b6c',    // commerce-events
+};
 const WATCH_PATH = '/content/commerce';
 const POLL_INTERVAL_MS = 60000;
 const WATCH_DEBOUNCE_MS = 800;
@@ -79,7 +85,7 @@ const App = {
 			instance: null as AnyInstance,
 			// Reactive Localization snapshot — drives every t() / format*() binding
 			// so the app repaints when the user switches language or a bundle is
-			// hot-reloaded. See composables/use-localization.ts.
+			// hot-reloaded.
 			localization: createLocalizationSnapshot(),
 			view: 'loading' as 'loading' | 'error' | 'ready',
 			errorMessage: '',
@@ -100,8 +106,15 @@ const App = {
 	computed: {
 		sales(): any {
 			const s = (this.snapshot && this.snapshot.sales) || {};
-			const rev = s.revenue || {};
-			const revenueRows = Object.keys(rev).map((cur) => ({ label: cur, value: this.fmtAmount(rev[cur]) }));
+			// revenue is the standard wire money array [{ currency, amount }]
+			// (commerce.Api) — the same shape the reports endpoint returns.
+			const rev = Array.isArray(s.revenue) ? s.revenue : [];
+			const revenueRows = rev.map((e: any) => ({ label: e.currency, value: this.fmtAmount(e.amount), base: false }));
+			// Base-currency rollup (C1): the one cross-currency total, shown first.
+			if (s.baseRevenue != null) {
+				const baseLabel = this.t('app.commerce-dashboard.row.baseRevenue', { currency: s.baseCurrency || '' }, `Total (${s.baseCurrency || 'base'})`);
+				revenueRows.unshift({ label: baseLabel, value: this.fmtAmount(s.baseRevenue), base: true });
+			}
 			return {
 				orders: Number(s.orders) || 0,
 				days: Number(s.days) || 0,
@@ -119,18 +132,6 @@ const App = {
 				lowStock: Number(inv.lowStock) || 0,
 				statusRows: rows,
 			};
-		},
-		forecast(): any {
-			const f = (this.snapshot && this.snapshot.forecast) || {};
-			const top = (f.top || []).map((t: any) => {
-				const named = t.variantTitle && t.variantTitle !== 'Default Title';
-				const variantFallback = this.t('app.commerce-dashboard.variantFallback', undefined, 'Variant');
-				return {
-					label: named ? `${t.title} — ${t.variantTitle}` : (t.title || variantFallback),
-					days: Math.round(Number(t.days) || 0),
-				};
-			});
-			return { atRisk: Number(f.atRisk) || 0, warnDays: Number(f.warnDays) || 0, top };
 		},
 		reorders(): any {
 			const r = (this.snapshot && this.snapshot.reorders) || {};
@@ -157,10 +158,6 @@ const App = {
 			const c = (this.snapshot && this.snapshot.crm) || {};
 			return {
 				customers: Number(c.customers) || 0,
-				vip: Number(c.vip) || 0,
-				atRisk: Number(c.atRisk) || 0,
-				dormant: Number(c.dormant) || 0,
-				abandoned: Number(c.abandoned) || 0,
 			};
 		},
 		salesTrend(): any {
@@ -189,11 +186,16 @@ const App = {
 				aov: this.fmtAmount(String(s.aov ?? 0)),
 				hasData: n > 0 && max > 0,
 				W, H, line, area,
+				// Top products come from the line-grain sales facts (real product_id axis):
+				// { title, quantity, gross, discounts, returns, net, baseCurrency }. The card
+				// shows NET SALES (gross − discounts − returns) in the base currency, with the
+				// units sold alongside — gross rides in the tooltip for the other view.
 				topProducts: (s.topProducts || []).map((t: any) => ({
-					title: t.title || t.sku || t.key || this.t('app.commerce-dashboard.itemFallback', undefined, 'item'),
+					title: t.title || this.t('app.commerce-dashboard.itemFallback', undefined, 'item'),
 					qty: Number(t.quantity) || 0,
-					revenue: this.fmtAmount(String(t.revenue ?? 0)),
-					currency: t.currency || cur,
+					net: this.fmtAmount(String(t.net ?? t.baseRevenue ?? 0)),
+					gross: this.fmtAmount(String(t.gross ?? 0)),
+					currency: t.baseCurrency || s.baseCurrency || cur,
 				})),
 			};
 		},
@@ -202,7 +204,7 @@ const App = {
 			return {
 				drift: Number(r.productsWithDrift) || 0,
 				diffs: Number(r.totalDiffs) || 0,
-				healed: Number(r.healed) || 0,
+				refreshed: Number(r.refreshed) || 0,
 				lastRunAt: r.lastRunAt ? this.fmtDateTime(r.lastRunAt) : '',
 			};
 		},
@@ -342,9 +344,10 @@ const App = {
 		// JSON. The shell focuses the running console and re-targets it when it
 		// is already open (singleton).
 		openOps(section: 'sync' | 'reconcile' | 'events', options?: Record<string, any>) {
-			const opts = { section, ...(options || {}) };
+			const appId = OPS_APPS[section];
+			if (!appId) return;
 			try {
-				window.parent?.postMessage({ type: 'open-app', appId: OPS_APP_ID, options: opts }, window.location.origin);
+				window.parent?.postMessage({ type: 'open-app', appId, options: options || {} }, window.location.origin);
 			} catch (_) { /* parent unavailable */ }
 		},
 

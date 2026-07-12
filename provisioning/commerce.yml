@@ -2,9 +2,8 @@ namespaces:
   # JCR namespace for every commerce metadata property (commerce:status,
   # commerce:source_status, commerce:event_id, commerce:event_topic, ...).
   # Registered here so the prefix is available at first boot, BEFORE any commerce
-  # content is deployed onto it. The matching one-time migration that rewrites
-  # legacy (pre-namespace) properties onto this prefix lives in
-  # content/WEB-INF/classes/commerce/NamespaceMigration.groovy.
+  # content is deployed onto it. A one-time migration rewrites legacy
+  # (pre-namespace) properties onto this prefix once it is registered.
   - prefix: commerce
     uri: http://www.mintjams.jp/commerce/1.0
 roles: []
@@ -33,7 +32,7 @@ nodes:
   # Why grants are required: the commerce integration runs CMS work as
   # 'commerce-service-user' (EIP routes / BPMN service tasks via runAs). That run
   # identity is a regular principal - NOT a ServicePrincipal - so it is subject
-  # to ACLs (see JcrAccessControlManager#getPrivileges). It is a member of
+  # to ACLs like any other principal. It is a member of
   # 'commerce-service-group' (both provisioned above), which is what these
   # entries grant. The built-in 'admin' user bypasses ACLs via the
   # administrator role and needs no entry. 'commerce-operators' is the group for
@@ -54,10 +53,13 @@ nodes:
         privileges: jcr:write
         effect: allow
 
-  # Public storefront projection: rebuilt by the catalog/pages timers as the
-  # service user and on-demand by an operator from the storefront endpoint.
-  # Anonymous READ is provided by the security.filters publicAccess rule for
-  # /content/public/* below; these entries add write for the publishers.
+  # Public commerce assets under /content/public/commerce (anonymous READ via the
+  # security.filters publicAccess rule below): the embed SDK and the sanitized
+  # catalog read endpoint, which reads the admin product mirror directly with the
+  # caller's session (everyone has /content READ).
+  # No runtime process publishes here any more (the projection publisher was retired);
+  # the service group keeps write so the storefront-retire migration can delete
+  # the old /content/public/commerce/catalog projection.
   - path: /content/public/commerce
     primaryType: nt:folder
     acl:

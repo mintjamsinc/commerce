@@ -9,6 +9,7 @@
 //   GET /bin/cms.cgi/{workspace}/content/commerce/endpoints/inventory-locations.groovy?productId=123
 //   GET ...?productId=123&variantId=456&qty=10
 
+import commerce.Api
 import commerce.Locations
 import commerce.Allocation
 import commerce.SimpleYaml
@@ -20,7 +21,9 @@ if (request.getMethod() != "GET") {
 }
 
 try {
-    def productId = request.getParameter("productId")?.trim()
+    // Ids arrive in the wire GID form (or legacy numeric) — peel to the numeric
+    // storage key HERE (commerce.Api), never in the client.
+    def productId = Api.legacyId(request.getParameter("productId")?.trim())
     if (!productId) {
         response.setStatus(400)
         response.setHeader("Content-Type", "application/json")
@@ -38,13 +41,13 @@ try {
     def product = JSON.parse(node.content.toString())
 
     def out = [
-        productId: productId,
+        id       : Api.gid("Product", productId),
         title    : product?.title,
         variants : Locations.breakdown(repositorySession, product),
     ]
 
     // Optional allocation plan for a specific variant + quantity.
-    def variantId = request.getParameter("variantId")?.trim()
+    def variantId = Api.legacyId(request.getParameter("variantId")?.trim())
     def qtyRaw = request.getParameter("qty")?.trim()
     if (variantId && qtyRaw) {
         int qty = 0
@@ -58,7 +61,12 @@ try {
             if (cfgRes != null && cfgRes.exists()) {
                 cfg = SimpleYaml.parse(cfgRes.content?.toString())
             }
-            out.allocation = Allocation.plan(levels, qty, cfg) + [variantId: variantId]
+            def alloc = Allocation.plan(levels, qty, cfg)
+            // GID-shape the location draws for the wire (storage keys are numeric).
+            alloc.allocations = (alloc.allocations ?: []).collect {
+                it + [locationId: Api.gid("Location", it.locationId)]
+            }
+            out.allocation = alloc + [variantId: Api.gid("ProductVariant", variantId)]
         }
     }
 

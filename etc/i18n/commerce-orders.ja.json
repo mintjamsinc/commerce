@@ -1,0 +1,48 @@
+{
+	"app.commerce-orders.title": "コマース注文一覧",
+
+	"app.commerce-orders.toolbar.refresh": "再読み込み",
+	"app.commerce-orders.toolbar.clearFilters": "検索・絞り込みをクリア",
+	"app.commerce-orders.toolbar.toggleSidebar": "フィルタの表示切替",
+
+	"app.commerce-orders.search.placeholder": "注文を検索…",
+
+	"app.commerce-orders.filter.title": "絞り込み",
+	"app.commerce-orders.filter.customerId": "顧客ID",
+	"app.commerce-orders.filter.customerIdPlaceholder": "gid://shopify/Customer/… または数値ID",
+	"app.commerce-orders.filter.productId": "商品ID",
+	"app.commerce-orders.filter.productIdPlaceholder": "gid://shopify/Product/… または数値ID",
+	"app.commerce-orders.filter.from": "開始日",
+	"app.commerce-orders.filter.to": "終了日",
+
+	"app.commerce-orders.facet.status": "ステータス",
+	"app.commerce-orders.facet.financial": "支払いステータス",
+	"app.commerce-orders.facet.currency": "通貨",
+
+	"app.commerce-orders.state.loading": "注文を読み込み中…",
+	"app.commerce-orders.state.empty": "現在の検索・絞り込みに一致する注文はありません。",
+
+	"app.commerce-orders.list.count": "{start}–{end} / {total} 件",
+	"app.commerce-orders.list.capped": "対象が多いため件数は概算です",
+	"app.commerce-orders.list.cappedTitle": "走査が安全上限に達しました。絞り込みを追加すると正確な件数になります。",
+	"app.commerce-orders.list.prev": "前のページ",
+	"app.commerce-orders.list.next": "次のページ",
+
+	"app.commerce-orders.col.orderNumber": "注文",
+	"app.commerce-orders.col.orderedAt": "注文日時",
+	"app.commerce-orders.col.email": "顧客",
+	"app.commerce-orders.col.total": "合計",
+	"app.commerce-orders.col.status": "ステータス",
+	"app.commerce-orders.col.financial": "支払いステータス",
+
+	"app.commerce-orders.total.refundedTitle": "この注文の返金 {count} 件",
+
+	"app.commerce-orders.action.open": "注文エディタで開く",
+
+	"app.commerce-orders.statusbar.loading": "読み込み中…",
+	"app.commerce-orders.statusbar.count": "{total}件の注文",
+	"app.commerce-orders.statusbar.ready": "準備完了",
+
+	"app.commerce-orders.err.loadFailed": "注文を読み込めませんでした。",
+	"app.commerce-orders.err.noEditor": "コマース注文エディタがインストールされていません。"
+}

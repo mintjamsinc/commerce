@@ -62,6 +62,10 @@ class WorkflowStatus {
                 return
             }
             resource.setProperty("commerce:status", status)
+            // Lifecycle rule: every state mutation records
+            // WHEN it happened — the audit/event logs already do, and status
+            // transitions must too (typed Date, queryable like created_at).
+            resource.setProperty("commerce:status_updated_at", new java.util.Date())
             session.commit()
             def suffix = elementId != null ? " (element ${elementId})" : ""
             log.info("${source}: ${path} commerce:status -> ${status}${suffix}")

@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no">
+	<title>Commerce Operation Log</title>
+
+	<!-- Bootstrap Icons (bundled with webtop) -->
+	<link rel="stylesheet" href="../../assets/vendor/bootstrap-icons/bootstrap-icons.min.css?v=__BUILD_VERSION__">
+
+	<!-- App CSS + shared Webtop design system -->
+	<link href="./assets/css/style.css?v=__BUILD_VERSION__" rel="stylesheet" />
+	<link href="../../assets/css/webtop-app.css?v=__BUILD_VERSION__" rel="stylesheet" />
+</head>
+
+<body>
+	<div id="app" v-cloak class="d-flex flex-column" @mounted="onMounted" @unmount="onUnmount">
+
+		<!-- Top toolbar -->
+		<nav class="nav-bar window-drag-region">
+			<div class="toolbar-group">
+				<button class="btn-icon" @click="load" :disabled="busy" :title="t('app.commerce-oplog.toolbar.refresh')">
+					<i class="bi bi-arrow-clockwise" :class="{ spin: busy }"></i>
+				</button>
+			</div>
+
+			<span class="nav-spacer"></span>
+
+			<!-- Pane toggles: filters sidebar (left) + detail pane (right) -->
+			<div class="pane-toggles">
+				<button class="btn-icon pane-toggle-btn" :class="{ active: sidebarVisible }" @click="toggleSidebar" :title="t('app.commerce-oplog.toolbar.toggleSidebar', undefined, 'Toggle filters')">
+					<i class="bi bi-layout-sidebar-inset"></i>
+				</button>
+				<button class="btn-icon pane-toggle-btn" :class="{ active: detailVisible }" @click="toggleDetail" :title="t('app.commerce-oplog.toolbar.toggleDetail', undefined, 'Toggle detail')">
+					<i class="bi bi-layout-sidebar-inset-reverse"></i>
+				</button>
+			</div>
+
+			<!-- Window controls -->
+			<div class="window-controls">
+				<button class="btn-icon" @click="onMinimizeWindow" :title="t('common.minimize')"><i class="bi bi-dash-lg"></i></button>
+				<button class="btn-icon" @click="onToggleMaximizeWindow" :title="t('common.maximize')"><i class="bi bi-square"></i></button>
+				<button class="btn-icon window-control-close" @click="onCloseWindow" :title="t('common.close')"><i class="bi bi-x-lg"></i></button>
+			</div>
+		</nav>
+
+		<!-- Content: 3-pane (left filters / center list / right detail) -->
+		<div class="content-body">
+
+			<!-- Left: user (actor) picker + date range — all server-side XPath filters -->
+			<aside v-if="sidebarVisible" class="ops-sidebar island" :style="{ width: sidebarWidth + 'px' }">
+				<section class="property-group">
+					<!-- User (actor): debounced autocomplete → shell popup suggestions
+					     (mirrors the content-browser principal picker) -->
+					<div class="ops-field">
+						<label class="property-label">{{ t('app.commerce-oplog.filter.actor') }}</label>
+						<div class="ops-actor">
+							<input type="text" class="wt w-100" ref="actorInput" autocomplete="off"
+								v-model="actorSearch.keyword" @input="onActorSearchInput" @focus="onActorSearchFocus"
+								:placeholder="t('app.commerce-oplog.filter.actorPlaceholder')" />
+							<i v-if="actorSearch.isSearching" class="bi bi-arrow-repeat spin ops-actor-spin"></i>
+						</div>
+						<div v-if="filter.actor" class="ops-actor-selected">
+							<span class="text-truncate">{{ filter.actorLabel || filter.actor }}</span>
+							<button class="btn-icon ops-actor-clear" @click="clearActor" :title="t('app.commerce-oplog.filter.actorClear')">
+								<i class="bi bi-x-lg"></i>
+							</button>
+						</div>
+					</div>
+					<!-- From (date + time to the minute; seconds auto-completed to :00) -->
+					<div class="ops-field">
+						<label class="property-label">{{ t('app.commerce-oplog.filter.from') }}</label>
+						<input class="wt w-100" type="datetime-local" v-model="filter.from">
+					</div>
+					<!-- To (date + time to the minute; seconds auto-completed to :59.999) -->
+					<div class="ops-field">
+						<label class="property-label">{{ t('app.commerce-oplog.filter.to') }}</label>
+						<input class="wt w-100" type="datetime-local" v-model="filter.to">
+					</div>
+					<div class="mt-1">
+						<button class="wt wt-primary" :disabled="busy" @click="apply"><i class="bi bi-search"></i> {{ t('common.search') }}</button>
+					</div>
+				</section>
+			</aside>
+			<div v-if="sidebarVisible" class="sidebar-resize-handle" @mousedown="onSidebarResizeStart"></div>
+
+			<!-- Center: list — header bar (CSV) + audit rows -->
+			<main class="content-main island p-0">
+				<div class="ops-list-head">
+					<button class="wt wt-primary wt-slim" :disabled="!canDownload" @click="downloadCsv">
+						<i class="bi bi-download"></i> {{ t('app.commerce-oplog.download') }}
+					</button>
+				</div>
+				<div class="content-list">
+					<table class="wt">
+						<thead>
+							<tr>
+								<th class="text-start">{{ t('app.commerce-oplog.col.when') }}</th>
+								<th class="text-start">{{ t('app.commerce-oplog.col.actor') }}</th>
+								<th class="text-start">{{ t('app.commerce-oplog.col.target') }}</th>
+								<th class="text-start">{{ t('app.commerce-oplog.col.identifier') }}</th>
+								<th class="text-start">{{ t('app.commerce-oplog.col.action') }}</th>
+								<th class="text-center">{{ t('app.commerce-oplog.col.status') }}</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr v-if="operations.length === 0" class="item-empty">
+								<td colspan="6">{{ t('app.commerce-oplog.noOperations') }}</td>
+							</tr>
+							<tr v-for="(o, i) in operations" :key="i" class="item"
+								:class="{ 'item-selected': selectedRow === o }" @click="selectRow(o)">
+								<td>{{ fmtTime(o.at) }}</td>
+								<td :class="{ 'text-muted': !actorName(o) }">{{ actorName(o) || '—' }}</td>
+								<td>{{ entityLabel(o.entity) || '—' }}</td>
+								<td :class="{ 'text-muted': !(o.entityId) }">{{ o.entityId || '—' }}</td>
+								<td>{{ actionLabel(o.action) || '—' }}</td>
+								<td class="text-center"><span class="ops-pill" :class="'st-' + o.status">{{ statusText(o.status) || '—' }}</span></td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			</main>
+
+			<!-- Right detail pane (resizable) — the selected operation's full record incl. the error -->
+			<div v-if="detailVisible" class="detail-resize-handle" @mousedown="onDetailResizeStart"></div>
+			<aside v-if="detailVisible" class="ops-detail island p-0" :style="{ width: detailWidth + 'px' }">
+				<div class="detail-panel-header">
+					<span class="detail-panel-title">{{ t('app.commerce-oplog.detail.title', undefined, '詳細') }}</span>
+				</div>
+				<div class="detail-panel-content">
+					<div v-if="!selectedRow" class="detail-panel-empty">
+						<i class="bi bi-card-list"></i>
+						<span>{{ t('app.commerce-oplog.detail.empty', undefined, '行を選択すると詳細が表示されます。') }}</span>
+					</div>
+					<template v-else>
+						<div class="detail-section-header">{{ t('app.commerce-oplog.detail.operation', undefined, '操作') }}</div>
+						<div class="detail-section-body">
+							<div class="detail-prop">
+								<div class="detail-prop-label">{{ t('app.commerce-oplog.col.when') }}</div>
+								<div class="detail-prop-value">{{ fmtTime(selectedRow.at) }}</div>
+							</div>
+							<div class="detail-prop">
+								<div class="detail-prop-label">{{ t('app.commerce-oplog.col.actor') }}</div>
+								<div class="detail-prop-value" :class="{ muted: !actorName(selectedRow) }">{{ actorName(selectedRow) || '—' }}</div>
+							</div>
+							<div class="detail-prop">
+								<div class="detail-prop-label">{{ t('app.commerce-oplog.col.target') }}</div>
+								<div class="detail-prop-value">{{ entityLabel(selectedRow.entity) || '—' }}</div>
+							</div>
+							<div class="detail-prop">
+								<div class="detail-prop-label">{{ t('app.commerce-oplog.col.identifier') }}</div>
+								<div class="detail-prop-value" :class="{ muted: !selectedRow.entityId }">{{ selectedRow.entityId || '—' }}</div>
+							</div>
+							<div class="detail-prop">
+								<div class="detail-prop-label">{{ t('app.commerce-oplog.col.action') }}</div>
+								<div class="detail-prop-value">{{ actionLabel(selectedRow.action) || '—' }}</div>
+							</div>
+							<div class="detail-prop">
+								<div class="detail-prop-label">{{ t('app.commerce-oplog.col.status') }}</div>
+								<div class="detail-prop-value"><span class="ops-pill" :class="'st-' + selectedRow.status">{{ statusText(selectedRow.status) || '—' }}</span></div>
+							</div>
+						</div>
+						<template v-if="selectedRow.error">
+							<div class="detail-section-header">{{ t('app.commerce-oplog.col.error') }}</div>
+							<div class="detail-section-body">
+								<div class="detail-prop-value ops-detail-error">{{ selectedRow.error }}</div>
+							</div>
+						</template>
+					</template>
+				</div>
+			</aside>
+		</div>
+
+		<!-- Status bar: count on the LEFT (CMS convention), the transient state on the RIGHT. -->
+		<div class="status-bar window-drag-region">
+			<div class="status-group">
+				<span v-if="rowCount" class="status-item">{{ t('app.commerce-oplog.statusbar.count', { count: rowCount }) }}</span>
+			</div>
+			<span class="nav-spacer"></span>
+			<div class="status-group">
+				<span v-if="busy" class="status-item"><i class="bi bi-arrow-repeat me-1"></i>{{ t('app.commerce-oplog.statusbar.working') }}</span>
+				<span v-else class="status-item">{{ t('app.commerce-oplog.statusbar.ready') }}</span>
+			</div>
+		</div>
+
+		<!-- Toast -->
+		<div v-if="toast" class="commerce-toast" :class="{ error: toastError }" role="alert">{{ toast }}</div>
+
+	</div>
+
+	<script type="module" src="./app.js?v=__BUILD_VERSION__"></script>
+</body>
+
+</html>

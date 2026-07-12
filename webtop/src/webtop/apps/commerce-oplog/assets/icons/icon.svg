@@ -1,0 +1,37 @@
+<svg viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="commerce operation log">
+<defs>
+  <clipPath id="clip-oplog"><rect x="0" y="0" width="180" height="180" rx="42" ry="42"></rect></clipPath>
+  <linearGradient id="hl-oplog" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="white" stop-opacity="0.25"></stop>
+    <stop offset="55%" stop-color="white" stop-opacity="0"></stop>
+  </linearGradient>
+  <linearGradient id="bg-oplog" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="#6366f1"></stop>
+    <stop offset="100%" stop-color="#4338ca"></stop>
+  </linearGradient>
+</defs>
+<rect x="0" y="0" width="180" height="180" rx="42" ry="42" fill="url(#bg-oplog)"></rect>
+<g clip-path="url(#clip-oplog)">
+  <!-- log rows (the audit list) -->
+  <g fill="none" stroke="white" stroke-width="10" stroke-linecap="round">
+    <path d="M 52 62 L 128 62"></path>
+    <path d="M 52 90 L 128 90"></path>
+    <path d="M 52 118 L 96 118"></path>
+  </g>
+  <!-- row bullets -->
+  <g fill="white" fill-opacity="0.85">
+    <circle cx="40" cy="62" r="5"></circle>
+    <circle cx="40" cy="90" r="5"></circle>
+    <circle cx="40" cy="118" r="5"></circle>
+  </g>
+  <!-- search / audit lens over the log -->
+  <g fill="none" stroke="white" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="118" cy="118" r="20"></circle>
+    <path d="M 133 133 L 146 146"></path>
+  </g>
+</g>
+<g clip-path="url(#clip-oplog)">
+  <rect x="0" y="0" width="180" height="180" fill="url(#hl-oplog)"></rect>
+  <rect x="0.5" y="0.5" width="179" height="179" rx="41.5" ry="41.5" fill="none" stroke="white" stroke-opacity="0.18" stroke-width="1"></rect>
+</g>
+</svg>

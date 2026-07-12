@@ -2,7 +2,7 @@
 // it to the route as the `shopifyAccessToken` context attribute.
 //
 // The token handling and JCR caching live in commerce.ShopifyAdmin, shared with
-// recordFulfillment.groovy. A cached token is reused while still fresh; caching
+// the fulfillment recording script. A cached token is reused while still fresh; caching
 // is best-effort, so a valid token is still returned (and set) even if it could
 // not be persisted.
 import commerce.ShopifyAdmin

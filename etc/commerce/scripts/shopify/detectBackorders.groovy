@@ -1,11 +1,11 @@
-// Detect backorders / pre-orders for a freshly received order (feature #12).
+// Detect backorders / pre-orders for a freshly received order.
 //
 // Invoked from the orders/paid Camel route (order-paid.xml) as the service user,
 // right after the order is stored. For each order line it resolves the variant to
 // its inventory item, reads the aggregate stock we hold for that item and whether
 // the product is a pre-order, then records a line-level backorder for any line that
 // is short on stock or sold ahead as a pre-order. When stock later arrives the
-// inventory_levels/update route releases covered backorders (releaseBackorders.groovy).
+// inventory_levels/update route releases covered backorders.
 //
 // Inputs (mapped from route headers via ?inputs=orderPath,order_id):
 //   - orderPath : repository path to the stored order JSON

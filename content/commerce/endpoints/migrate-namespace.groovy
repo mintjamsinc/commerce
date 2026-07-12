@@ -2,8 +2,7 @@
 // (product_id, title, status, ...) on the mirrored product / order / refund nodes
 // to the canonical commerce: namespace. Needed for data ingested before the
 // Shopify routes were corrected to write commerce:* (they previously used
-// includes=commerce_~, which strips the prefix). See commerce.NamespaceMigration
-// and docs/jcr-structure.md.
+// includes=commerce_~, which strips the prefix).
 //
 //   GET                         — DRY RUN: report what WOULD change, write nothing
 //   POST {}                     — APPLY the migration (commits per area)

@@ -8,8 +8,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 /**
- * Source-agnostic event ingestion (category A: #1 all-topics, #3 multi-backend,
- * #4 replay).
+ * Source-agnostic event ingestion.
  *
  * Every inbound integration event — from any backend (Shopify today; Rakuten /
  * BASE / a self-hosted store / an ERP tomorrow) — funnels through one core
@@ -23,15 +22,15 @@ import java.time.format.DateTimeFormatter
  *
  *   1. Event log  — /content/commerce/events/{source}/{yyyy}/{MM}/{eventId}.json
  *      One entry per inbound event, carrying the RAW payload, so any event can be
- *      replayed (#4) and audited. `commerce:status` tracks the pipeline outcome
+ *      replayed and audited. `commerce:status` tracks the pipeline outcome
  *      (received -> processed | error); `commerce:attempts` counts ingest passes.
  *
  *   2. Normalized entity store — /content/commerce/entities/{source}/{collection}/{id}.json
  *      Current state per business entity for the generic topics that have no
  *      bespoke handler yet (customers / fulfillments / carts / checkouts / …),
- *      so they become the foundation for future business events (#1). Latest
+ *      so they become the foundation for future business events. Latest
  *      update wins, mirroring the inventory levels / locations stores. Namespaced
- *      by source so multiple backends never clash (#3).
+ *      by source so multiple backends never clash.
  *
  * Design (mirrors the other commerce.* classes): the topic→collection mapping is
  * pure; the JCR methods are defensive (a logging/normalization failure must never
@@ -55,6 +54,9 @@ class Events {
         "refunds/create",
         "inventory_levels/update",
         "locations/create", "locations/update",
+        "customers/create", "customers/update", "customers/enable",
+        "customers/disable", "customers/delete",
+        "customers/redact", "customers/data_request", "shop/redact",
     ] as java.util.Set
 
     // -------------------------------------------------------------------------
@@ -121,10 +123,10 @@ class Events {
                 event_id   : eventId,
                 entity_type: collection,
                 entity_id  : entityId,
-                received_at: receivedAt ?: Instant.now().toString(),
+                received_at: receivedAt ?: Api.now(),
                 status     : "received",
                 attempts   : attempts,
-                logged_at  : Instant.now().toString(),
+                logged_at  : Api.now(),
                 payload    : payload,
             ]
 
@@ -136,8 +138,8 @@ class Events {
             res.setProperty("commerce:event_id", eventId)
             res.setProperty("commerce:entity_type", str(collection))
             res.setProperty("commerce:entity_id", str(entityId))
-            res.setProperty("commerce:received_at", str(record.received_at))
-            res.setProperty("commerce:attempts", attempts.toString())
+            setDate(res, "commerce:received_at", record.received_at)
+            res.setProperty("commerce:attempts", (long) attempts)
             session.commit()
             return path
         } catch (Exception e) {
@@ -199,7 +201,7 @@ class Events {
             }
             // Namespaced under entities/{source}/{collection} so generic records never
             // collide with the curated bespoke stores (orders/raw, products, …) and so
-            // entity ids from different backends cannot clash (#3 multi-backend).
+            // entity ids from different backends cannot clash.
             def path = "${CONTENT_DIR}/entities/${sanitize(source)}/${sanitize(collection)}/${sanitize(id)}.json".toString()
             boolean deleted = action != null && action.toLowerCase().contains("delete")
 
@@ -210,13 +212,13 @@ class Events {
             res.setProperty("commerce:topic", str(topic))
             res.setProperty("commerce:entity_type", str(collection))
             res.setProperty("commerce:entity_id", str(id))
-            res.setProperty("commerce:updated_at", Instant.now().toString())
+            res.setProperty("commerce:updated_at", new java.util.Date())
             // Best-effort cross-references that make the records useful downstream.
             def email = firstNonBlank(payload?.email, payload?.contact_email, payload?.customer?.email)
             if (email) res.setProperty("commerce:customer_email", email)
             def orderId = firstNonBlank(payload?.order_id)
             if (orderId) res.setProperty("commerce:order_id", orderId)
-            if (deleted) res.setProperty("commerce:deletedAt", Instant.now().toString())
+            if (deleted) res.setProperty("commerce:deletedAt", new java.util.Date())
             session.commit()
             log.info("Events.normalize: stored ${collection} ${id} (${topic})")
             return true
@@ -266,11 +268,13 @@ class Events {
 
     /**
      * Events matching the filters, newest first. {@code source}/{@code topic} null
-     * means any; {@code statuses} empty means any; {@code sinceMs} 0 means no lower
-     * bound. Each row: { path, source, topic, event_id, entity_type, entity_id,
-     * status, attempts, received_at }.
+     * means any; {@code statuses} empty means any; {@code fromMs}/{@code toMs} bound
+     * the received_at range (0 = unbounded on that side). Each row is WIRE-SHAPED
+     * (camelCase keys, GID entity id, ms-precision ISO timestamps — commerce.Api):
+     * { path, source, topic, eventId, entityType, entityId, status, attempts,
+     * receivedAt, lastError }.
      */
-    static List list(session, java.util.Collection statuses, String source, String topic, long sinceMs, int limit) {
+    static List list(session, java.util.Collection statuses, String source, String topic, long fromMs, long toMs, int limit) {
         def states = (statuses ?: []) as java.util.Set
         def rows = []
         eachEvent(session, source) { res ->
@@ -278,14 +282,19 @@ class Events {
                 def row = toRow(session, res)
                 if (!states.isEmpty() && !states.contains(row.status)) return
                 if (topic != null && row.topic != topic) return
-                if (sinceMs > 0) {
-                    long t = createdMs(res)
-                    if (t > 0 && t < sinceMs) return
+                // Range filter on the event's received_at (the displayed date), so the
+                // period matches what the operator sees; fall back to the node time
+                // when received_at is missing/unparseable. 0 = unbounded on that side.
+                if (fromMs > 0 || toMs > 0) {
+                    long t = msOf(row.receivedAt)
+                    if (t <= 0) t = createdMs(res)
+                    if (fromMs > 0 && t > 0 && t < fromMs) return
+                    if (toMs > 0 && t > 0 && t > toMs) return
                 }
                 rows << row
             } catch (Exception ignore) {}
         }
-        rows.sort { a, b -> (b.received_at?.toString() ?: "") <=> (a.received_at?.toString() ?: "") }
+        rows.sort { a, b -> (b.receivedAt?.toString() ?: "") <=> (a.receivedAt?.toString() ?: "") }
         return limit > 0 && rows.size() > limit ? rows.subList(0, limit) : rows
     }
 
@@ -305,7 +314,7 @@ class Events {
                 out << toRow(session, res)
             } catch (Exception ignore) {}
         }
-        out.sort { a, b -> (a.received_at?.toString() ?: "") <=> (b.received_at?.toString() ?: "") }
+        out.sort { a, b -> (a.receivedAt?.toString() ?: "") <=> (b.receivedAt?.toString() ?: "") }
         return out
     }
 
@@ -362,18 +371,32 @@ class Events {
     // Helpers
     // -------------------------------------------------------------------------
 
+    // The wire row (commerce.Api contract): camelCase keys, the entity id as a
+    // Shopify GID (numeric REST ids are completed HERE, never patched downstream;
+    // non-numeric ids like cart/checkout tokens pass through), timestamps in
+    // ms-precision ISO-8601.
     private static Map toRow(session, res) {
+        def entityType = prop(res, "commerce:entity_type")
         return [
-            path       : res.getPath(),
-            source     : prop(res, "commerce:source"),
-            topic      : prop(res, "commerce:topic"),
-            event_id   : prop(res, "commerce:event_id"),
-            entity_type: prop(res, "commerce:entity_type"),
-            entity_id  : prop(res, "commerce:entity_id"),
-            status     : prop(res, "commerce:status"),
-            attempts   : intOr(prop(res, "commerce:attempts"), 0),
-            received_at: prop(res, "commerce:received_at"),
+            path      : res.getPath(),
+            source    : prop(res, "commerce:source"),
+            topic     : prop(res, "commerce:topic"),
+            eventId   : prop(res, "commerce:event_id"),
+            entityType: entityType,
+            entityId  : Api.gid(Api.gidTypeFor(entityType), prop(res, "commerce:entity_id")),
+            status    : prop(res, "commerce:status"),
+            attempts  : intOr(prop(res, "commerce:attempts"), 0),
+            receivedAt: Api.instant(propVal(res, "commerce:received_at")),
+            lastError : prop(res, "commerce:last_error"),
         ]
+    }
+
+    /** Parse an ISO-8601 timestamp string to epoch ms (0 when absent/unparseable). */
+    private static long msOf(String iso) {
+        if (iso == null || iso.trim().isEmpty()) return 0L
+        try { return OffsetDateTime.parse(iso.trim()).toInstant().toEpochMilli() } catch (Exception ignore) {}
+        try { return Instant.parse(iso.trim()).toEpochMilli() } catch (Exception ignore) {}
+        return 0L
     }
 
     /** Walk event-log files: EVENTS_DIR/{source}/{yyyy}/{MM}/*.json. source null = all sources. */
@@ -426,6 +449,23 @@ class Events {
     private static String prop(res, String name) {
         try { if (res.hasProperty(name)) return res.getProperty(name).getValue()?.toString() } catch (Exception ignore) {}
         return null
+    }
+
+    // The raw typed property value (Calendar/Date/Number/String) — Api.instant
+    // normalizes any of these to the wire timestamp format.
+    private static Object propVal(res, String name) {
+        try { if (res.hasProperty(name)) return res.getProperty(name).getValue() } catch (Exception ignore) {}
+        return null
+    }
+
+    // Write an ISO timestamp (or now, when absent/unparseable) as a typed Date.
+    private static void setDate(res, String name, value) {
+        long ms = 0L
+        if (value != null) {
+            try { ms = java.time.OffsetDateTime.parse(value.toString()).toInstant().toEpochMilli() } catch (Exception ignore) {}
+            if (ms == 0L) { try { ms = Instant.parse(value.toString()).toEpochMilli() } catch (Exception ignore) {} }
+        }
+        res.setProperty(name, ms > 0 ? new java.util.Date(ms) : new java.util.Date())
     }
 
     private static long createdMs(res) {

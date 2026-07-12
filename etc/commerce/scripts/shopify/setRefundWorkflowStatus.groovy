@@ -11,7 +11,7 @@
 //   *        -> resolved         (workflow finished; terminal)
 //
 // A refund is already executed in Shopify, so "resolved" means our audit/triage
-// of it is complete - not that money moved. See docs/commerce-status.md.
+// of it is complete - not that money moved.
 //
 // Wiring
 // ------

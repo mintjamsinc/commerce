@@ -1,0 +1,66 @@
+{
+	"app.commerce-oplog.title": "コマース操作ログ",
+
+	"app.commerce-oplog.toolbar.refresh": "更新",
+	"app.commerce-oplog.toolbar.toggleSidebar": "フィルタの表示切替",
+	"app.commerce-oplog.toolbar.toggleDetail": "詳細の表示切替",
+
+	"app.commerce-oplog.download": "CSVダウンロード",
+
+	"app.commerce-oplog.filter.actor": "ユーザー",
+	"app.commerce-oplog.filter.actorPlaceholder": "ユーザーを検索…",
+	"app.commerce-oplog.filter.actorClear": "選択をクリア",
+	"app.commerce-oplog.filter.from": "期間（開始）",
+	"app.commerce-oplog.filter.to": "期間（終了）",
+
+	"app.commerce-oplog.noOperations": "条件に一致する操作がありません。",
+
+	"app.commerce-oplog.col.when": "いつ",
+	"app.commerce-oplog.col.actor": "誰が",
+	"app.commerce-oplog.col.target": "対象",
+	"app.commerce-oplog.col.identifier": "識別子",
+	"app.commerce-oplog.col.action": "操作",
+	"app.commerce-oplog.col.status": "結果",
+	"app.commerce-oplog.col.error": "エラー",
+
+	"app.commerce-oplog.entity.product": "商品",
+	"app.commerce-oplog.entity.customer": "顧客",
+	"app.commerce-oplog.entity.order": "注文",
+	"app.commerce-oplog.entity.inventory_item": "在庫アイテム",
+	"app.commerce-oplog.entity.webhook": "Webhook",
+
+	"app.commerce-oplog.action.inventory": "在庫数量を更新",
+	"app.commerce-oplog.action.price": "商品価格を更新",
+	"app.commerce-oplog.action.publish": "商品を公開",
+	"app.commerce-oplog.action.product_publish": "商品を公開",
+	"app.commerce-oplog.action.product_unpublish": "商品を非公開",
+	"app.commerce-oplog.action.product_update": "商品情報を更新",
+	"app.commerce-oplog.action.customer_update": "顧客情報を更新",
+	"app.commerce-oplog.action.order_update": "注文情報を更新",
+	"app.commerce-oplog.action.media_add": "商品メディアを追加",
+	"app.commerce-oplog.action.media_delete": "商品メディアを削除",
+	"app.commerce-oplog.action.media_reorder": "商品メディアを並べ替え",
+	"app.commerce-oplog.action.media_updateAlt": "商品メディアのaltを更新",
+	"app.commerce-oplog.action.media_op": "商品メディアを更新",
+	"app.commerce-oplog.action.metafields": "メタフィールドを更新",
+	"app.commerce-oplog.action.order_cancel": "注文をキャンセル",
+	"app.commerce-oplog.action.incoming_transfer": "入荷予定を登録",
+	"app.commerce-oplog.action.receive_transfer": "在庫入荷を登録",
+	"app.commerce-oplog.action.fulfillment": "発送済みを登録",
+	"app.commerce-oplog.action.webhook_sync": "Webhookを登録",
+
+	"app.commerce-oplog.status.ok": "成功",
+	"app.commerce-oplog.status.failed": "失敗",
+	"app.commerce-oplog.status.dryrun": "ドライラン",
+	"app.commerce-oplog.status.skipped": "スキップ",
+
+	"app.commerce-oplog.detail.title": "詳細",
+	"app.commerce-oplog.detail.empty": "行を選択すると詳細が表示されます。",
+	"app.commerce-oplog.detail.operation": "操作",
+
+	"app.commerce-oplog.statusbar.working": "処理中…",
+	"app.commerce-oplog.statusbar.count": "{count} 件の操作",
+	"app.commerce-oplog.statusbar.ready": "準備完了",
+
+	"app.commerce-oplog.loadFailed": "操作ログを読み込めませんでした。"
+}

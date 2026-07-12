@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no">
+	<title>Commerce Import</title>
+
+	<!-- Bootstrap Icons (bundled with webtop) -->
+	<link rel="stylesheet" href="../../assets/vendor/bootstrap-icons/bootstrap-icons.min.css?v=__BUILD_VERSION__">
+
+	<!-- App CSS + shared Webtop design system -->
+	<link href="./assets/css/style.css?v=__BUILD_VERSION__" rel="stylesheet" />
+	<link href="../../assets/css/webtop-app.css?v=__BUILD_VERSION__" rel="stylesheet" />
+</head>
+
+<body>
+	<div id="app" v-cloak class="d-flex flex-column" @mounted="onMounted" @unmount="onUnmount">
+
+		<!-- Top toolbar -->
+		<nav class="nav-bar window-drag-region">
+			<div class="toolbar-group">
+				<button class="btn-icon" @click="refresh" :disabled="busy" :title="t('app.commerce-import.toolbar.refresh')">
+					<i class="bi bi-arrow-clockwise" :class="{ spin: busy }"></i>
+				</button>
+			</div>
+
+			<span class="nav-spacer"></span>
+
+			<div class="pane-toggles">
+				<button class="btn-icon pane-toggle-btn" :class="{ active: sidebarVisible }" @click="toggleSidebar" :title="t('app.commerce-import.toolbar.toggleSidebar', undefined, 'Toggle filters')">
+					<i class="bi bi-layout-sidebar-inset"></i>
+				</button>
+			</div>
+
+			<!-- Window controls -->
+			<div class="window-controls">
+				<button class="btn-icon" @click="onMinimizeWindow" :title="t('common.minimize')"><i class="bi bi-dash-lg"></i></button>
+				<button class="btn-icon" @click="onToggleMaximizeWindow" :title="t('common.maximize')"><i class="bi bi-square"></i></button>
+				<button class="btn-icon window-control-close" @click="onCloseWindow" :title="t('common.close')"><i class="bi bi-x-lg"></i></button>
+			</div>
+		</nav>
+
+		<!-- Content: two-pane (left run triggers, right job list + fact-pipeline
+		     progress). Drift detection lives in the Commerce Reconcile app. -->
+		<div class="content-body">
+
+			<!-- Left: the backfill run trigger (Admin-API-gated). An orders backfill also
+			     mirrors refunds and chains the sales-fact seed — no separate triggers. -->
+			<aside v-if="sidebarVisible" class="ops-sidebar island" :style="{ width: sidebarWidth + 'px' }">
+
+				<!-- Admin API status banner: the Bulk backfill fetches from Shopify, so it
+				     disables until the Admin API is configured. -->
+				<div class="imp-banner" :class="sync.enabled ? 'ok' : 'warn'">
+					<i class="bi" :class="sync.enabled ? 'bi-check-circle' : 'bi-exclamation-triangle'"></i>
+					<span v-if="sync.enabled">{{ t('app.commerce-import.adminApi.enabled', { domain: sync.shopDomain, version: sync.apiVersion }) }}</span>
+					<span v-else>{{ t('app.commerce-import.adminApi.disabled') }}</span>
+				</div>
+
+				<!-- ============ BACKFILL (Shopify → CMS full import) trigger ======= -->
+				<section class="property-group">
+					<div class="property-group-title">{{ t('app.commerce-import.backfill.groupTitle') }}</div>
+
+					<div class="ops-filter">
+						<div class="ops-field">
+							<label class="property-label">{{ t('app.commerce-import.backfill.entity') }}</label>
+							<div class="wt-select">
+								<button type="button" class="wt-select-trigger" @click.stop="openBackfillTypeMenu($event)">
+									<span class="wt-select-value">{{ backfillTypeLabel(backfill.type) }}</span>
+									<i class="bi bi-chevron-down wt-select-chevron"></i>
+								</button>
+							</div>
+						</div>
+						<!-- Inventory is a full snapshot (not date-ranged): hide the range for it. -->
+						<div v-if="backfill.type !== 'inventory'" class="ops-field">
+							<label class="property-label">{{ t('app.commerce-import.backfill.from') }}</label>
+							<input class="wt w-100" type="date" v-model="backfill.from">
+						</div>
+						<div v-if="backfill.type !== 'inventory'" class="ops-field">
+							<label class="property-label">{{ t('app.commerce-import.backfill.to') }}</label>
+							<input class="wt w-100" type="date" v-model="backfill.to">
+						</div>
+						<button class="wt wt-primary wt-slim" :disabled="busy || !sync.enabled" @click="runBackfill"
+							:title="!sync.enabled ? t('app.commerce-import.adminApi.required') : ''">
+							<i class="bi bi-play-fill"></i> {{ t('app.commerce-import.backfill.run') }}
+						</button>
+					</div>
+
+					<div v-if="backfill.type === 'inventory'" class="property-hint">{{ t('app.commerce-import.backfill.inventoryHint') }}</div>
+					<div v-else class="property-hint">{{ t('app.commerce-import.backfill.rangeHint') }}</div>
+					<div class="property-hint">{{ t('app.commerce-import.backfill.note') }}</div>
+					<!-- Orders backfill = the whole historical sales import: refunds are fetched
+					     for the refund-bearing orders, and the sales-fact seed chains on
+					     completion. -->
+					<div v-if="backfill.type === 'orders'" class="property-hint">{{ t('app.commerce-import.backfill.ordersChainHint') }}</div>
+				</section>
+
+			</aside>
+			<div v-if="sidebarVisible" class="sidebar-resize-handle" @mousedown="onSidebarResizeStart"></div>
+
+			<!-- Right: results — backfill jobs + sales fact pipeline progress (auto-refreshing) -->
+			<main class="content-main island">
+
+				<!-- Backfill jobs — auto-refreshes while any job is still active -->
+				<section class="property-group">
+					<div class="property-group-title ops-section-head">
+						<span>{{ t('app.commerce-import.backfill.jobsTitle') }}</span>
+						<span class="ops-inline-actions">
+							<span v-if="backfillActive()" class="ops-pill st-received"><i class="bi bi-arrow-repeat spin"></i> {{ t('app.commerce-import.backfill.inProgress') }}</span>
+							<button class="btn-icon" :disabled="busy" @click="loadBackfill" :title="t('app.commerce-import.toolbar.refresh')">
+								<i class="bi bi-arrow-clockwise" :class="{ spin: busy }"></i>
+							</button>
+						</span>
+					</div>
+					<div v-if="backfillJobs.length === 0" class="property-hint">{{ t('app.commerce-import.backfill.noJobs') }}</div>
+					<table v-else class="wt w-100">
+						<thead><tr><th>{{ t('app.commerce-import.backfill.table.type') }}</th><th>{{ t('app.commerce-import.backfill.table.status') }}</th><th>{{ t('app.commerce-import.backfill.table.range') }}</th><th>{{ t('app.commerce-import.backfill.table.results') }}</th><th>{{ t('app.commerce-import.backfill.table.enqueued') }}</th><th>{{ t('app.commerce-import.backfill.table.finished') }}</th><th>{{ t('app.commerce-import.backfill.table.error') }}</th></tr></thead>
+						<tbody>
+							<tr v-for="(j, i) in backfillJobs" :key="j.jobId || i">
+								<td>{{ jobTypeLabel(j.type) }}</td>
+								<td><span class="ops-pill" :class="jobStatusClass(j.status)"><span :class="{ 'text-muted': (j.status) == null }">{{ j.status ?? '—' }}</span></span></td>
+								<td class="ops-val">{{ jobRange(j) }}</td>
+								<td class="ops-val" :class="{ 'text-muted': jobResults(j) === '—' }">{{ jobResults(j) }}</td>
+								<td>{{ fmtTime(j.enqueuedAt) }}</td>
+								<td>{{ fmtTime(j.finishedAt) }}</td>
+								<td :class="{ 'text-muted': !(j.error) }">{{ j.error || '—' }}</td>
+							</tr>
+						</tbody>
+					</table>
+				</section>
+
+				<!-- Sales fact seed progress (chained off the orders backfill) — remaining
+				     drains to 0 once the drainer catches up -->
+				<section class="property-group">
+					<div class="property-group-title ops-section-head">
+						<span>{{ t('app.commerce-import.salesSeed.progressTitle') }}</span>
+						<span class="ops-inline-actions">
+							<span class="ops-pill" :class="seedStatusClass(salesSeed.status)">{{ salesSeed.status }}</span>
+							<button class="btn-icon" :disabled="busy" @click="loadSalesSeed" :title="t('app.commerce-import.toolbar.refresh')">
+								<i class="bi bi-arrow-clockwise" :class="{ spin: busy }"></i>
+							</button>
+						</span>
+					</div>
+					<div class="ops-kpis">
+						<div class="ops-kpi"><span class="ops-kpi-v">{{ salesSeed.scanned }}</span><span class="ops-kpi-l">{{ t('app.commerce-import.salesSeed.kpi.scanned') }}</span></div>
+						<div class="ops-kpi"><span class="ops-kpi-v">{{ salesSeed.distinctOrders }}</span><span class="ops-kpi-l">{{ t('app.commerce-import.salesSeed.kpi.distinctOrders') }}</span></div>
+						<div class="ops-kpi"><span class="ops-kpi-v">{{ salesSeed.enqueued }}</span><span class="ops-kpi-l">{{ t('app.commerce-import.salesSeed.kpi.enqueued') }}</span></div>
+						<div class="ops-kpi"><span class="ops-kpi-v">{{ salesSeed.remaining }}</span><span class="ops-kpi-l">{{ t('app.commerce-import.salesSeed.kpi.remaining') }}</span></div>
+					</div>
+					<div class="property-hint">
+						<span>{{ t('app.commerce-import.salesSeed.note') }} </span>
+						<span v-if="salesSeed.startedAt">{{ t('app.commerce-import.salesSeed.startedAt', { time: fmtTime(salesSeed.startedAt) }) }} </span>
+						<span v-if="salesSeed.finishedAt">{{ t('app.commerce-import.salesSeed.finishedAt', { time: fmtTime(salesSeed.finishedAt) }) }}</span>
+					</div>
+				</section>
+
+			</main>
+		</div>
+
+		<!-- Status bar -->
+		<div class="status-bar window-drag-region">
+			<span class="nav-spacer"></span>
+			<div class="status-group">
+				<span v-if="busy" class="status-item"><i class="bi bi-arrow-repeat me-1"></i>{{ t('app.commerce-import.statusbar.working') }}</span>
+				<span v-else-if="statusKind === 'ok'" class="status-item status-ok"><i class="bi bi-check-lg me-1"></i>{{ status }}</span>
+				<span v-else-if="statusKind === 'err'" class="status-item status-err">{{ status }}</span>
+				<span v-else class="status-item">{{ t('app.commerce-import.statusbar.ready') }}</span>
+			</div>
+		</div>
+
+		<!-- Toast -->
+		<div v-if="toast" class="commerce-toast" :class="{ error: toastError }" role="alert">{{ toast }}</div>
+
+		<!-- Confirm dialog -->
+		<div v-if="confirmDialog.visible" class="dialog-overlay">
+			<div class="dialog-frame" style="max-width: 32rem;">
+				<div class="island p-2">
+					<div class="dialog-header"><h3><i class="bi bi-exclamation-triangle-fill me-2"></i>{{ confirmDialog.title }}</h3></div>
+					<div class="dialog-body"><p class="mt-0">{{ confirmDialog.message }}</p></div>
+					<div class="dialog-footer flex-wrap">
+						<button class="wt" @click="onConfirm(false)">{{ t('common.cancel') }}</button>
+						<button class="wt wt-primary" @click="onConfirm(true)">{{ confirmDialog.ok }}</button>
+					</div>
+				</div>
+			</div>
+		</div>
+
+	</div>
+
+	<script type="module" src="./app.js?v=__BUILD_VERSION__"></script>
+</body>
+
+</html>

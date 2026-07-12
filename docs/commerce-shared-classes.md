@@ -49,6 +49,24 @@ listener, Camel route):
 
 ## The classes
 
+### `commerce.Api`
+**The wire mapper** — the single normalization gate every endpoint passes its JSON
+through on the way out (and applies to ids on the way in). Pure, null-tolerant.
+The contract it enforces: money/quantities as
+JSON numbers with money as `{currency, amount}` objects, ids as Shopify GIDs
+(numeric never leaves the layer; `legacyId` peels server-side only), timestamps
+as millisecond-precision UTC ISO-8601 (`Api.now()` — never
+`Instant.now().toString()`, whose fraction digits drift), keys camelCase.
+
+| Method | Purpose |
+|---|---|
+| `String now()` / `String instant(v)` / `Long epochMs(v)` / `Date date(v)` | The wire timestamp format (`yyyy-MM-dd'T'HH:mm:ss.SSS'Z'`) — or a `java.util.Date` for typed JCR Date properties — from any Calendar/Date/Number/ISO input. |
+| `Number num(v[, dflt])` / `Long count(v)` | Clean JSON numbers (strips `.0` — zero-decimal-currency safe). |
+| `Map money(currency, amount)` / `List moneyList(map)` | The wire money shapes. |
+| `String gid(type, id)` / `String legacyId(id)` | GID canonicalization (idempotent, token passthrough) / numeric peel (INTERNAL ONLY). The only place `gid://` strings are built. |
+| `String gidType(gid)` / `String gidTypeFor(collection)` | GID type extraction / `"inventory_levels"` → `"InventoryLevel"`. |
+| `String camel(key)` / `camelValue(v)` / `Object camelize(tree)` | camelCase keys (deep variant for storage-shaped rows; never applied to raw Shopify mirror bodies). |
+
 ### `commerce.Money`
 Numeric / money helpers. Pure.
 
@@ -147,7 +165,7 @@ inherits a shared, defensive `postJson` helper. Adapters:
 extra mail library is required. See `docs/notification-channels.md` for the config.
 
 ### `commerce.ShopifyWrite`
-Outbound CMS → Shopify writes (#2 bidirectional sync), built on {@link
+Outbound CMS → Shopify writes, built on {@link
 commerce.ShopifyAdmin}. Each method builds an Admin GraphQL mutation and raises on a
 transport error or a Shopify `userErrors` entry (not defensive — the sync endpoint
 reports the outcome), mirroring `recordFulfillment`'s write-back policy. Ids may be
@@ -158,11 +176,17 @@ raw numeric ids or gids. See [bidirectional-sync.md](bidirectional-sync.md).
 | `Map setInventory(client, endpoint, token, inventoryItemId, locationId, quantity, reason)` | Set available stock at a location (`inventorySetQuantities`). |
 | `Map updatePrice(client, endpoint, token, productId, variantId, price)` | Set a variant price (`productVariantsBulkUpdate`). |
 | `Map setPublished(client, endpoint, token, productId, published)` | Publish/unpublish a product (`productUpdate` status). |
-| `Map setMetafields(client, endpoint, token, ownerId, metafields)` | Upsert product metafields (`metafieldsSet`) — the PIM push (#23). |
+| `Map setMetafields(client, endpoint, token, ownerId, metafields)` | Upsert product metafields (`metafieldsSet`) — the PIM push. |
+| `Map updateCustomer(client, endpoint, token, customerId, fields)` | Update a customer (`customerUpdate` tags/note/taxExempt + `customerEmailMarketingConsentUpdate` marketing consent); enum values uppercased. Backs the customer editor's save via `endpoints/sync.groovy`. |
+| `Map updateProduct(client, endpoint, token, productId, fields)` | Update a product's base fields (`productUpdate`): title / descriptionHtml / vendor / productType / tags (normalized) / handle / status (uppercased ACTIVE\|DRAFT\|ARCHIVED). Only present keys are written; skips the Shopify call when nothing changed. Backs the product editor's Overview save (product 360). |
+| `Map addProductMedia(client, endpoint, token, productId, originalSource, alt)` | Add one image to a product by URL (`productCreateMedia`, `mediaContentType: IMAGE`). Add-by-URL only — no staged/local upload in v1. **Async** on Shopify's side (product 360 Media). |
+| `Map deleteProductMedia(client, endpoint, token, productId, mediaIds)` | Delete media from a product (`productDeleteMedia`); `mediaIds` are MediaImage ids. Returns the deleted ids. |
+| `Map reorderProductMedia(client, endpoint, token, productId, orderedMediaIds)` | Reorder a product's media to the given order (`productReorderMedia`, each id → its list index). **Async** — returns a job id; the mirror catches up via `products/update`. |
+| `Map updateProductMediaAlt(client, endpoint, token, mediaId, alt)` | Edit a media's alt text via `fileUpdate` (the durable path at 2026-01; `productUpdateMedia` is deprecated). |
 | `String gid(type, id)` | Normalize a numeric id to a Shopify gid. |
 
 ### `commerce.Pim`
-Product Information Management (#23): a CMS-authoritative overlay of extended
+Product Information Management: a CMS-authoritative overlay of extended
 attributes (multi-language, rich descriptions, custom attributes, metafields) stored
 as the `pim` property on the product node, so it is versioned / searchable /
 ACL-governed with the product. Reads defensive; `write` raises. See [pim.md](pim.md).
@@ -173,31 +197,38 @@ ACL-governed with the product. Reads defensive; `write` raises. See [pim.md](pim
 | `Map write(session, log, productId, overlay, merge, editor)` | Deep-merge or replace the overlay; stamps updatedAt/By. |
 | `Map view(session, productId)` | Unified Shopify base + metafields mirror + overlay. |
 | `List search(session, query, limit)` | Full-text product search (`jcr:contains`). |
+| `Map browse(session, opts)` | Faceted browse: filters over `commerce:*` props + facet counts (the product browser). `sort=updated\|sales\|quantity` (+ `salesFrom`/`salesTo` epoch-ms) ranks by the line-grain sales facts (`SalesQuery.salesByProduct`); ranked rows carry a `sales` object. |
+| `Map titles(session, productIds)` | productId → `commerce:title` from the product mirror (labels for sales-fact aggregations). |
 | `List metafieldsToPush(overlay)` | The overlay's CMS-authored metafields for Shopify (pure). |
 
 ### `commerce.Reconciliation`
-CMS ↔ Shopify drift detection + healing (#24). Pure `diffProduct`; defensive
-`applyRefresh` (Shopify→CMS mirror patch). CMS→Shopify healing is done by the caller
-via `ShopifyWrite`. See [reconciliation.md](reconciliation.md).
+Shopify → CMS drift detection + refresh (status / price; inventory is the Bulk
+audit's job). Pure `diffProduct`; defensive `applyRefresh` (Shopify→CMS mirror
+patch). CMS→Shopify writes are done by the caller via `ShopifyWrite`. See
+[reconciliation.md](reconciliation.md).
 
 | Method | Purpose |
 |---|---|
-| `List diffProduct(cmsProduct, cmsInvByItem, shopifyProduct, sourceOfTruth)` | Field-level diffs (status/price/inventory) with heal direction. |
+| `List diffProduct(cmsProduct, shopifyProduct)` | Field-level diffs (status/price) with refresh direction. |
 | `boolean applyRefresh(session, log, productResource, diff)` | Refresh the CMS mirror (status/price) from Shopify. |
+| `def writeRunReport(session, report)` | The single run-report writer for BOTH scopes (diff / inventory): body JSON + the typed queryable row properties. Does not commit. |
+| `void recordBulkAudit(session, log, job)` | Bulk-broker terminal hook: records an inventory-audit job as an "inventory" run report (no-op for other job types; exactly-once via the broker's absorbing states). |
+| `List listRuns(session, opts)` | Run-history rows, newest-started first, via one index-backed XPath query over the typed report props (`scope` / `result` / `fromIso` / `limit`); shared by the reconcile endpoint and the dashboard. |
 | `String numericId(gid)` | Numeric id from a Shopify gid. |
 
 ### `commerce.Reports`
-Reporting & audit export (#25). Pure, defensive JCR traversal. See
-[reports.md](reports.md).
+Operations / audit export. Pure, defensive, index-backed. Sales reporting does
+NOT live here — every sales read is `commerce.SalesQuery` over the sales facts (the
+pre-fact folder walk has been removed). See [reports.md](reports.md).
 
 | Method | Purpose |
 |---|---|
-| `Map sales(session, days)` | Daily orders + revenue per currency + top products. |
-| `List operations(session, days, statusFilter, limit)` | Outbound-write audit trail (`/content/commerce/sync`). |
+| `List operations(session, actor, fromIso, toIso, statusFilter, limit)` | Outbound-write audit trail (`/content/commerce/sync`), newest first, XPath-filtered. |
 
 ### `commerce.ShopifyAdmin`
-Shopify Admin API: enablement, token (Client Credentials Grant + JCR cache) and
-GraphQL. JSON via jackson. Token caching is best-effort — a valid token is still
+Shopify Admin API: enablement, token (Client Credentials Grant + JCR cache),
+GraphQL, and **Bulk Operations** (start / status / cancel — the bulk job broker).
+JSON via jackson. Token caching is best-effort — a valid token is still
 returned even if it could not be persisted.
 
 | Method | Purpose |
@@ -206,6 +237,56 @@ returned even if it could not be persisted.
 | `String endpoint(adminApi)` | GraphQL endpoint URL; throws if `shopDomain`/`apiVersion` missing. |
 | `String accessToken(session, log, adminApi)` | Reuse cached token while fresh, else fetch + cache. |
 | `Object graphql(client, endpoint, accessToken, payload)` | POST GraphQL; throws on non-200 or a top-level `errors` array. `payload` may be a Map or a JSON String. |
+| `String startBulk(client, endpoint, accessToken, bulkQuery)` | Start a Bulk Operation query (`bulkOperationRunQuery`); returns its operation gid. |
+| `boolean currentBulkRunning(client, endpoint, accessToken)` | True while the shop's current bulk query is CREATED/RUNNING — the producer lane's belt-and-suspenders singleton guard. |
+| `Map bulkByGid(client, endpoint, accessToken, gid)` | Status + downloadable result URL for a bulk (2026-01 `bulkOperation(id:)`, falls back to `currentBulkOperation`); null if not this job's. |
+| `Map cancelBulk(client, endpoint, accessToken, gid)` | Best-effort `bulkOperationCancel` — the watchdog's RUNNING hard cap; frees the app's single bulk slot. Never throws (returns `[error]` on failure). |
+
+### `commerce.BulkJobs`
+Durable JCR queue + guarded state machine behind the **Shopify Bulk job broker**, with
+**domain-based** serialization. Each job is a doc under
+`/content/commerce/jobs/shopify/{jobId}.json` carrying the data **domains** it touches
+(`targetDomains`, e.g. `["inventory"]`), so bulk work is serialized *per domain* across two
+independent lanes — a Shopify **producer** singleton and a domain-parallel CMS **consumer** — rather
+than through one global lane. Defensive throughout: a bookkeeping failure never breaks a route. See
+[reconciliation.md](reconciliation.md) and [clustering.md](clustering.md).
+
+State machine: `QUEUED → RUNNING` (Shopify bulk running) `→ READY` (Shopify COMPLETED, awaiting a CMS
+ingest slot) `→ PROCESSING` (CMS downloading/reconciling) `→ COMPLETED | FAILED | CANCELED |
+TIMED_OUT`; `isActive = QUEUED || RUNNING || READY || PROCESSING`. **Every transition is a guarded
+compare-and-set** (`patchIf`): it writes only from the expected source state and returns a `boolean`
+(true iff applied), so a duplicate at-least-once `bulk_operations/finish` webhook or a watchdog race
+can't resurrect a job into a double reconcile — the four terminal states are **absorbing**. A job
+whose `targetDomains` is missing/empty is a **wildcard** that conservatively overlaps every domain.
+
+| Method | Purpose |
+|---|---|
+| `String create(session, log, type, targetDomains)` / `create(session, log, type)` | Create a QUEUED job carrying its domains (2-arg form = wildcard `[]`). Callers enforce idempotency via `hasActive`. |
+| `List<Map> list(session)` | All job docs. |
+| `boolean hasActive(session, type)` | Any QUEUED/RUNNING/READY/PROCESSING job of this type (enqueue idempotency guard). |
+| `boolean hasRunning(session)` / `laneBusy(session)` | Any job RUNNING (Shopify singleton busy) / RUNNING-or-PROCESSING. |
+| `Map nextQueued(session)` | Oldest QUEUED job (FIFO by jobId). |
+| `List<Map> running / ready / processing(session)` | Jobs in that status (watchdog + CMS consumer lane). |
+| `Map findByGid(session, gid)` | Job for a Shopify bulk-operation gid (finish-webhook correlation). |
+| `Set<String> domainsOf(Map job)` | A job's domains; **empty Set = wildcard**. |
+| `Set<String> domainsInStatuses(session, statuses, excludeJobId = null)` | Union of domains over jobs in those statuses; collapses to the `ALL_DOMAINS` (`"*"`) sentinel if a wildcard job is present. |
+| `boolean overlaps(Set a, Set b)` | Does a candidate's domains conflict with an active-domain set (conservative = serialize)? |
+| `boolean markRunning / markReady / markProcessing / markCompleted(...)` | Guarded forward transitions; each true iff applied. |
+| `boolean markFailed / markTimedOut / markCanceled(...)` | Guarded any-active → terminal transitions (release the job's domains). |
+| `int incrementReconcileAttempts(session, log, jobId)` | Bump + return the bounded reconcile-retry counter (not status-guarded). |
+
+### `commerce.BulkQueries`
+The Shopify Bulk Operation query strings plus the **single-source `TYPES` registry** that pairs each
+bulk job type with both its query **and** the data domains it touches, so `forType` and
+`domainsForType` cannot drift apart. Adding a future backfill type (products/orders/customers) is one
+row. Pure. Used with `BulkJobs` by the broker.
+
+| Method / field | Purpose |
+|---|---|
+| `static final String INVENTORY_FULL` | Full inventory snapshot query — every inventory item → per-location `available`; un-paginated, streamed as JSONL. |
+| `static final Map TYPES` | Single source of truth: `type → [ query, domains ]` (today `"inventory-full" → [INVENTORY_FULL, ["inventory"]]`). |
+| `String forType(String type)` | The bulk query for a type; throws for an unknown type. |
+| `List<String> domainsForType(String type)` | The domains a type touches; `[]` (wildcard) for an unknown/mis-typed type. |
 
 ### `commerce.Health`
 Integration health monitor: records operational metrics to JCR and raises alerts
@@ -221,15 +302,76 @@ breached. Best-effort — a recording failure is swallowed, never thrown. See
 | `Map snapshot(session, days = 7)` | Aggregate the last N days into a snapshot with per-bucket `error_rate` / `latency_avg`. |
 
 ### `commerce.Dashboard`
-Read-only sales and inventory aggregations for the Commerce dashboard, derived
-from the stored order and product resources (pure JCR traversal). Defensive — a
-read error on one resource is skipped, not thrown. See
+Read-only sales and inventory aggregations for the Commerce dashboard. Sales money
+figures come from the sales facts (`commerce.SalesQuery`, uncapped); the lifecycle
+byStatus breakdown is a facet COUNT over the raw order store's typed props (no folder
+walk). Defensive — a read error is skipped, not thrown. See
 [commerce-dashboard.md](commerce-dashboard.md).
 
 | Method | Purpose |
 |---|---|
-| `Map inventorySummary(session)` | Total products + breakdown by `commerce:status` (+ lowStock = review_pending). |
-| `Map salesSummary(session, days = 30)` | Orders, revenue per currency and by-status over the last N days (by ingestion time). |
+| `Map inventorySummary(session)` | Total products + breakdown by `commerce:status` (+ a low-stock count = products in `review_pending`). |
+| `Map salesSummary(session, days = 30)` | Orders / native revenue / base rollup / metrics over the last N days by `ordered_at` (SalesQuery.salesRange) + the lifecycle byStatus facet count. |
+
+### Sales facts (`commerce.Sales` / `SalesFacts` / `SalesQuery` / `SalesFactBackfill` / `RefundMirror`)
+
+The sales re-implementation. Raw components are stored as
+typed, index-backed facts and every metric is composed at READ TIME by server-side `facet accumulate` — no
+pre-selected "sales" number (operator sovereignty). A single cluster-guarded drainer is the only fact
+writer; all other paths (including the backfill chain) only ENQUEUE. See `docs/commerce-properties.md`
+(Sales facts) and `docs/clustering.md` (the guarded tasks).
+
+**`commerce.Sales`** — PURE component computer (no JCR/bindings; never mutates the body). `compute(order,
+refundBodies)` → order-grain + line-grain native+base components + `components_complete` + `recon_delta`.
+`foldReturns` / `hasOrderDecomposition` / `nativeAmt` / `baseOrNative` are the shared component helpers.
+
+**`commerce.SalesFacts`** — the pending queue + the SINGLE cluster-guarded writer (modeled on the
+inventory-total materialize). Defensive JCR; `pickBody` is pure.
+
+| Method | Purpose |
+|---|---|
+| `void markPending / boolean writePending(session, log, orderId)` | Enqueue an order (commit / stage-only). |
+| `List pendingOrderIds(session)` / `void clearPending(...)` | Queue read / delete-before-evaluate. |
+| `void recompute(session, log, orderId)` | THE fact writer: resolve body (`pickBody` prefers complete), fold refunds, `Sales.compute`, upsert + prune both grains, never downgrade a complete fact. Drainer-only. |
+| `Map effectiveProps(props, complete)` | Strip the money decomposition when incomplete (keep total_price + dims). |
+
+**`commerce.SalesQuery`** — the index-backed READER: composes metrics from the facts via
+`facet accumulate`, delegating the SUM to the platform (single pass, no 5000 cap). Defensive (degrades to
+zeros). The dimension-text helpers (`sumDim`/`statsDim`/`pctDim`…) are the one place the facet dimension
+strings are formed (prop name == dimension text).
+
+| Method | Purpose |
+|---|---|
+| `Map config(session)` / `Map defaults(cfg)` / `Map resolveOpts(cfg, overrides)` | sales.yml — the population/returns-basis defaults, merged with per-request overrides. |
+| `Map salesRange(session, fromMs, toMs, opts)` | Full report: component sums (base) + native by currency + net/total synthesis + daily timeseries + stats/percentiles. `daily:false` opt skips the timeseries. |
+| `List topProducts(...)` / `List byCustomer(...)` | Top-N by base gross (real product_id) / by base total (customer_id). |
+| `Map salesByProduct(session, fromMs, toMs, opts)` | product_id → { quantity, gross, discounts, returns, net } in ONE grouped pass (line grain) — backs the product browse's sales sorts. |
+| `Map spendByCustomer(session, fromMs, toMs, opts)` | customer_id → { orders, totalPrice, gross, discounts, returns, net } in ONE grouped pass (order grain) — backs the CRM spend sort + min-spend period filter. |
+| `Map pop(session, fromMs, toMs, opts)` | Period-over-period (current vs preceding equal window). |
+| `String populationPredicate(opts)` | financialStatus / includeCancelled → XPath predicate. |
+| `String baseCurrencyOf(session, fromMs, toMs, opts)` | The window's base currency (first order fact; best-effort). |
+
+**`commerce.SalesFactBackfill`** — resumable, enqueue-only history seed. `seed(session,
+log)` walks the whole order mirror, dedups by order id, `SalesFacts.writePending` in 300-marker batches;
+`progress(session)` backs the GET endpoint. NEVER writes a fact node. Run via
+`seedSalesFactBackfill.groovy` (cluster-guarded), CHAINED off a completed orders backfill
+(`importBulkResult.groovy` kicks it); the `sales-backfill.groovy` admin endpoint is GET-only progress.
+
+**`commerce.RefundMirror`** — the historical refund MIRROR writer used by the orders backfill import
+(`importBulkResult.groovy`). Two-step fetch: the orders bulk export only FLAGS refund-bearing orders
+(`refunds { id }` — Bulk rejects a connection field inside a list field), so the detail is fetched per
+candidate order via the foreground Admin API (`refundsQuery`/`fetchRefundNodes`), and only when a flagged
+refund id is not mirrored yet. `toRestRefund` (PURE) maps a GraphQL refund node to the REST refund body;
+missing refunds are mirrored into the refund raw store with the SAME typed props as the webhook path (via
+`commerce.Refunds`). Already-mirrored refunds are skipped (a webhook-delivered refund's lifecycle is never
+reset). No review-flow / no order-summary mutation / idempotent.
+
+| Method | Purpose |
+|---|---|
+| `String refundsQuery(orderId)` / `List fetchRefundNodes(client, endpoint, token, orderId)` | Per-order foreground refunds fetch (live-verified field shapes). |
+| `Map toRestRefund(gqlRefundNode, orderId)` | PURE GraphQL→REST refund body mapper (the reviewable/testable piece). |
+| `Object findRefundResource(session, refundId)` | Name-based existence query across the month-nested refund store. |
+| `void storeRefund(session, rest, existing)` | Stage one refund body + the webhook-parity typed props (caller commits). |
 
 ### `commerce.TaskSla`
 Task SLA evaluation: decides when an open human task has breached a rule
@@ -287,43 +429,21 @@ property. *Pure* — a malformed config throws, so each caller keeps its own pol
 | `Map thresholdsByVariantId(resource)` | `{ variantId(String): threshold(int) }`; empty map if the property is absent. |
 | `boolean hasThresholdConfig(resource)` | True if at least one variant has a usable threshold. |
 
-### `commerce.InventoryRules`
-Inventory threshold rule engine. Resolves an effective per-variant threshold from
-a manual override (wins), the first matching rule in `inventory-rules.yml`, or a
-default — generalising the manual-per-product model to dynamic thresholds
-(category / tag / vendor / season / velocity). Pure logic over plain data (the
-caller parses the YAML, a list structure); velocity is injected by the caller. See
-[inventory-rules.md](inventory-rules.md).
+### `commerce.Planning`
+Planning layer (replaces the retired `InventoryRules` rule engine): resolves the
+single per-variant reorder **`threshold`** (a plain unit count, the fixed reorder
+point) as
+`per-variant (pim.planning) → legacy manual override (inventory_level_config) →
+planning.yml default (defaults.threshold) → none`. It is a pure lookup — the system
+never derives or rewrites the threshold; an operator sets any per-variant value
+explicitly. See [planning.md](planning.md).
 
 | Method | Purpose |
 |---|---|
-| `Map resolve(product, rulesConfig, manualByVariantId, velocityByVariantId = [:], today = null)` | Per variant → `[threshold, source, rule]` (source: manual/rule/default/none). |
-| `boolean hasEffectiveThreshold(resolved)` | True when at least one variant resolved to a threshold. |
-
-### `commerce.SalesVelocity`
-Sales velocity & stockout prediction. Computes per-variant velocity (units/day)
-from order history, caches it for cheap reuse, and forecasts which variants will
-run out. Defensive JCR traversal (jackson for order/product bodies). See
-[sales-velocity.md](sales-velocity.md).
-
-| Method | Purpose |
-|---|---|
-| `Map computeByVariant(session, log, windowDays)` | variantId → `[units, perDay]` from order line items in the window. |
-| `void writeCache(session, windowDays, byVariant)` | Persist to `/content/commerce/analytics/velocity.json`. |
-| `Map loadPerDay(session)` | Cached variantId → perDay (cheap; fed to InventoryRules). |
-| `Double daysToStockout(qty, perDay)` | Days until stockout, or null (no risk). |
-| `List variants(session, perDayByVariant)` | Every (non-deleted) variant with stock + velocity. |
-| `List forecast(session, perDayByVariant, warnDays)` | At-risk variants (soonest first). |
-
-### `commerce.Replenishment`
-Auto-reorder math: the suggested order quantity to cover the lead time + target
-cover at the current velocity, minus stock, floored at the minimum and rounded to
-the order multiple. Pure logic. See [auto-reorder.md](auto-reorder.md).
-
-| Method | Purpose |
-|---|---|
-| `int suggest(perDay, currentStock, cfg)` | Suggested reorder qty (0 when covered / velocity unknown). |
-| `Double coverDays(currentStock, perDay)` | Days of stock cover remaining (null when unknown). |
+| `Map config(session)` / `Integer defaultThreshold(cfg)` | Parsed planning.yml / the global default `threshold`. |
+| `Map resolve(resource, variantId, cfg)` | Threshold → `[value, source]` (variant/manual/default/none). |
+| `Integer value(resolved)` / `boolean hasEffectiveThreshold(resource, variantIds, cfg)` | Convenience accessor / onboarding gate. |
+| `Map setValues(session, log, productId, byVariant, editor)` | Merge operator-set thresholds into `pim.planning` (operator action only). |
 
 ### `commerce.Locations`
 Multi-location inventory access: per-location stock levels (from the
@@ -345,7 +465,7 @@ Cross-location allocation planning (advisory). Pure logic.
 | `Map plan(availableByLocation, qtyNeeded, cfg)` | Plan (`allocations`/`allocated`/`shortfall`) by strategy (`most_stock`/`priority`), holding back safety stock. |
 
 ### `commerce.Backorders`
-Backorder / pre-order management (#12). The pure `detect` decides which order lines
+Backorder / pre-order management. The pure `detect` decides which order lines
 need a backorder (shortfall against tracked stock, or a pre-order tag) from maps the
 caller resolves; the JCR methods (create / find / mark / summary) are *defensive*
 so a bookkeeping failure never breaks the webhook route or the release workflow. See
@@ -363,8 +483,7 @@ so a bookkeeping failure never breaks the webhook route or the release workflow.
 | `Map summary(session)` / `List list(session, statuses, limit)` | Counts by status + awaited units / recent records (dashboard + endpoint). |
 
 ### `commerce.Events`
-Source-agnostic event ingestion (category A: #1 all-topics, #3 multi-backend, #4
-replay). The storage + normalization + replay engine behind the ingest core
+Source-agnostic event ingestion. The storage + normalization + replay engine behind the ingest core
 (`direct:commerce-ingest`): it logs every inbound event with its raw payload to the
 event log, normalizes generic topics into current-state entity records, and finds /
 re-dispatches / prunes events for replay. The topic→collection mapping is pure; the
@@ -377,35 +496,31 @@ JCR methods are defensive. See [ingestion.md](ingestion.md).
 | `void setStatus(session, log, path, status, error)` | Stamp an event `processed` / `error`. |
 | `boolean normalize(session, log, source, topic, eventId, payloadJson)` | Store the generic entity record at `/content/commerce/entities/{source}/{collection}/{id}.json`. |
 | `Map find / findRecent(session, source, eventId)` | Locate an event-log entry (scan / deterministic current-month). |
-| `List list(session, statuses, source, topic, sinceMs, limit)` | Filtered event list (newest first) for the endpoint. |
+| `List list(session, statuses, source, topic, fromMs, toMs, limit)` | Filtered event list (newest first) for the endpoint; `fromMs`/`toMs` bound the received_at range (0 = unbounded). |
 | `List findReplayable(session, maxAttempts, backoffMs, nowMs)` | Failed events eligible for auto-replay (oldest first). |
 | `String payloadJson(session, path)` | The stored raw payload, for re-dispatch. |
 | `int prune(session, log, retentionMs, nowMs)` / `Map summary(session)` | Drop old processed events / counts by status. |
 
 ### `commerce.Customers`
-Customer normalization + segmentation (#13/#15). Rolls up purchase history from
-orders, classifies each customer, and persists a CRM record. `segment` is pure;
-traversal/persistence is defensive. See [crm.md](crm.md).
+First-class customer store (the customer domain). Body = the raw Shopify customer
+JSON; typed properties for lifecycle/profile. A single writer — the customers/*
+webhook upsert — sets them (and stamps the customer MIME); the mirror is
+display-only, and edits go to Shopify via `ShopifyWrite.updateCustomer` rather than
+back onto these props. There is no self-computed wallet or auto-segmentation; VIP is
+a manual Shopify tag. GDPR redaction is handled by `commerce.Gdpr`. See
+[crm.md](crm.md).
 
 | Method | Purpose |
 |---|---|
-| `Map aggregate(session)` | customerKey → purchase-history stats from all orders. |
-| `Map segment(stats, cfg, nowMs)` | Pure: `{ segment, vip, recency }` from thresholds. |
-| `Map write(session, log, stats, classification)` | Persist the CRM record; returns the previous `{segment,vip,recency}` (for transition alerts). |
-| `Map read(session, key)` / `Map summary(session)` / `List list(session, segment, limit)` | One record / counts / filtered list. |
-
-### `commerce.Checkouts`
-Abandoned checkout detection (#14) over the normalized checkout entities. Defensive.
-See [crm.md](crm.md).
-
-| Method | Purpose |
-|---|---|
-| `List findAbandoned(session, abandonedAfterMs, nowMs)` | Idle, un-completed checkouts (with reminder bookkeeping). |
-| `boolean markReminded(session, log, path, nowMs)` | Bump `commerce:reminders_sent` + timestamp. |
-| `Map summary(session, abandonedAfterMs, nowMs)` | Abandoned + reminded counts. |
+| `String keyFor(customerId, email)` / `String pathFor(key)` | Store keys (member / guest). |
+| `String upsertFromWebhook(session, log, payloadJson, customer)` | customers/* upsert (profile + consent + MIME stamp; guest merge). |
+| `boolean marketingEnabled(session, email)` / `findByEmail(session, email)` | Consent lookup / locate a record by email. |
+| `Map read(session, key)` | One record (mirror body + profile props). |
+| `List search(session, query, limit)` | Partial match on name / email / id (the customer browser search). |
+| `void markDeleted(session, log, customerId)` | customers/delete lifecycle marker. |
 
 ### `commerce.Catalog`
-Public storefront catalog projection (#20/#21). Builds sanitized public card/detail
+Public storefront catalog projection. Builds sanitized public card/detail
 objects from a product + its PIM overlay + per-item availability; the publish script
 does the JCR IO. Pure builders (customer-safe fields only). See
 [storefront.md](storefront.md).
@@ -416,10 +531,13 @@ does the JCR IO. Pure builders (customer-safe fields only). See
 | `Map card(detail)` | Lightweight catalog card (price range, image, aggregate availability, item ids). |
 | `String toJson(value)` | Serialize for the publisher. |
 
-### `commerce.Pages`
-Content-commerce landing pages (#22). Resolves a CMS-authored block page into its
-public projection, replacing `products` blocks with catalog cards. Pure (given the
-catalog cards); the publish script does the IO. See [storefront.md](storefront.md).
+### (removed) `commerce.Pages` / `commerce.InventoryRules`
+Retired in the re-implementation: block-LP publishing gave way to the embed
+toolkit ([storefront.md](storefront.md)); the threshold rule engine gave way to
+the planning layer ([planning.md](planning.md)). New classes: `Planning`,
+`Gdpr`, `SyncAudit`, `Migrations` (+ `CustomersMigration`,
+`ProductMimeTypeMigration`, `CustomerMimeTypeMigration`,
+`StorefrontEmbedMigration`, `PropertyTypeMigration`).
 
 | Method | Purpose |
 |---|---|
@@ -460,33 +578,42 @@ the allow-listed legacy names are touched.
 | `recordRefund.groovy` | Money, Refunds, Orders |
 | `recordFulfillment.groovy` | ShopifyAdmin, Health |
 | `endpoints/sync.groovy` | ShopifyAdmin, ShopifyWrite, Pim, Health, Jcr |
-| `reconcile.groovy` | ShopifyAdmin, ShopifyWrite, Reconciliation, Locations, Health, Jcr, Alerts, NotificationMessage |
+| `endpoints/product-media.groovy` | ShopifyAdmin, ShopifyWrite |
+| `reconcile.groovy` | Api, ShopifyAdmin, Reconciliation, Health, Jcr |
+| `enqueueBulkJob.groovy` | BulkJobs, BulkQueries |
+| `runBulkLane.groovy` | BulkJobs, BulkQueries, ShopifyAdmin |
+| `runBulkCmsLane.groovy` | BulkJobs |
+| `onBulkFinish.groovy` | BulkJobs |
+| `reconcileBulkResult.groovy` | BulkJobs, Locations, InventoryAlert, Reconciliation, ShopifyAdmin |
+| `importBulkResult.groovy` | BulkJobs, Jcr, Money, Orders, Reconciliation, RefundMirror, SalesFacts, ShopifyAdmin |
+| `watchdogBulkJobs.groovy` | BulkJobs, ShopifyAdmin |
 | `endpoints/pim.groovy` | Pim |
-| `endpoints/reconcile.groovy` | Jcr |
-| `endpoints/reports.groovy` | Reports |
-| `segmentCustomers.groovy` | Customers, Notifications, NotificationMessage |
-| `abandonedCheckouts.groovy` | Checkouts, Notifications, NotificationMessage, Alerts, SmtpClient |
-| `endpoints/crm.groovy` | Customers, Checkouts |
+| `endpoints/reconcile.groovy` | Api, Jcr |
+| `endpoints/reports.groovy` | Reports, SalesQuery |
+| `sweepSalesFacts.groovy` | SalesFacts |
+| `markSalesPending.groovy` | SalesFacts |
+| `seedSalesFactBackfill.groovy` | SalesFactBackfill, Jcr |
+| `endpoints/sales-backfill.groovy` | SalesFactBackfill, Api |
+| `endpoints/crm.groovy` | Customers |
 | `publishCatalog.groovy` | Catalog, Pim, Locations, Jcr |
 | `publishInventory.groovy` | Catalog, Locations, Jcr |
-| `publishPages.groovy` | Pages, Catalog, Jcr |
 | `getAccessToken.groovy` | ShopifyAdmin |
 | `getMetafields.groovy` | ShopifyAdmin, Health |
 | `recordHealth.groovy` | Health |
 | `scanTaskSla.groovy` | SimpleYaml, TaskSla |
 | `checkAdminApiEnabled.groovy` | ShopifyAdmin |
-| `sweepInventoryAlerts.groovy` | Inventory, InventoryRules, SalesVelocity, Locations, InventoryAlert |
-| `checkThresholdConfig.groovy` | Inventory, InventoryRules, SalesVelocity |
-| `computeVelocity.groovy` | SalesVelocity, Alerts, NotificationMessage, SimpleYaml |
-| `proposeReorders.groovy` | SalesVelocity, Replenishment, SimpleYaml, Jcr |
-| `purchaseOrder.groovy` | SmtpClient, Replenishment |
-| `notifyReorderTaskCreated.groovy` | Notifications, NotificationMessage |
+| `sweepInventoryAlerts.groovy` | Planning, Locations, InventoryAlert |
+| `checkThresholdConfig.groovy` | Planning, InventoryAlert |
+| `createIncomingTransfer.groovy` / `cancelOrder.groovy` | ShopifyAdmin, ShopifyWrite, SyncAudit |
+| `recordCustomer.groovy` | Customers |
+| `customerRedact.groovy` / `customerDataRequest.groovy` / `shopRedact.groovy` | Gdpr, Notifications |
+| `runMigrations.groovy` | Migrations |
 | `recordInventoryLevel.groovy` | Jcr |
 | `recordLocation.groovy` | Jcr |
 | `notifyOrderTaskCreated.groovy` | Notifications, NotificationMessage |
 | `notifyFulfillmentTaskCreated.groovy` | Notifications, NotificationMessage |
 | `notifyRefundTaskCreated.groovy` | Money, Refunds, Orders, Notifications, NotificationMessage |
-| `notifyTaskCreated.groovy` | Inventory, InventoryRules, SalesVelocity, Notifications, NotificationMessage |
+| `notifyTaskCreated.groovy` | Planning, Locations, Notifications, NotificationMessage |
 | `setOrderWorkflowStatus.groovy` | WorkflowStatus |
 | `setRefundWorkflowStatus.groovy` | WorkflowStatus |
 | `setWorkflowStatus.groovy` | WorkflowStatus |

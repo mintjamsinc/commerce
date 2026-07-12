@@ -1,3 +1,4 @@
+import commerce.Api
 import java.net.http.HttpClient
 import commerce.ShopifyAdmin
 import commerce.Health
@@ -27,7 +28,7 @@ def adminApi = config.adminApi ?: config
 // Build GraphQL query
 def gqlString = """
 query {
-  product(id: "gid://shopify/Product/${productID}") {
+  product(id: "${Api.gid('Product', productID)}") {
     metafields(first: 100) {
       edges {
         node {

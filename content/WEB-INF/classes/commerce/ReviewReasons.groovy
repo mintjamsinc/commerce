@@ -29,8 +29,7 @@ package commerce
  * contract for any future server-produced, user-facing message (e.g. form
  * validation errors), so the codes/params live in exactly one place.
  *
- * Every method is static and pure (see the design rules in
- * docs/commerce-shared-classes.md): it takes plain values / already-parsed maps
+ * Every method is static and pure: it takes plain values / already-parsed maps
  * and uses none of the script bindings.
  */
 class ReviewReasons {

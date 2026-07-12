@@ -107,7 +107,7 @@
 
                 <!-- Parse refund metadata and set as JCR properties. Monetary
                      totals (refund amount, currency, restock flag) are computed
-                     by recordRefund.groovy from the transactions/line items, so
+                     from the transactions/line items by the refund-recording step, so
                      here we only set what is directly available. -->
                 <setHeader name="commerce:refund_id">
                     <jsonpath>$.id</jsonpath>
@@ -115,8 +115,13 @@
                 <setHeader name="commerce:order_id">
                     <jsonpath>$.order_id</jsonpath>
                 </setHeader>
-                <!-- commerce:status is the integration processing lifecycle status.
-                     See docs/commerce-status.md. -->
+                <!-- Business date of the refund (Shopify created_at) — the Date index axis for the
+                     refund-period sales view (returnsBasis=refund). Order-cohort returns instead ride
+                     the order's ordered_at on the sales fact. -->
+                <setHeader name="commerce:refunded_at">
+                    <jsonpath>$.created_at</jsonpath>
+                </setHeader>
+                <!-- commerce:status is the integration processing lifecycle status. -->
                 <setHeader name="commerce:status">
                     <constant>received</constant>
                 </setHeader>
@@ -127,6 +132,14 @@
                 <setHeader name="commerce:stackTrace">
                     <simple>${null}</simple>
                 </setHeader>
+
+                <!-- Normalize property types. Shopify entity ids are String
+                     (equality/lookup only, never range-queried, and can exceed a
+                     UI-safe integer). $.id / $.order_id yield JSON numbers, so
+                     coerce them to String before persist. -->
+                <toD uri="transform:toString?targets=commerce:refund_id,commerce:order_id"/>
+                <!-- refunded_at as a real Date so xs:dateTime range/order-by works. -->
+                <toD uri="transform:toDate?targets=commerce:refunded_at"/>
 
                 <!-- Write metadata to JCR node properties -->
                 <toD uri="cms:setProperties?path=${header.refundPath}&amp;includes=commerce:*"/>
@@ -156,10 +169,15 @@
                     </otherwise>
                 </choice>
 
-                <!-- Cancel the order's still-waiting backorders (#12): a refund
+                <!-- Cancel the order's still-waiting backorders: a refund
                      unwinds the order, so backorders merely awaiting stock should
                      not linger. Defensive - never breaks the refund route. -->
                 <toD uri="cms:/etc/commerce/scripts/shopify/cancelBackorders.groovy?inputs=order_id"/>
+
+                <!-- Enqueue the PARENT order for a sales-fact recompute so the drainer folds
+                     the new refund body into the order's returns components (order-cohort basis) and
+                     per-line returned_quantity/returns. Enqueue by order_id, not refund_id. -->
+                <toD uri="cms:/etc/commerce/scripts/markSalesPending.groovy?inputs=order_id"/>
             </otherwise>
         </choice>
 

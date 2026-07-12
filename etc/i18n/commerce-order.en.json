@@ -1,0 +1,110 @@
+{
+	"app.commerce-order.title": "Commerce Order",
+
+	"app.commerce-order.toolbar.save": "Save to Shopify",
+	"app.commerce-order.toolbar.revert": "Revert changes",
+	"app.commerce-order.toolbar.reload": "Reload from the mirror",
+
+	"app.commerce-order.section.overview": "Overview",
+	"app.commerce-order.section.lineItems": "Line items",
+	"app.commerce-order.section.note": "Note",
+	"app.commerce-order.section.tags": "Tags",
+	"app.commerce-order.section.attributes": "Custom attributes",
+	"app.commerce-order.section.addresses": "Addresses",
+
+	"app.commerce-order.state.loading": "Loading order…",
+	"app.commerce-order.state.empty": "Open an order to see and edit everything about it in one place.",
+
+	"app.commerce-order.order.idFallback": "Order #{id}",
+
+	"app.commerce-order.field.orderNumber": "Order",
+	"app.commerce-order.field.createdAt": "Ordered on",
+	"app.commerce-order.field.processedAt": "Processed on",
+	"app.commerce-order.field.customer": "Customer",
+	"app.commerce-order.field.email": "Email",
+	"app.commerce-order.field.financialStatus": "Payment status",
+	"app.commerce-order.field.fulfillmentStatus": "Fulfillment status",
+	"app.commerce-order.field.total": "Total",
+	"app.commerce-order.field.totalBase": "Total (base currency)",
+	"app.commerce-order.field.refunded": "Refunded",
+	"app.commerce-order.field.refundCount": "{count, plural, one {# refund} other {# refunds}}",
+	"app.commerce-order.field.tracking": "Tracking",
+	"app.commerce-order.field.cancelledAt": "Cancelled on",
+	"app.commerce-order.field.fulfilledAt": "Fulfilled on",
+
+	"app.commerce-order.overview.groupTitle": "Order summary",
+	"app.commerce-order.overview.hint": "Read-only mirror of the order in Shopify. Editing lives in the Note, Tags and Custom attributes sections; writes go to Shopify and the mirror follows via webhook.",
+
+	"app.commerce-order.financial.pending": "Pending",
+	"app.commerce-order.financial.authorized": "Authorized",
+	"app.commerce-order.financial.partially_paid": "Partially paid",
+	"app.commerce-order.financial.paid": "Paid",
+	"app.commerce-order.financial.partially_refunded": "Partially refunded",
+	"app.commerce-order.financial.refunded": "Refunded",
+	"app.commerce-order.financial.voided": "Voided",
+
+	"app.commerce-order.fulfillment.fulfilled": "Fulfilled",
+	"app.commerce-order.fulfillment.partial": "Partially fulfilled",
+	"app.commerce-order.fulfillment.unfulfilled": "Unfulfilled",
+	"app.commerce-order.fulfillment.restocked": "Restocked",
+
+	"app.commerce-order.lineItems.groupTitle": "Line items",
+	"app.commerce-order.lineItems.hint": "The items on this order (read-only).",
+	"app.commerce-order.lineItems.editGuard": "Quantity and add-item editing (Shopify's Order Editing) is a follow-up phase — line items are read-only here for now.",
+	"app.commerce-order.lineItems.lockedCancelled": "This order is cancelled and cannot be edited in Shopify.",
+	"app.commerce-order.lineItems.lockedFulfilled": "This order is fulfilled — fulfilled items cannot have their quantity changed in Shopify.",
+	"app.commerce-order.lineItems.empty": "No line items on this order.",
+	"app.commerce-order.lineItems.col.title": "Item",
+	"app.commerce-order.lineItems.col.sku": "SKU",
+	"app.commerce-order.lineItems.col.qty": "Qty",
+	"app.commerce-order.lineItems.col.price": "Price",
+	"app.commerce-order.lineItems.col.total": "Total",
+
+	"app.commerce-order.note.groupTitle": "Note",
+	"app.commerce-order.note.hint": "The order note stored in Shopify.",
+	"app.commerce-order.note.placeholder": "Internal note about this order…",
+
+	"app.commerce-order.tags.groupTitle": "Tags",
+	"app.commerce-order.tags.hint": "The order's Shopify tags. Save writes the tags to Shopify.",
+	"app.commerce-order.tags.placeholder": "Add a tag (comma-separated), then Enter…",
+	"app.commerce-order.tags.add": "Add",
+	"app.commerce-order.tags.remove": "Remove tag",
+	"app.commerce-order.tags.empty": "No tags yet.",
+
+	"app.commerce-order.attributes.groupTitle": "Custom attributes",
+	"app.commerce-order.attributes.hint": "The order's custom attributes (key / value). Save writes them to Shopify.",
+	"app.commerce-order.attributes.key": "Key",
+	"app.commerce-order.attributes.value": "Value",
+	"app.commerce-order.attributes.keyPlaceholder": "e.g. delivery_note",
+	"app.commerce-order.attributes.valuePlaceholder": "Value",
+	"app.commerce-order.attributes.add": "Add attribute",
+	"app.commerce-order.attributes.remove": "Remove attribute",
+	"app.commerce-order.attributes.empty": "No custom attributes yet.",
+
+	"app.commerce-order.addresses.groupTitle": "Addresses",
+	"app.commerce-order.addresses.hint": "The order's shipping and billing addresses (read-only).",
+	"app.commerce-order.addresses.empty": "No addresses on this order.",
+	"app.commerce-order.addresses.shipping": "Shipping",
+	"app.commerce-order.addresses.billing": "Billing",
+
+	"app.commerce-order.hint.adminApiOff": "The Shopify Admin API is disabled (see Commerce settings) — order edits cannot be written.",
+
+	"app.commerce-order.confirm.saveTitle": "Save changes to Shopify",
+	"app.commerce-order.confirm.saveMsg": "Write your changes to \"{name}\" to Shopify?",
+	"app.commerce-order.confirm.apply": "Save to Shopify",
+	"app.commerce-order.confirm.note": "The change is written to Shopify via the Admin API; the CMS mirror is re-ingested asynchronously by webhook.",
+
+	"app.commerce-order.statusbar.saving": "Saving to Shopify…",
+	"app.commerce-order.statusbar.unsaved": "Unsaved changes",
+	"app.commerce-order.statusbar.ready": "Saved",
+
+	"app.commerce-order.status.saved": "Saved to Shopify. The mirror follows via webhook.",
+
+	"app.commerce-order.dialog.title": "Unsaved Changes",
+	"app.commerce-order.dialog.body1": "You have unsaved changes to this order.",
+	"app.commerce-order.dialog.body2": "Do you want to save them to Shopify first?",
+	"app.commerce-order.dialog.discard": "Don't Save",
+
+	"app.commerce-order.err.loadFailed": "Could not load the order.",
+	"app.commerce-order.err.saveFailed": "Write to Shopify failed."
+}

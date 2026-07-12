@@ -16,15 +16,15 @@
     <!--
       Inventory-alert sweep. Fires on a short period
       (after a warm-up) and runs
-      sweepInventoryAlerts.groovy as the service user: it evaluates the items marked pending
+      the inventory-alert sweep task as the service user: it evaluates the items marked pending
       by the inventory_levels/update route (and by product onboarding), edge-triggers each
       against its effective threshold on the multi-location mirror total, and raises a
       Manual Inventory Check (inventory-alert-flow) on the ok→low transition.
 
       This timer is the base sweep heartbeat. The effective debounce window is
-      sweepDebounceSeconds in /etc/commerce/config/inventory-alert.yml (0 = every heartbeat):
+      the configured sweepDebounceSeconds (0 = every heartbeat):
       bursts of updates for the same item collapse into a single evaluation. The
-      unconfigured-threshold policy lives in the same yml.
+      unconfigured-threshold policy lives in the same configuration.
     -->
     <route id="commerce-inventory-alert-sweep" routeConfigurationId="commerce-inventory-alert-sweep-error-handler">
         <from uri="timer:commerce-inventory-alert-sweep?period=15000&amp;delay=60000"/>
@@ -32,6 +32,28 @@
         <setHeader name="runAs">
             <constant>commerce-service-user</constant>
         </setHeader>
+
+        <toD uri="cms:/etc/commerce/scripts/shopify/sweepInventoryAlerts.groovy"/>
+    </route>
+
+    <!--
+      Immediate drain: the inventory_levels/update route kicks this asynchronously
+      (via IntegrationAPI.sendAsync right after marking an item
+      pending), so the materialized total (commerce:available_total) and the alert evaluation run
+      within milliseconds instead of waiting for the next timer heartbeat. The sweep's cluster
+      lease coalesces a burst of kicks into a single drain; the timer above stays as a backstop.
+    -->
+    <route id="commerce-inventory-alert-sweep-kick" routeConfigurationId="commerce-inventory-alert-sweep-error-handler">
+        <from uri="direct:commerce-inventory-alert-sweep"/>
+
+        <choice>
+            <when>
+                <simple>${header.runAs} == null || ${header.runAs} == ''</simple>
+                <setHeader name="runAs">
+                    <constant>commerce-service-user</constant>
+                </setHeader>
+            </when>
+        </choice>
 
         <toD uri="cms:/etc/commerce/scripts/shopify/sweepInventoryAlerts.groovy"/>
     </route>

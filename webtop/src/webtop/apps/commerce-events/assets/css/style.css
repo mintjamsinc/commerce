@@ -1,0 +1,163 @@
+/* Commerce Events app — app-specific styles.
+ *
+ * Toolbar, status bar, inputs, buttons and theme tokens come from the shared
+ * webtop-app.css. These rules add the 3-pane event console (left filter sidebar,
+ * center list, right detail pane), the status pills and the toast — kept in step
+ * with commerce-oplog, which this layout mirrors. */
+
+:root {
+	--navbar-height: 2.5rem;
+	--statusbar-height: 1.75rem;
+}
+
+[v-cloak] { display: none !important; }
+#app { height: 100%; }
+
+/* ---- Toolbar / status bar ------------------------------------------------- */
+nav.nav-bar {
+	display: flex; align-items: center; gap: 0.5rem;
+	margin: -1rem -1rem 0; padding: 1rem 1.5rem 0.75rem;
+	color: var(--navbar-color) !important; white-space: nowrap; user-select: none;
+	position: relative; z-index: 10;
+}
+.nav-spacer { flex: 1; min-width: 1rem; }
+.toolbar-group {
+	display: inline-flex; align-items: center; gap: 0.5rem;
+	padding: 0.25rem 0.5rem;
+	background-color: var(--window-controls-bg);
+	border: 1px solid var(--window-controls-border-color);
+	border-radius: 9999px;
+}
+
+.status-bar {
+	display: flex; align-items: center; gap: 0.5rem; height: var(--statusbar-height);
+	margin: 0 -1rem -1rem; padding: 0 1rem; color: var(--navbar-color);
+	font-size: 11px; white-space: nowrap; user-select: none;
+}
+.status-group { display: inline-flex; align-items: center; gap: 0.25rem; }
+.status-item { padding: 0 0.5rem; }
+
+/* ---- Body: 3-pane (left filters / center list / right detail) ------------- */
+.content-body { display: flex; flex: 1; min-height: 0; position: relative; gap: 0.25rem; }
+
+.content-main {
+	display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0;
+	overflow: hidden;
+}
+
+/* Left filter sidebar — resizable (width applied inline, persisted per user). */
+.ops-sidebar {
+	flex: none; min-width: 0;
+	display: flex; flex-direction: column; gap: 1rem;
+	overflow-y: auto; min-height: 0;
+}
+
+/* Right detail pane — resizable (width applied inline, persisted per user). */
+.ops-detail {
+	flex: none; min-width: 16rem;
+	display: flex; flex-direction: column; overflow: hidden;
+	user-select: text;
+}
+
+/* Vertical drag handles — shared for the left sidebar + right detail edges. */
+.sidebar-resize-handle,
+.detail-resize-handle {
+	width: 4px;
+	cursor: col-resize;
+	background-color: transparent;
+	flex-shrink: 0;
+	position: relative;
+	z-index: 2;
+	transition: background-color 0.15s;
+}
+.sidebar-resize-handle:hover, .sidebar-resize-handle:active,
+.detail-resize-handle:hover, .detail-resize-handle:active { background-color: var(--primary-color); }
+
+/* ---- Sidebar form --------------------------------------------------------- */
+.property-group { display: flex; flex-direction: column; gap: 0.75rem; }
+.property-label { display: block; font-size: 12px; color: var(--text-soft-color); margin-bottom: 0.125rem; padding-left: 0.125rem; }
+.ops-field { min-width: 0; }
+.property-group > .wt-slim { align-self: flex-start; margin-top: 0.25rem; }
+
+/* ---- Center list ---------------------------------------------------------- */
+/* Header bar above the list (holds the bulk-replay button, right-aligned). */
+.ops-list-head {
+	display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem;
+	flex-shrink: 0; height: var(--navbar-height); padding: 0 0.75rem;
+	border-bottom: 1px solid var(--navbar-border-color);
+}
+
+/* Scroll container + rows (content-browser / BPM-console style). */
+.content-list { flex: 1; min-width: 0; min-height: 0; overflow: auto; }
+.content-list table { border-collapse: collapse; width: 100%; user-select: none; }
+.content-list table thead th { position: sticky; top: 0; z-index: 1; }
+.content-list th.text-start, .content-list td.text-start { text-align: left; }
+.content-list th.text-center, .content-list td.text-center { text-align: center; }
+.content-list .item { cursor: pointer; transition: background-color 0.15s; }
+.content-list .item:nth-child(even) { background-color: var(--item-even-bg); }
+.content-list .item:hover { background-color: var(--item-hover-bg) !important; }
+.content-list .item.item-selected {
+	background-color: var(--item-selected-bg) !important;
+	color: var(--item-selected-color) !important;
+}
+.content-list .item-empty td { padding: 1rem 0.5rem; text-align: center; color: var(--text-muted-color); }
+
+/* ---- Status pills (BPM-console sizing; primary / danger colors) ------------ */
+.ops-pill {
+	display: inline-flex; align-items: center;
+	height: 1.25rem; padding: 0 0.625rem;
+	border-radius: 9999px; font-size: 11px; font-weight: 700;
+	border: 1px solid transparent;
+	background: var(--window-controls-bg); color: var(--text-soft-color);
+}
+/* processed reads as primary; error reads as danger; received/other stay neutral. */
+.ops-pill.st-processed {
+	background-color: rgb(from var(--primary-color) r g b / 0.1);
+	color: var(--primary-color);
+	border-color: rgb(from var(--primary-color) r g b / 0.3);
+}
+.ops-pill.st-error {
+	background-color: rgb(from var(--danger-color) r g b / 0.1);
+	color: var(--danger-color);
+	border-color: rgb(from var(--danger-color) r g b / 0.3);
+}
+
+/* ---- Detail pane (BPM-console inspector layout) --------------------------- */
+.detail-panel-header {
+	display: flex; align-items: center; justify-content: space-between;
+	flex-shrink: 0; height: var(--navbar-height); padding: 0 1rem;
+	background-color: var(--navbar-bg); color: var(--navbar-color);
+	border-bottom: 1px solid var(--navbar-border-color);
+	white-space: nowrap; user-select: none;
+}
+.detail-panel-title { font-weight: 700; }
+.detail-panel-content { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+.detail-panel-empty {
+	flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+	padding: 1.5rem; color: var(--text-muted-color); text-align: center; gap: 0.5rem;
+}
+.detail-panel-empty i { font-size: 2rem; opacity: 0.5; }
+.detail-section-header {
+	display: flex; align-items: center; gap: 0.5rem; padding: 0.375rem 1rem;
+	font-size: 11px; font-weight: 700; text-transform: uppercase;
+	background-color: var(--section-header-bg); color: var(--section-header-color);
+	user-select: none;
+}
+.detail-section-body { display: flex; flex-direction: column; gap: 0.75rem; padding: 0.75rem 1rem; }
+.detail-prop { display: flex; flex-direction: column; gap: 0.125rem; }
+.detail-prop-label { font-size: 12px; color: var(--text-soft-color); }
+.detail-prop-value { word-break: break-word; }
+.detail-prop-value.muted { color: var(--text-muted-color); }
+.ops-detail-error { color: var(--danger-color); white-space: pre-wrap; }
+
+/* Spinner / spin. */
+.spin { animation: events-spin 0.8s linear infinite; }
+@keyframes events-spin { to { transform: rotate(360deg); } }
+
+/* Transient toast. */
+.commerce-toast {
+	position: fixed; bottom: 2.75rem; left: 50%; transform: translateX(-50%);
+	padding: 0.55rem 1rem; border-radius: 0.5rem; background: #1f2937; color: #f8fafc;
+	font-size: 0.8125rem; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25); z-index: 1000; max-width: 80%;
+}
+.commerce-toast.error { background: #dc2626; color: #fff; }

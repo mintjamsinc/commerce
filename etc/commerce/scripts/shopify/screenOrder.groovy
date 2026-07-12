@@ -1,8 +1,8 @@
 // Screen a Shopify order against the configured review rules.
 //
 // First step of order-review-flow.bpmn. Reads the order JSON (delivered via the
-// orders/paid webhook) from the repository, evaluates it against the rules in
-// /etc/commerce/config/order-review.yml, and decides whether the order needs a
+// orders/paid webhook) from the repository, evaluates it against the
+// configured order-review rules, and decides whether the order needs a
 // human review. The decision (and the human-readable reasons behind it) are
 // exposed as process variables so the gateway, the review form, and the
 // notification all read the same source of truth.
@@ -19,12 +19,11 @@
 //                      {"code":"addressMismatch","params":{"billing":"JP","shipping":"US"}}]
 //                     Each consumer (review form / notification) renders these in
 //                     its own locale context; we deliberately do NOT pre-render
-//                     text here. See commerce.ReviewReasons.
+//                     text here.
 //
 // Screening is fail-open: a missing/unparseable config or order is logged and
 // treated as "no review required" rather than blocking or flooding operators.
 
-// Shared commerce helpers (see /content/WEB-INF/classes/commerce/).
 import commerce.Money
 import commerce.ReviewReasons
 

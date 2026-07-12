@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<camel>
+
+    <routeConfiguration id="shopify-order-updated-error-handler">
+        <onException>
+            <exception>java.lang.Exception</exception>
+            <handled>
+                <constant>true</constant>
+            </handled>
+            <redeliveryPolicy maximumRedeliveries="3" redeliveryDelay="5000"/>
+            <log message="Shopify order updated error [${exchangeId}]: ${exception.message} [file: ${header.orderPath}]"
+                 loggingLevel="ERROR"/>
+
+            <!-- Record processing health (error). Unlike order-paid this handler
+                 does NOT set commerce:status=error or move the file to the error
+                 folder: orders/updated is a mirror refresh and must never disturb
+                 the integration lifecycle owned by the review/fulfil/cancel flow. -->
+            <setHeader name="health_group">
+                <constant>route</constant>
+            </setHeader>
+            <setHeader name="health_name">
+                <simple>${header.shopify_topic}</simple>
+            </setHeader>
+            <setHeader name="health_ok">
+                <constant>false</constant>
+            </setHeader>
+            <toD uri="cms:/etc/commerce/scripts/shopify/recordHealth.groovy?inputs=health_*,received_at"/>
+        </onException>
+    </routeConfiguration>
+
+    <!--
+      Bespoke orders/updated ingestion. Shopify emits orders/updated whenever an
+      order's own data changes — including the note / tags / customAttributes our
+      order editor writes back through the Admin API (ShopifyWrite.updateOrder).
+      This route RE-UPSERTS the order mirror so those edits round-trip into the
+      JCR body (like customers/update does), and the mirror-derived core props
+      (total_price, source_status, …) stay fresh.
+
+      It is deliberately a mirror-only refresh: it does NOT set commerce:status,
+      does NOT start order-review-flow and does NOT run backorder detection, so
+      the integration processing lifecycle (received → … → fulfilled/cancelled),
+      owned by the review/fulfil/cancel workflow, is left completely untouched.
+      Idempotent: a duplicate delivery simply rewrites the same body.
+    -->
+    <route id="shopify-order-updated" routeConfigurationId="shopify-order-updated-error-handler">
+        <from uri="direct:shopify-order-updated"/>
+
+        <!-- Include headers for history tracking -->
+        <setHeader name="mi:history.header.includes">
+            <constant>commerce:*</constant>
+        </setHeader>
+
+        <!-- Inherit the caller's identity from the ingest core (the service user
+             for webhook traffic, or the operator who replayed the event); fall back
+             to the service user when none was supplied. -->
+        <choice>
+            <when>
+                <simple>${header.runAs} == null || ${header.runAs} == ''</simple>
+                <setHeader name="runAs">
+                    <constant>commerce-service-user</constant>
+                </setHeader>
+            </when>
+        </choice>
+
+        <!-- Set business key for history tracking (the order ID) -->
+        <setHeader name="mi:history.businessKey">
+            <jsonpath>$.id</jsonpath>
+        </setHeader>
+
+        <!-- Preserve the raw payload: the path-resolve script step below can
+             replace the exchange body with its return value, so keep the order
+             JSON in a header and restore it before the store. -->
+        <setHeader name="order_payload">
+            <simple>${body}</simple>
+        </setHeader>
+
+        <setHeader name="order_id">
+            <jsonpath>$.id</jsonpath>
+        </setHeader>
+
+        <!-- Resolve the EXISTING mirror node path (the order store is nested by the
+             PAID month, so a date:now-derived path would create a duplicate node
+             for an order updated in a later month). Falls back to the current-month
+             path only for a brand-new order never captured by orders/paid. -->
+        <toD uri="cms:/etc/commerce/scripts/resolveOrderPath.groovy?inputs=order_id&amp;outputs=orderPath"/>
+
+        <!-- Restore the raw order JSON as the body for the store below. -->
+        <setBody>
+            <simple>${header.order_payload}</simple>
+        </setBody>
+
+        <!-- Save raw JSON to JCR (order MIME so the node keeps launching the editor) -->
+        <toD uri="cms:store?mimeType=application/vnd.mintjams.commerce.order%2Bjson&amp;path=${header.orderPath}"/>
+
+        <!-- Refresh the mirror-derived core props from the updated payload. These
+             mirror Shopify's own state; commerce:status (our processing lifecycle)
+             is intentionally NOT among them, so the existing lifecycle property is
+             left untouched (cms:setProperties only writes the headers present). -->
+        <setHeader name="commerce:order_id">
+            <jsonpath>$.id</jsonpath>
+        </setHeader>
+        <setHeader name="commerce:customer_email">
+            <jsonpath>$.contact_email</jsonpath>
+        </setHeader>
+        <!-- Customer id (stable, GDPR-durable). A mirror refresh must re-set it or a
+             later edit would drop the customer facet axis, re-diverging from bulk.
+             suppressExceptions omits it for guest orders. -->
+        <setHeader name="commerce:customer_id">
+            <jsonpath suppressExceptions="true">$.customer.id</jsonpath>
+        </setHeader>
+        <setHeader name="commerce:total_price">
+            <jsonpath>$.total_price</jsonpath>
+        </setHeader>
+        <setHeader name="commerce:currency">
+            <jsonpath>$.currency</jsonpath>
+        </setHeader>
+        <!-- Base-currency amount: Shopify's own conversion of the order
+             total to the shop currency (total_price_set.shop_money). Typed
+             Decimal so cross-currency aggregation is a property sum. -->
+        <setHeader name="commerce:total_price_base">
+            <jsonpath suppressExceptions="true">$.total_price_set.shop_money.amount</jsonpath>
+        </setHeader>
+        <setHeader name="commerce:base_currency">
+            <jsonpath suppressExceptions="true">$.total_price_set.shop_money.currency_code</jsonpath>
+        </setHeader>
+        <setHeader name="commerce:order_number">
+            <jsonpath>$.order_number</jsonpath>
+        </setHeader>
+        <!-- Order date (created_at) — the Date index axis for sales aggregation.
+             Re-set on refresh so an edit never reverts it. -->
+        <setHeader name="commerce:ordered_at">
+            <jsonpath>$.created_at</jsonpath>
+        </setHeader>
+        <!-- commerce:source_status mirrors Shopify's business status for the order
+             (financial_status, e.g. paid / pending / refunded). It is the order's
+             own state in the source system, NOT our processing state. -->
+        <setHeader name="commerce:source_status">
+            <jsonpath>$.financial_status</jsonpath>
+        </setHeader>
+
+        <!-- Normalize property types (money is Decimal, counters are Long) -->
+        <toD uri="transform:toDecimal?targets=commerce:total_price,commerce:total_price_base"/>
+        <toD uri="transform:toLong?targets=commerce:order_number"/>
+        <!-- ordered_at as a real Date so xs:dateTime range/order-by works. -->
+        <toD uri="transform:toDate?targets=commerce:ordered_at"/>
+        <!-- Shopify entity ids are String (equality/lookup only, never
+             range-queried, and can exceed a UI-safe integer). The jsonpath $.id
+             yields a JSON number, so coerce it to String before persist. customer_id
+             gets the same String treatment; an absent guest customer_id is not written.
+             NB: order_number stays Long above - it is a real numeric value. -->
+        <toD uri="transform:toString?targets=commerce:order_id,commerce:customer_id"/>
+
+        <!-- Write metadata to JCR node properties (commerce:status excluded) -->
+        <toD uri="cms:setProperties?path=${header.orderPath}&amp;includes=commerce:*"/>
+
+        <!-- Enqueue the order for a sales-fact recompute so an edit re-materializes the fact
+             (components / source_status / denormalized dims stay converged). -->
+        <toD uri="cms:/etc/commerce/scripts/markSalesPending.groovy?inputs=order_id"/>
+
+        <log message="Order ${header.order_id} mirror refreshed at ${header.orderPath} (${header.shopify_topic})"
+             loggingLevel="INFO"/>
+
+        <!-- Record processing health (success): received_at -> completion latency. -->
+        <setHeader name="health_group">
+            <constant>route</constant>
+        </setHeader>
+        <setHeader name="health_name">
+            <simple>${header.shopify_topic}</simple>
+        </setHeader>
+        <setHeader name="health_ok">
+            <constant>true</constant>
+        </setHeader>
+        <toD uri="cms:/etc/commerce/scripts/shopify/recordHealth.groovy?inputs=health_*,received_at"/>
+    </route>
+
+</camel>

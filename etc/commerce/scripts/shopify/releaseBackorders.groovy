@@ -1,4 +1,4 @@
-// Release covered backorders when stock arrives (feature #12).
+// Release covered backorders when stock arrives.
 //
 // Invoked from the inventory_levels/update Camel route (inventory-level.xml) as the
 // service user, right after the new per-location level is recorded. It looks at the

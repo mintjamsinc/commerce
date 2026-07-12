@@ -28,8 +28,8 @@ Shopify の在庫が設定した閾値を下回ったら、担当者の手動レ
    その品目を「評価待ち（pending）」としてマークする。
 4. 短周期スイープ（約 15 秒ごと）が pending を評価する。
    - 全ロケーションの在庫を合計（ミラー総量）し、バリアント別の閾値と比較。
-   - **エッジトリガ**: 「割れた瞬間（ok → low）」でのみ「在庫レビュー
-     （Manual Inventory Check）」タスクを起票する。割れ続けている間（low → low）は
+   - **エッジトリガ**: 「割れた瞬間（ok → low）」でのみ「在庫確認＋発注
+     （Inventory & Reorder Review）」タスクを起票する。割れ続けている間（low → low）は
      再起票しない。回復（low → ok）後に再び割れたら、また鳴る。
 5. タスク作成時に、有効化済みの通知チャネルへ通知が飛ぶ。
 6. 担当者は Webtop の **Tasks** アプリでタスクを開き、確認・対応する。
@@ -105,13 +105,14 @@ Shopify 管理画面（またはアプリのスコープ設定）で、以下の
 1 つのタスク作成イベントから、有効なすべてのチャネルへ同報されます。
 
 ### 2-4. 閾値の方針（任意）
-- `etc/commerce/config/inventory-rules.yml`: バリアント別の**有効閾値**を解決するルール。
-  優先順位は **手動上書き → ルール → default → なし（未監視）**。出荷時は `default: 5` と
-  サンプルルールを同梱しています（＝最初から閾値が解決されます）。
+- 閾値は運用者が登録する**固定の発注点（個数）**で、システムが導出・書き換えすることはありません。
+  プランニング層（[planning.md](planning.md)）が解決します:
+  **バリアント別の計画値（`pim.planning`）→ `planning.yml` の `defaults.threshold` → なし（監視対象外）**。
+  出荷時は `defaults.threshold` を未設定にしており、運用者が商品ごとに閾値を設定してから
+  監視が始まります（`defaults.threshold` に数値を入れれば一律のベースラインで即監視）。
 - `etc/commerce/config/inventory-alert.yml`:
   - `unconfiguredPolicy` — 有効閾値が解決できない品目の扱い。
-    `prompt`（既定: 「在庫閾値の設定」タスクを起票）/ `default`（`defaultThreshold` で監視）/
-    `silent`（監視しない）。
+    `prompt`（既定: 「在庫閾値の設定」タスクを起票）/ `silent`（監視しない）。
   - `sweepDebounceSeconds` — スイープのデバウンス秒（既定 0 ＝ 約 15 秒のハートビートごと）。
 
 ---
@@ -143,11 +144,15 @@ light/dark テーマに自動追従します。タスクは「Claim（自分に�
 - 在庫（全ロケーション合計）が閾値を下回ると、以降の評価でレビュータスクが起こるようになります。
 - 「Save thresholds & complete」で保存し、タスクを完了します。
 
-### 4-2. 在庫レビュー（Manual Inventory Check）
+### 4-2. 在庫確認＋発注（Inventory & Reorder Review）
 - 在庫が閾値を下回った商品で表示されます。
-- variant ごとの在庫数（**全ロケーション合計**）・有効閾値・アラート状況を確認できます。
-- 必要に応じてメモを残し、「View on Shopify」で管理画面へ移動できます。
-- 対応が済んだら「Mark as reviewed」でタスクを完了します。
+- variant ごとに、現在の在庫数（**全ロケーション合計**）・固定閾値・**前回の発注（日付＋数量）**
+  を参考情報として確認できます。
+- 発注する数量を variant ごとに入力します（初期値は空欄。**システムによる推奨数量はなく**、
+  運用者が判断します）。「View on Shopify」で管理画面へ移動できます。
+- タスクを完了すると、入力した数量が Shopify に**入荷予定（Incoming）在庫**として記録されます
+  （Admin API 必須）。数量 0 は何も書き込みません。入荷分は後日 `inventory_levels/update`
+  Webhook 経由で在庫に反映されます。
 
 ---
 
@@ -174,7 +179,7 @@ light/dark テーマに自動追従します。タスクは「Claim（自分に�
 |---|---|
 | そもそも何も起きない | Shop の Webhook secret / Admin API 4 項目が設定済みか / Shopify 側で `inventory_levels/update`・`products/*` を購読済みか |
 | 通知が来ない | Notifications で対象チャネルが「Enable」ON か / 接続先（URL 等）が正しいか / サーバログに `notifyTaskCreated` の警告が無いか |
-| レビュータスクが起きない | その商品に閾値が解決されるか（`inventory-rules.yml` の default / ルール / 手動）/ 在庫（全ロケーション合計）が閾値を下回っているか / 直近で既に low 判定済みでないか（エッジトリガ） |
+| レビュータスクが起きない | その商品に閾値が解決されるか（バリアント別計画値 / `planning.yml` の default）/ 在庫（全ロケーション合計）が閾値を下回っているか / 直近で既に low 判定済みでないか（エッジトリガ） |
 | 同じ商品でタスクが乱立 | 再入ガードが効いているか（ログに "already running ... not starting another"） |
 | フォームが「Tasks アプリから開いてください」 | フォームは Tasks アプリ経由で開く前提（単体 URL では動作しません） |
 | Commerce アプリで保存できない | content サービスが利用可能か / サーバログに保存（マルチパートアップロード）のエラーが無いか / Admin API の接続 4 項目がすべて入力済みか（部分構成は保存不可） |

@@ -78,9 +78,9 @@
 (function (global) {
 	'use strict';
 
-	// Envelope discriminator shared with the host (`app.ts`). Messages that do
-	// not carry this key are ignored — the form's window receives unrelated
-	// postMessages too (e.g. from browser extensions).
+	// Envelope discriminator shared with the host application's message dispatcher.
+	// Messages that do not carry this key are ignored — the form's window
+	// receives unrelated postMessages too (e.g. from browser extensions).
 	var RPC_KEY = '__tasksRpc';
 
 	// `ignoreTag: true` keeps angle-bracket markup in a message as literal text
@@ -328,10 +328,9 @@
 		// --------------------------------------------------------------
 		// Named RPC surface — the complete host dispatch table
 		// --------------------------------------------------------------
-		// These mirror `dispatchRpc` in the Tasks host (`app.ts`). The host
-		// enforces mode (start vs task) and ACLs server-side; callers get a
-		// rejected promise when an operation is not permitted in the current
-		// context.
+		// These mirror the Tasks host's RPC dispatch table. The host enforces
+		// mode (start vs task) and ACLs server-side; callers get a rejected
+		// promise when an operation is not permitted in the current context.
 
 		// ----- Identity -----
 		/** The signed-in user: `{ id, displayName, groups }`. */
@@ -381,10 +380,44 @@
 		// ----- CMS read/write (server-side JCR ACLs apply) -----
 		/** Fetch a node (serialized) by path. */
 		getNode: function (path) { return this.call('getNode', { path: path }); },
-		/** List a node's children. @param {{first?: number, after?: string}} [opts] */
+		/**
+		 * List a node's children.
+		 *
+		 * The host answers with a GraphQL-style connection
+		 * (`{ edges: [{ node, cursor }], pageInfo, totalCount }`); the SDK NORMALIZES it
+		 * to `{ nodes, pageInfo, totalCount }` so a form consumes a plain node array —
+		 * each node in the same serialized shape `getNode()` returns
+		 * (`{ path, name, …, properties }`) — and never re-derives the edges→nodes
+		 * unwrapping. Use `pageInfo.endCursor` + `hasNextPage` with `opts.after` to page.
+		 *
+		 * @param {string} path
+		 * @param {{first?: number, after?: string}} [opts]
+		 * @returns {Promise<{ nodes: object[], pageInfo: object, totalCount: number }>}
+		 */
 		listChildren: function (path, opts) {
 			opts = opts || {};
-			return this.call('listChildren', { path: path, first: opts.first, after: opts.after });
+			return this.call('listChildren', { path: path, first: opts.first, after: opts.after })
+				.then(function (conn) {
+					// Defensive across shapes: a connection ({edges}), an already-normalized
+					// {nodes}, or a bare array all collapse to a plain node array.
+					var nodes;
+					if (Array.isArray(conn)) {
+						nodes = conn;
+					} else if (conn && Array.isArray(conn.nodes)) {
+						nodes = conn.nodes;
+					} else if (conn && Array.isArray(conn.edges)) {
+						nodes = conn.edges
+							.map(function (e) { return e ? e.node : null; })
+							.filter(function (n) { return n != null; });
+					} else {
+						nodes = [];
+					}
+					return {
+						nodes: nodes,
+						pageInfo: (conn && conn.pageInfo) || {},
+						totalCount: (conn && typeof conn.totalCount === 'number') ? conn.totalCount : nodes.length,
+					};
+				});
 		},
 		/**
 		 * Write a single scalar (string/number/boolean) property on a node.
@@ -509,6 +542,84 @@
 				return d.toLocaleString(locale, opts);
 			} catch (_) {
 				return d.toLocaleString(locale);
+			}
+		},
+
+		/** Locale + time-zone aware DATE ONLY (no time), or '' for empty/unparseable input. */
+		formatDateOnly: function (value, localization) {
+			if (!value) return '';
+			var d = new Date(value);
+			if (Number.isNaN(d.getTime())) return '';
+			var loc = localization || {};
+			var locale = loc.locale || undefined;
+			var opts = { year: 'numeric', month: 'numeric', day: 'numeric' };
+			if (loc.timeZone) opts.timeZone = loc.timeZone;
+			try {
+				return d.toLocaleDateString(locale, opts);
+			} catch (_) {
+				return d.toLocaleDateString(locale);
+			}
+		},
+
+		// --------------------------------------------------------------
+		// Date-only ⇄ UTC instant
+		// --------------------------------------------------------------
+		// The operator enters a DATE (e.g. order date / receipt date) in THEIR time zone;
+		// the wire / storage value is a ms-precision UTC ISO 8601 INSTANT (the start of
+		// that local day). Date-only in, instant out — so lead-time (received − ordered)
+		// is a real duration and the value round-trips back to the same local date for
+		// display.
+
+		/** `<input type="date">` value ("YYYY-MM-DD") for TODAY in the viewer's zone. */
+		todayLocalDate: function (localization) {
+			return this.instantToLocalDate(new Date().toISOString(), localization);
+		},
+
+		/** A UTC instant → the local calendar date "YYYY-MM-DD" in the viewer's zone. */
+		instantToLocalDate: function (value, localization) {
+			if (!value) return '';
+			var d = new Date(value);
+			if (Number.isNaN(d.getTime())) return '';
+			var loc = localization || {};
+			var opts = { year: 'numeric', month: '2-digit', day: '2-digit' };
+			if (loc.timeZone) opts.timeZone = loc.timeZone;
+			try {
+				// en-CA renders as YYYY-MM-DD, which <input type="date"> expects.
+				return new Intl.DateTimeFormat('en-CA', opts).format(d);
+			} catch (_) {
+				return d.toISOString().slice(0, 10);
+			}
+		},
+
+		/** A local date "YYYY-MM-DD" (viewer's zone) → the ms-precision UTC ISO instant of
+		 *  that day's START in that zone. '' for a blank / malformed date. */
+		localDateToInstant: function (dateStr, localization) {
+			if (!dateStr) return '';
+			var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateStr).trim());
+			if (!m) return '';
+			var loc = localization || {};
+			var utcMidnight = Date.UTC(+m[1], +m[2] - 1, +m[3], 0, 0, 0);
+			// Shift the naive-UTC wall date by the zone's offset AT that date (DST-correct).
+			var offsetMs = loc.timeZone ? this._tzOffsetMs(loc.timeZone, utcMidnight) : 0;
+			return new Date(utcMidnight - offsetMs).toISOString();
+		},
+
+		/** Offset (ms) of `timeZone` from UTC at instant `utcMs` — positive east of UTC. */
+		_tzOffsetMs: function (timeZone, utcMs) {
+			try {
+				var dtf = new Intl.DateTimeFormat('en-US', {
+					timeZone: timeZone, hour12: false,
+					year: 'numeric', month: '2-digit', day: '2-digit',
+					hour: '2-digit', minute: '2-digit', second: '2-digit',
+				});
+				var parts = dtf.formatToParts(new Date(utcMs));
+				var map = {};
+				for (var i = 0; i < parts.length; i++) map[parts[i].type] = parts[i].value;
+				var hour = (map.hour === '24') ? 0 : +map.hour;
+				var asUTC = Date.UTC(+map.year, +map.month - 1, +map.day, hour, +map.minute, +map.second);
+				return asUTC - utcMs;
+			} catch (_) {
+				return 0;
 			}
 		},
 

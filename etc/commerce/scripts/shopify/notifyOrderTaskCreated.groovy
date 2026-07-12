@@ -6,25 +6,23 @@
 // receives the current task as the `task` global (a DelegateTask).
 //
 // The message summarizes the order and lists WHY it was flagged for review
-// (the reasons produced by screenOrder.groovy and carried on the process
+// (the reasons produced by the order-screening step and carried on the process
 // variable `reviewReasons`). The order details themselves are read straight
-// from the order resource - the same source of truth used by screenOrder - so
-// the notification and the review form always agree.
+// from the order resource - the same source of truth used by the order-screening
+// step - so the notification and the review form always agree.
 //
-// Notification destinations are shared with the inventory alert workflow and
-// read from:
-//   /etc/commerce/config/notifications.yml
+// Notification destinations are shared with the inventory alert workflow.
 //
 // Delivery goes to every enabled channel in the shared registry - Slack,
-// Discord, Teams, LINE, generic webhook and email - via commerce.Notifications
-// (see Notifications.registry()). Each channel renders the same message in its
+// Discord, Teams, LINE, generic webhook and email - via commerce.Notifications.
+// Each channel renders the same message in its
 // own format using the JDK built-in java.net.http.HttpClient / SMTP client (no
 // extra JAR required).
 //
 // IMPORTANT: a notification failure must never break the business process, so
 // every external call is wrapped defensively and only logged on error.
 
-// Delivery is shared and pluggable (see /content/WEB-INF/classes/commerce/Notifications.groovy).
+// Delivery is shared and pluggable across channels.
 import commerce.Notifications
 import commerce.NotificationMessage
 import commerce.ReviewReasons
@@ -37,7 +35,7 @@ def orderPath = Notifications.taskVar(task, "orderPath")
 def orderID = Notifications.taskVar(task, "order_id")
 
 // Reasons are a JSON array string of structured descriptors set by
-// screenOrder.groovy. Rendered to operational English here (notifications have
+// the order-screening step. Rendered to operational English here (notifications have
 // no per-user locale); the review form renders the same descriptors localized.
 def reasons = []
 try {
@@ -106,8 +104,7 @@ try {
 }
 
 // --- Build the notification message ------------------------------------------
-// One channel-agnostic message; each enabled channel renders it in its own
-// format (see commerce.NotificationMessage / commerce.Notifications).
+// One channel-agnostic message; each enabled channel renders it in its own format.
 def message = NotificationMessage.create()
     .title("🧾", "Order review workflow")
     .status("⚠", "Order review required")

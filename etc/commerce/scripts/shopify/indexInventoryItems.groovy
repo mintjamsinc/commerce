@@ -66,6 +66,10 @@ variants.each { v ->
         try {
             def res = Jcr.getOrCreateFile(repositorySession, path)
             res.write(Jcr.toJson(doc))
+            // Queryable identity axes (auto-indexed): lets consumers resolve
+            // variant -> item or facet by product without parsing the body.
+            res.setProperty("commerce:product_id", productId)
+            if (doc.variant_id != null) res.setProperty("commerce:variant_id", doc.variant_id.toString())
             repositorySession.commit()
             indexed++
             break

@@ -1,0 +1,81 @@
+{
+	"app.commerce-customer.title": "コマース顧客",
+
+	"app.commerce-customer.toolbar.save": "Shopify に保存",
+	"app.commerce-customer.toolbar.revert": "変更を破棄",
+	"app.commerce-customer.toolbar.reload": "ミラーから再読み込み",
+
+	"app.commerce-customer.section.overview": "概要",
+	"app.commerce-customer.section.marketing": "マーケティングと税",
+	"app.commerce-customer.section.tags": "タグ",
+	"app.commerce-customer.section.note": "メモ",
+	"app.commerce-customer.section.addresses": "住所",
+
+	"app.commerce-customer.state.loading": "顧客を読み込み中…",
+	"app.commerce-customer.state.empty": "顧客を開くと、その顧客に関するすべてをここで確認・編集できます。",
+
+	"app.commerce-customer.customer.idFallback": "顧客 #{id}",
+
+	"app.commerce-customer.field.email": "メールアドレス",
+	"app.commerce-customer.field.phone": "電話番号",
+	"app.commerce-customer.field.ordersCount": "注文数",
+	"app.commerce-customer.field.totalSpent": "累計購入額",
+	"app.commerce-customer.field.state": "アカウント状態",
+	"app.commerce-customer.field.verifiedEmail": "メール確認済み",
+	"app.commerce-customer.field.marketing": "メールマーケティング",
+	"app.commerce-customer.field.createdAt": "顧客登録日",
+
+	"app.commerce-customer.value.yes": "はい",
+	"app.commerce-customer.value.no": "いいえ",
+
+	"app.commerce-customer.overview.groupTitle": "プロフィールとウォレット",
+	"app.commerce-customer.overview.hint": "Shopify 上の顧客の読み取り専用ミラーです。編集は「マーケティングと税」「タグ」「メモ」で行います。変更は Shopify に書き込まれ、ミラーは Webhook 経由で追従します。",
+
+	"app.commerce-customer.marketing.groupTitle": "マーケティングと税",
+	"app.commerce-customer.marketing.hint": "この 2 つは Shopify が所有するフィールドです。保存時に Shopify（Admin API）へ書き込み、ミラーは Webhook 経由で追従します。",
+	"app.commerce-customer.marketing.consentLabel": "メールマーケティングに登録",
+	"app.commerce-customer.marketing.consentHint": "オンにすると、この顧客はメールマーケティングに同意します（シングルオプトイン）。オフにすると解除します。",
+	"app.commerce-customer.marketing.taxExemptLabel": "免税",
+	"app.commerce-customer.marketing.taxExemptHint": "オンにすると、この顧客は注文の税が免除されます。",
+	"app.commerce-customer.marketing.state.subscribed": "登録済み",
+	"app.commerce-customer.marketing.state.unsubscribed": "解除済み",
+	"app.commerce-customer.marketing.state.not_subscribed": "未登録",
+	"app.commerce-customer.marketing.state.pending": "保留中",
+
+	"app.commerce-customer.tags.groupTitle": "タグ",
+	"app.commerce-customer.tags.hint": "顧客の Shopify タグです。VIP は単なるタグです。ここで追加して顧客に印を付けます。保存でタグを Shopify に書き込みます。",
+	"app.commerce-customer.tags.placeholder": "タグを追加（カンマ区切り可）して Enter…",
+	"app.commerce-customer.tags.add": "追加",
+	"app.commerce-customer.tags.remove": "タグを削除",
+	"app.commerce-customer.tags.empty": "タグはまだありません。",
+
+	"app.commerce-customer.note.groupTitle": "メモ",
+	"app.commerce-customer.note.hint": "Shopify の顧客に保存される内部メモです。",
+	"app.commerce-customer.note.placeholder": "この顧客に関する内部メモ…",
+
+	"app.commerce-customer.addresses.groupTitle": "住所",
+	"app.commerce-customer.addresses.hint": "顧客の住所録（読み取り専用）です。デフォルト住所には印が付きます。",
+	"app.commerce-customer.addresses.default": "デフォルト",
+	"app.commerce-customer.addresses.empty": "登録された住所はありません。",
+
+	"app.commerce-customer.hint.adminApiOff": "Shopify Admin API が無効です（コマース設定を確認）。顧客の編集は書き込めません。",
+
+	"app.commerce-customer.confirm.saveTitle": "変更を Shopify に保存",
+	"app.commerce-customer.confirm.saveMsg": "「{name}」への変更を Shopify に書き込みますか？",
+	"app.commerce-customer.confirm.apply": "Shopify に保存",
+	"app.commerce-customer.confirm.note": "変更は Admin API 経由で Shopify に書き込まれ、CMS ミラーは Webhook により非同期で再取り込みされます。",
+
+	"app.commerce-customer.statusbar.saving": "Shopify に保存中…",
+	"app.commerce-customer.statusbar.unsaved": "未保存の変更があります",
+	"app.commerce-customer.statusbar.ready": "保存済み",
+
+	"app.commerce-customer.status.saved": "Shopify に保存しました。ミラーは Webhook 経由で追従します。",
+
+	"app.commerce-customer.dialog.title": "未保存の変更",
+	"app.commerce-customer.dialog.body1": "この顧客に未保存の変更があります。",
+	"app.commerce-customer.dialog.body2": "先に Shopify に保存しますか？",
+	"app.commerce-customer.dialog.discard": "保存しない",
+
+	"app.commerce-customer.err.loadFailed": "顧客を読み込めませんでした。",
+	"app.commerce-customer.err.saveFailed": "Shopify への書き込みに失敗しました。"
+}

@@ -127,7 +127,15 @@ function makeApp(name) {
 export default [
   makeApp('commerce'),
   makeApp('commerce-dashboard'),
-  makeApp('commerce-pim'),
-  makeApp('commerce-ops'),
-  makeApp('commerce-publish'),
+  makeApp('commerce-product'),
+  makeApp('commerce-products'),
+  makeApp('commerce-customer'),
+  makeApp('commerce-customers'),
+  makeApp('commerce-order'),
+  makeApp('commerce-orders'),
+  makeApp('commerce-reports'),
+  makeApp('commerce-oplog'),
+  makeApp('commerce-import'),
+  makeApp('commerce-reconcile'),
+  makeApp('commerce-events'),
 ];

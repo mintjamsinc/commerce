@@ -1,0 +1,243 @@
+/* Commerce Reports app — app-specific styles.
+ *
+ * Toolbar, status bar, inputs, buttons and theme tokens come from the shared
+ * webtop-app.css. These rules add the 3-pane sales console (left period sidebar,
+ * center list, right detail pane) and the toast — kept in step with commerce-oplog,
+ * which this layout mirrors. */
+
+:root {
+	--navbar-height: 2.5rem;
+	--statusbar-height: 1.75rem;
+}
+
+[v-cloak] { display: none !important; }
+#app { height: 100%; }
+
+/* ---- Toolbar / status bar ------------------------------------------------- */
+nav.nav-bar {
+	display: flex; align-items: center; gap: 0.5rem;
+	margin: -1rem -1rem 0; padding: 1rem 1.5rem 0.75rem;
+	color: var(--navbar-color) !important; white-space: nowrap; user-select: none;
+	position: relative; z-index: 10;
+}
+.nav-spacer { flex: 1; min-width: 1rem; }
+.toolbar-group {
+	display: inline-flex; align-items: center; gap: 0.5rem;
+	padding: 0.25rem 0.5rem;
+	background-color: var(--window-controls-bg);
+	border: 1px solid var(--window-controls-border-color);
+	border-radius: 9999px;
+}
+
+.status-bar {
+	display: flex; align-items: center; gap: 0.5rem; height: var(--statusbar-height);
+	margin: 0 -1rem -1rem; padding: 0 1rem; color: var(--navbar-color);
+	font-size: 11px; white-space: nowrap; user-select: none;
+}
+.status-group { display: inline-flex; align-items: center; gap: 0.25rem; }
+.status-item { padding: 0 0.5rem; }
+
+/* ---- Body: 3-pane (left period / center list / right detail) -------------- */
+.content-body { display: flex; flex: 1; min-height: 0; position: relative; gap: 0.25rem; }
+
+.content-main {
+	display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0;
+	overflow: hidden;
+}
+
+/* Left filter sidebar — resizable (width applied inline, persisted per user). */
+.ops-sidebar {
+	flex: none; min-width: 0;
+	display: flex; flex-direction: column; gap: 1rem;
+	overflow-y: auto; min-height: 0;
+}
+
+/* Right detail pane — resizable (width applied inline, persisted per user). */
+.ops-detail {
+	flex: none; min-width: 16rem;
+	display: flex; flex-direction: column; overflow: hidden;
+	user-select: text;
+}
+
+/* Vertical drag handles — shared for the left sidebar + right detail edges. */
+.sidebar-resize-handle,
+.detail-resize-handle {
+	width: 4px;
+	cursor: col-resize;
+	background-color: transparent;
+	flex-shrink: 0;
+	position: relative;
+	z-index: 2;
+	transition: background-color 0.15s;
+}
+.sidebar-resize-handle:hover, .sidebar-resize-handle:active,
+.detail-resize-handle:hover, .detail-resize-handle:active { background-color: var(--primary-color); }
+
+/* ---- Sidebar form --------------------------------------------------------- */
+.property-group { display: flex; flex-direction: column; gap: 0.75rem; }
+.property-label { display: block; font-size: 12px; color: var(--text-soft-color); margin-bottom: 0.125rem; padding-left: 0.125rem; }
+.ops-field { min-width: 0; }
+.property-group > .wt-slim { align-self: flex-start; margin-top: 0.25rem; }
+
+/* ---- Center list ---------------------------------------------------------- */
+/* Header bar above the list (holds the CSV download button, right-aligned). */
+.ops-list-head {
+	display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem;
+	flex-shrink: 0; height: var(--navbar-height); padding: 0 0.75rem;
+	border-bottom: 1px solid var(--navbar-border-color);
+}
+
+/* ---- Summary header (totals block above the daily table) ------------------- */
+/* The four sales metrics + orders/AOV/median as small tiles, then the
+ * self-describing population line and the partial-breakdown warning. */
+.ops-summary {
+	flex-shrink: 0; padding: 0.625rem 0.75rem;
+	border-bottom: 1px solid var(--navbar-border-color);
+	display: flex; flex-direction: column; gap: 0.5rem;
+}
+.ops-summary-tiles { display: flex; flex-wrap: wrap; gap: 0.375rem 1.5rem; }
+.ops-summary-tile { display: flex; flex-direction: column; gap: 0.125rem; min-width: 0; }
+.ops-summary-tile-label { font-size: 11px; color: var(--text-soft-color); white-space: nowrap; }
+.ops-summary-tile-value { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Secondary line under a tile value (e.g. the "incl. tax" split of the returns tile). */
+.ops-summary-tile-sub { font-size: 11px; color: var(--text-soft-color); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ops-summary-meta {
+	display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem;
+	font-size: 12px; color: var(--text-soft-color);
+}
+.ops-summary-meta-item { white-space: nowrap; }
+.ops-summary-meta-label { color: var(--text-muted-color); }
+.ops-summary-warning { font-size: 12px; color: var(--warning-color); }
+.ops-summary-warning i { margin-right: 0.25rem; }
+
+/* Scroll container + rows (content-browser / BPM-console style).
+ * The daily table is WIDE (component columns), so the container scrolls
+ * horizontally too: the table sizes to its content (width: max-content,
+ * never below the pane width) and the cells don't wrap. The sticky thead
+ * keeps working — it sticks vertically inside this same scroll container. */
+.content-list { flex: 1; min-width: 0; min-height: 0; overflow: auto; overflow-x: auto; }
+.content-list table { border-collapse: collapse; width: max-content; min-width: 100%; user-select: none; }
+.content-list table th, .content-list table td { white-space: nowrap; }
+.content-list table thead th { position: sticky; top: 0; z-index: 1; }
+.content-list th.text-start, .content-list td.text-start { text-align: left; }
+.content-list th.text-center, .content-list td.text-center { text-align: center; }
+.content-list th.text-end, .content-list td.text-end { text-align: right; }
+.content-list .item { cursor: pointer; transition: background-color 0.15s; }
+.content-list .item:nth-child(even) { background-color: var(--item-even-bg); }
+.content-list .item:hover { background-color: var(--item-hover-bg) !important; }
+.content-list .item.item-selected {
+	background-color: var(--item-selected-bg) !important;
+	color: var(--item-selected-color) !important;
+}
+.content-list .item-empty td { padding: 1rem 0.5rem; text-align: center; color: var(--text-muted-color); }
+
+/* Tabular figures for the numeric columns. */
+.ops-val { font-variant-numeric: tabular-nums; }
+
+/* ---- Sales report hero (P/L headline + mini-ladder + KPI cards) ------------ */
+.rp-hero {
+	flex-shrink: 0; padding: 0.75rem 0.875rem;
+	border-bottom: 1px solid var(--navbar-border-color);
+	display: flex; flex-direction: column; gap: 0.75rem;
+}
+.rp-hero-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.rp-hero-label { font-size: 12px; color: var(--text-soft-color); }
+.rp-hero-value { font-size: 2rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.15; }
+.rp-hero-range { font-size: 12px; color: var(--text-muted-color); margin-top: 0.125rem; }
+.rp-hero-pop { color: var(--text-soft-color); }
+.rp-tax-toggle { display: inline-flex; gap: 0.25rem; flex-shrink: 0; }
+
+.rp-ladder { display: flex; flex-wrap: wrap; align-items: stretch; gap: 0.5rem; }
+.rp-ladder-step {
+	display: flex; flex-direction: column; gap: 0.125rem;
+	padding: 0.375rem 0.625rem; border: 1px solid var(--navbar-border-color); border-radius: 6px; min-width: 0;
+}
+.rp-ladder-label { font-size: 11px; color: var(--text-soft-color); white-space: nowrap; }
+.rp-ladder-val { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rp-ladder-op { align-self: center; color: var(--text-muted-color); font-weight: 700; }
+.rp-ladder-result { border-color: var(--primary-color); }
+.rp-ladder-result .rp-ladder-val { color: var(--primary-color); }
+
+.rp-kpi { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.rp-kpi-card {
+	display: flex; flex-direction: column; gap: 0.125rem;
+	padding: 0.375rem 0.625rem; border: 1px solid var(--navbar-border-color); border-radius: 6px; min-width: 7rem;
+}
+.rp-kpi-label { font-size: 11px; color: var(--text-soft-color); white-space: nowrap; }
+.rp-kpi-val { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Sales | Refunds tabs (exclusive). Pill style — matches the .detail-tab pattern used for the
+ * instances/user-tasks tabs in bpm-console's bottom panel. */
+.rp-tabs { display: flex; align-items: center; gap: 0.25rem; padding: 0.375rem 0.75rem; flex-shrink: 0; }
+.rp-tab {
+	appearance: none; cursor: pointer; font: inherit;
+	padding: 0.125rem 0.75rem; border: 1px solid transparent; border-radius: 9999px;
+	color: var(--text-muted-color); background-color: transparent;
+	transition: background-color 0.15s, color 0.15s;
+}
+.rp-tab:not(.active):hover { background-color: var(--item-hover-bg); color: var(--text-color); }
+.rp-tab.active { color: var(--nav-current-color); background-color: var(--nav-current-bg); border-color: var(--nav-current-border-color); }
+/* Refunds-tab warning strip (unmigrated-data / mixed-currency / crossPeriod legend). */
+.rp-tab-note {
+	flex-shrink: 0; padding: 0.25rem 0.75rem 0.5rem; font-size: 12px; color: var(--text-muted-color);
+	border-bottom: 1px solid var(--navbar-border-color);
+}
+.rp-ladder-sub { font-size: 10px; color: var(--text-muted-color); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Sticky totals row: z-index ABOVE the scrolling data rows (thead is 1) with an opaque background, so it
+ * pins cleanly at the bottom instead of bleeding through the last row. */
+.rp-total-row td {
+	font-weight: 700; border-top: 2px solid var(--navbar-border-color);
+	position: sticky; bottom: 0; z-index: 2; background: var(--navbar-bg);
+}
+
+/* Detail 4-block: a subtotal row (top rule + bold) and an indented sub-item (tips / restocking fee). */
+.detail-prop-sum { border-top: 1px solid var(--navbar-border-color); margin-top: 0.125rem; padding-top: 0.25rem; font-weight: 700; }
+.detail-prop-indent .detail-prop-label { padding-left: 0.875rem; color: var(--text-soft-color); }
+
+/* Refund cash-out: the crossPeriod icon + the note-strip warnings. */
+.rp-crossperiod { color: var(--warning-color); }
+.rp-warn { color: var(--warning-color); margin-right: 0.75rem; }
+/* Diagnostics footer: quiet OK vs surfaced issues. */
+.rp-diag-ok i { color: #2e9e5b; margin-right: 0.2rem; }
+.rp-diag-ok { color: var(--text-soft-color); }
+.rp-diag-warn { color: var(--warning-color); }
+.rp-diag-warn i { margin-right: 0.2rem; }
+
+/* ---- Detail pane (BPM-console inspector layout) --------------------------- */
+.detail-panel-header {
+	display: flex; align-items: center; justify-content: space-between;
+	flex-shrink: 0; height: var(--navbar-height); padding: 0 1rem;
+	background-color: var(--navbar-bg); color: var(--navbar-color);
+	border-bottom: 1px solid var(--navbar-border-color);
+	white-space: nowrap; user-select: none;
+}
+.detail-panel-title { font-weight: 700; }
+.detail-panel-content { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+.detail-panel-empty {
+	flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+	padding: 1.5rem; color: var(--text-muted-color); text-align: center; gap: 0.5rem;
+}
+.detail-panel-empty i { font-size: 2rem; opacity: 0.5; }
+.detail-section-header {
+	display: flex; align-items: center; gap: 0.5rem; padding: 0.375rem 1rem;
+	font-size: 11px; font-weight: 700; text-transform: uppercase;
+	background-color: var(--section-header-bg); color: var(--section-header-color);
+	user-select: none;
+}
+.detail-section-body { display: flex; flex-direction: column; gap: 0.75rem; padding: 0.75rem 1rem; }
+.detail-prop { display: flex; flex-direction: column; gap: 0.125rem; }
+.detail-prop-label { font-size: 12px; color: var(--text-soft-color); }
+.detail-prop-value { word-break: break-word; }
+.detail-prop-value.muted { color: var(--text-muted-color); }
+
+/* Spinner / spin. */
+.spin { animation: reports-spin 0.8s linear infinite; }
+@keyframes reports-spin { to { transform: rotate(360deg); } }
+
+/* Transient toast. */
+.commerce-toast {
+	position: fixed; bottom: 2.75rem; left: 50%; transform: translateX(-50%);
+	padding: 0.55rem 1rem; border-radius: 0.5rem; background: #1f2937; color: #f8fafc;
+	font-size: 0.8125rem; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25); z-index: 1000; max-width: 80%;
+}
+.commerce-toast.error { background: #dc2626; color: #fff; }

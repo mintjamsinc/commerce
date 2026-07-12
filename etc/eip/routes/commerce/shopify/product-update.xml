@@ -95,8 +95,11 @@
                     <simple>/content/commerce/products/product_${header.productID}.json</simple>
                 </setHeader>
 
-                <!-- Save raw JSON to JCR -->
-                <toD uri="cms:store?mimeType=application/json&amp;path=${header.productPath}"/>
+                <!-- Save raw JSON to JCR. The dedicated MIME type (a +json suffix
+                     keeps JSON tooling compatible) is what associates product
+                     nodes with the product editor (Content Browser MIME→app
+                     launch); consumers parse the body and are unaffected. -->
+                <toD uri="cms:store?mimeType=application/vnd.mintjams.commerce.product%2Bjson&amp;path=${header.productPath}"/>
 
                 <!-- Map product metadata as JCR properties -->
                 <setHeader name="commerce:product_id">
@@ -116,8 +119,7 @@
                 </setHeader>
                 <!-- commerce:status is the integration processing lifecycle status.
                      Ingestion succeeded, so it is "received"; the BPMN workflow then
-                     advances it (threshold_pending / review_pending / monitored).
-                     See docs/commerce-status.md. -->
+                     advances it (threshold_pending / review_pending / monitored). -->
                 <setHeader name="commerce:status">
                     <constant>received</constant>
                 </setHeader>
@@ -147,6 +149,10 @@
 
                 <!-- Normalize property types (e.g. updated_at should be date) -->
                 <toD uri="transform:toDate?targets=commerce:updated_at"/>
+                <!-- Shopify entity ids are String (equality/lookup only, never
+                     range-queried, and can exceed a UI-safe integer). The jsonpath
+                     $.id yields a JSON number, so coerce it to String before persist. -->
+                <toD uri="transform:toString?targets=commerce:product_id"/>
 
                 <!-- Write metadata to JCR node properties -->
                 <toD uri="cms:setProperties?path=${header.productPath}&amp;includes=commerce:*"/>
@@ -155,7 +161,7 @@
                      loggingLevel="INFO"/>
 
                 <!-- The Admin API is required; enrich with metafields when it is configured.
-                     checkAdminApiEnabled reports whether shopify.yml has the connection
+                     checkAdminApiEnabled reports whether the Shopify config has the connection
                      fields filled, so a not-yet-configured deployment degrades cleanly. -->
                 <toD uri="cms:/etc/commerce/scripts/shopify/checkAdminApiEnabled.groovy?outputs=adminApiEnabled"/>
                 <choice>

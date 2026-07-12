@@ -55,24 +55,17 @@
         <toD uri="cms:/etc/commerce/scripts/shopify/recordInventoryLevel.groovy?inputs=shopifyPayload=@body"/>
 
         <!-- Mark this item pending so the inventory-alert
-             sweep (sweepInventoryAlerts.groovy) evaluates it against its threshold on the
+             sweep evaluates it against its threshold on the
              mirror total. The alert trigger is now inventory_levels/update. Defensive. -->
         <toD uri="cms:/etc/commerce/scripts/shopify/markInventoryAlertPending.groovy?inputs=shopify_payload"/>
 
-        <!-- Release covered backorders (#12): when the arriving stock covers open
+        <!-- Release covered backorders: when the arriving stock covers open
              backorders for this item, raise each as a "Release Backorder" task
              (FIFO). Defensive - never breaks the inventory route. -->
         <setBody>
             <simple>${header.shopify_payload}</simple>
         </setBody>
         <toD uri="cms:/etc/commerce/scripts/shopify/releaseBackorders.groovy?inputs=shopifyPayload=@body"/>
-
-        <!-- Refresh the public storefront inventory map (#21) so the storefront's
-             "low stock" / "sold out" badges update within seconds. Defensive. -->
-        <setBody>
-            <simple>${header.shopify_payload}</simple>
-        </setBody>
-        <toD uri="cms:/etc/commerce/scripts/commerce/publishInventory.groovy?inputs=shopifyPayload=@body"/>
 
         <!-- Record processing health (success) -->
         <setHeader name="health_group">

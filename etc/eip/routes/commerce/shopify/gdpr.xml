@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<camel>
+
+    <!--
+      GDPR compliance topics (mandatory). Shopify delivers these to a
+      separately-registered compliance webhook endpoint (register the SAME
+      public webhook adapter URL there); they
+      arrive HMAC-verified through the normal ingest core and are dispatched here.
+
+      Errors are NOT swallowed per-route: they propagate to the ingest core's
+      error handler so the event is marked failed and remains replayable — a
+      compliance action must never be lost silently. Each route records health.
+    -->
+
+    <route id="shopify-customer-redact">
+        <from uri="direct:shopify-customer-redact"/>
+        <choice>
+            <when>
+                <simple>${header.runAs} == null || ${header.runAs} == ''</simple>
+                <setHeader name="runAs">
+                    <constant>commerce-service-user</constant>
+                </setHeader>
+            </when>
+        </choice>
+        <setHeader name="shopify_payload">
+            <simple>${body}</simple>
+        </setHeader>
+        <toD uri="cms:/etc/commerce/scripts/shopify/customerRedact.groovy?inputs=shopify_payload"/>
+
+        <setHeader name="health_group">
+            <constant>route</constant>
+        </setHeader>
+        <setHeader name="health_name">
+            <simple>${header.shopify_topic}</simple>
+        </setHeader>
+        <setHeader name="health_ok">
+            <constant>true</constant>
+        </setHeader>
+        <toD uri="cms:/etc/commerce/scripts/shopify/recordHealth.groovy?inputs=health_*,received_at"/>
+    </route>
+
+    <route id="shopify-customer-data-request">
+        <from uri="direct:shopify-customer-data-request"/>
+        <choice>
+            <when>
+                <simple>${header.runAs} == null || ${header.runAs} == ''</simple>
+                <setHeader name="runAs">
+                    <constant>commerce-service-user</constant>
+                </setHeader>
+            </when>
+        </choice>
+        <setHeader name="shopify_payload">
+            <simple>${body}</simple>
+        </setHeader>
+        <toD uri="cms:/etc/commerce/scripts/shopify/customerDataRequest.groovy?inputs=shopify_payload"/>
+
+        <setHeader name="health_group">
+            <constant>route</constant>
+        </setHeader>
+        <setHeader name="health_name">
+            <simple>${header.shopify_topic}</simple>
+        </setHeader>
+        <setHeader name="health_ok">
+            <constant>true</constant>
+        </setHeader>
+        <toD uri="cms:/etc/commerce/scripts/shopify/recordHealth.groovy?inputs=health_*,received_at"/>
+    </route>
+
+    <route id="shopify-shop-redact">
+        <from uri="direct:shopify-shop-redact"/>
+        <choice>
+            <when>
+                <simple>${header.runAs} == null || ${header.runAs} == ''</simple>
+                <setHeader name="runAs">
+                    <constant>commerce-service-user</constant>
+                </setHeader>
+            </when>
+        </choice>
+        <setHeader name="shopify_payload">
+            <simple>${body}</simple>
+        </setHeader>
+        <toD uri="cms:/etc/commerce/scripts/shopify/shopRedact.groovy?inputs=shopify_payload"/>
+
+        <!-- shop/redact erased the health store with everything else; recording
+             health afterwards would just recreate an orphan entry, so skip it. -->
+    </route>
+
+</camel>

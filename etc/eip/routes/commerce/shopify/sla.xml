@@ -15,8 +15,8 @@
 
     <!--
       Periodic task-SLA scan. Fires every 15 minutes (first run after a 2-minute
-      warm-up) and runs scanTaskSla.groovy as the service user: it evaluates open
-      human tasks against /etc/commerce/config/sla.yml and escalates breaches
+      warm-up) and runs the SLA scan task as the service user: it evaluates open
+      human tasks against the configured SLA thresholds and escalates breaches
       (notification + optional priority bump). The scan is cheap and idempotent;
       escalations are debounced per task in commerce.TaskSla.
     -->

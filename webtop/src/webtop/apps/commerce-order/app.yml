@@ -1,0 +1,23 @@
+identifier: f6b4d7a9-8c2e-4f3b-a015-2a7c9e4f6b8d
+title: Commerce Order
+icon: assets/icons/icon.svg
+isAdminOnly: true
+# The order editor: everything about one order in one place. Displays the Shopify
+# order mirror (overview, line items, addresses) and lets an operator edit the
+# small set of Shopify-owned metadata the shop curates — the note, tags and custom
+# attributes. Writes go to Shopify via the Admin API (sync.groovy → orderUpdate);
+# the CMS mirror follows through the webhook round-trip. Line-item quantity editing
+# (the stateful Order Editing session) is deferred to a follow-up phase; line items
+# are shown read-only. Registers as the editor for the order mirror's dedicated MIME
+# type, so double-clicking an order node (in the Content Browser or the Commerce
+# Orders browser) opens it here.
+editor: true
+contentTypes:
+  - application/vnd.mintjams.commerce.order+json
+actions:
+  open:
+    icon: open
+    label: Open
+minimumWidth: 640
+minimumHeight: 480
+customWindowControls: true

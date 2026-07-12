@@ -1,7 +1,6 @@
 # Event Ingestion (all-topics · multi-backend · replay)
 
-The intake side of the platform (category A: #1 all webhook topics, #3 multi-backend,
-#4 replay). Every inbound integration event — from any backend — funnels through a
+The intake side of the platform. Every inbound integration event — from any backend — funnels through a
 single source-agnostic core, is recorded with its raw payload, and is then either
 handled by a dedicated workflow or normalized into a business entity. The same store
 powers replay.
@@ -19,6 +18,8 @@ direct:commerce-ingest                       (etc/eip/routes/commerce/ingest.xml
    ├─ dispatch by topic:
    │     bespoke  → direct:shopify-order-paid / -product-update / -product-delete
    │                / -refund-created / -inventory-level / -location
+   │                / -customer-update / -customer-delete            (customer store)
+   │                / -customer-redact / -customer-data-request / -shop-redact  (GDPR)
    │     other    → normalizeEvent → /content/commerce/entities/{source}/{collection}/{id}.json
    └─ markEvent        → event log status processed | error
 ```
@@ -26,11 +27,13 @@ direct:commerce-ingest                       (etc/eip/routes/commerce/ingest.xml
 `commerce.Events` is the storage + normalization + replay engine; the routes and
 scripts stay thin. See [commerce-shared-classes.md](commerce-shared-classes.md).
 
-## #1 — All webhook topics
+## All webhook topics
 
 The Shopify adapter forwards **every** topic (no allow-list). Topics with a
-dedicated workflow keep their existing behaviour; every other topic
-(`customers/*`, `fulfillments/*`, `carts/*`, `checkouts/*`, and anything Shopify
+dedicated workflow keep their existing behaviour — `customers/*` now lands in the
+first-class customer store ([crm.md](crm.md)) and the GDPR compliance topics have
+bespoke handlers ([gdpr.md](gdpr.md)); every other topic
+(`fulfillments/*`, `carts/*`, `checkouts/*`, and anything Shopify
 adds later) is normalized into a current-state entity record at
 `/content/commerce/entities/{source}/{collection}/{id}.json` (e.g.
 `entities/shopify/customers/123.json`), latest update winning, with `commerce:*`
@@ -43,7 +46,7 @@ plumbing.
 A `*/delete` action marks the record `deleted` (parity with products) rather than
 removing it.
 
-## #3 — Multi-backend
+## Multi-backend
 
 `direct:commerce-ingest` is **source-agnostic**: it knows nothing about Shopify
 beyond a small topic→route table for the topics that currently have Shopify
@@ -68,7 +71,7 @@ the core or the downstream handlers**. Topics that need their own workflow get a
 bespoke route + a `when` branch in `ingest.xml`; everything else is normalized for
 free.
 
-## #4 — Replay
+## Replay
 
 Because the event log keeps the **raw payload** of every event, any event can be
 re-run.
@@ -80,7 +83,7 @@ re-run.
   `replayEvents.groovy`.)
 - **Manual** — `POST` to the events endpoint replays a single event
   (`{source,eventId}`) or every event matching a filter
-  (`{status,topic,source,sinceDays}`; defaults to `status:error`).
+  (`{status,topic,source,from,to}` — `from`/`to` are ISO-8601 instants; defaults to `status:error`).
 
 A replay re-sends the envelope through `direct:commerce-ingest` with `replay=true`.
 The backend handlers honour that flag to **reprocess** the event instead of skipping
@@ -101,7 +104,7 @@ GET  /bin/cms.cgi/{workspace}/content/commerce/endpoints/events.groovy?status=er
 POST /bin/cms.cgi/{workspace}/content/commerce/endpoints/events.groovy   {"status":"error"}
 ```
 
-- `GET` — status summary + a filtered list (status / source / topic / sinceDays).
+- `GET` — status summary + a filtered list (status / source / topic / from-to period, ISO-8601).
 - `POST` — replay (see above); returns `{matched, replayed}`.
 
 Both live outside `/content/public`, so the CGI enforces authentication and ACLs.
@@ -118,14 +121,18 @@ Both live outside `/content/public`, so the CGI enforces authentication and ACLs
 
 ## Storage
 
-See [jcr-structure.md](jcr-structure.md) for the event log and normalized entity
-layouts, and [commerce-status.md](commerce-status.md) for the event status values.
+Both the raw event log and the normalized entity records described above (e.g.
+`/content/commerce/entities/{source}/{collection}/{id}.json`) live under the
+platform's standard JCR content tree, denormalized into `commerce:*` metadata
+for auto-indexed lookups. See [jcr-structure.md](jcr-structure.md) for the full
+content-tree layout, and [commerce-status.md](commerce-status.md) for the
+complete set of event/entity status values (`received`, `processed`, `error`, …).
 
 ## Operator UI
 
-The **Commerce Operations** Webtop app (`webtop/src/webtop/apps/commerce-ops`)
-exposes the event log on its **Events** tab: a status summary, status / source /
-topic / since filters over `events.groovy`, per-event **replay**, and **replay
-matching** (re-dispatch every event matching the current filter, confirmed). Its
-**Sync** and **Reconcile** tabs cover the outbound-write (#2) and drift (#24)
-surfaces.
+The **Commerce Events** Webtop app (`webtop/src/webtop/apps/commerce-events`)
+is the event-log console: a status summary, status / source / topic / period filters over
+`events.groovy`, per-event **replay**, and **replay matching** (re-dispatch every event
+matching the current filter, confirmed). It is one of the four single-concern apps the former
+single Commerce Operations console was split into; the outbound-write audit is now the
+**commerce-oplog** app and drift the **commerce-reconcile** app.

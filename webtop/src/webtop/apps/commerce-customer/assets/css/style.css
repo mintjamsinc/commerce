@@ -1,0 +1,255 @@
+/* Commerce Customer app — app-specific styles.
+ *
+ * Layout, buttons, inputs, dialogs and theme tokens come from the shared
+ * webtop-app.css (loaded alongside this file). These rules add the single-pane
+ * editor layout and the section pieces this app needs, reusing the
+ * design-system tokens so the app stays consistent across themes. Ported from
+ * the Commerce Product editor with the search sidebar dropped. */
+
+:root {
+	--navbar-height: 2.5rem;
+	--statusbar-height: 1.75rem;
+	--success-color: var(--primary-color);
+}
+
+[v-cloak] { display: none !important; }
+
+#app { height: 100%; }
+
+/* ---- Toolbar / status bar (aligned with the Commerce app) ----------------- */
+nav.nav-bar {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	margin: -1rem -1rem 0;
+	padding: 1rem 1.5rem 0.75rem;
+	color: var(--navbar-color) !important;
+	white-space: nowrap;
+	user-select: none;
+	position: relative;
+	z-index: 10;
+}
+.nav-spacer { flex: 1; min-width: 1rem; }
+.toolbar-group {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.25rem 0.5rem;
+	background-color: var(--window-controls-bg);
+	border: 1px solid var(--window-controls-border-color);
+	border-radius: 9999px;
+}
+.toolbar-group .btn-icon.active { background-color: var(--pane-toggle-active-bg); color: #fff; }
+
+.status-bar {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	height: var(--statusbar-height);
+	margin: 0 -1rem -1rem;
+	padding: 0 1rem;
+	color: var(--navbar-color);
+	font-size: 11px;
+	white-space: nowrap;
+	user-select: none;
+}
+.status-group { display: inline-flex; align-items: center; gap: 0.25rem; }
+.status-item { padding: 0 0.5rem; }
+.status-ok { color: var(--success-color); }
+.status-err { color: var(--danger-color); }
+
+/* ---- Single-pane body ----------------------------------------------------- */
+.content-body {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	position: relative;
+	gap: 0.5rem;
+}
+.content-main {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	min-width: 0;
+	min-height: 0;
+	overflow-y: auto;
+	gap: 1.25rem;
+}
+
+/* Status pill (account state). */
+.pim-status {
+	display: inline-block;
+	padding: 0 0.4rem;
+	border-radius: 9999px;
+	font-size: 10px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+	background: var(--window-controls-bg);
+	color: var(--text-soft-color);
+}
+.pim-status.st-enabled { background: rgb(from var(--success-color) r g b / 0.15); color: var(--success-color); }
+.pim-status.st-invited { background: rgb(from var(--warning-color) r g b / 0.15); color: var(--warning-color); }
+.pim-status.st-declined { background: rgb(from var(--danger-color) r g b / 0.15); color: var(--danger-color); }
+.pim-status.st-disabled { background: rgb(from var(--text-soft-color) r g b / 0.18); color: var(--text-soft-color); }
+
+/* ---- Empty / loading state ------------------------------------------------ */
+.cst-state {
+	flex: 1;
+	min-height: 16rem;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 0.75rem;
+	opacity: 0.75;
+	text-align: center;
+}
+.cst-state .bi { font-size: 1.9rem; }
+
+/* ---- Header --------------------------------------------------------------- */
+.cst-head { display: flex; justify-content: space-between; align-items: flex-start; }
+.cst-title { margin: 0; font-size: 18px; }
+.cst-meta { margin-top: 0.25rem; font-size: 12px; color: var(--text-soft-color); display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+
+/* ---- Sections ------------------------------------------------------------- */
+.property-group { display: flex; flex-direction: column; gap: 0.75rem; }
+.property-group-title {
+	font-weight: 700;
+	text-transform: uppercase;
+	color: var(--text-soft-color);
+	padding-bottom: 0.25rem;
+	border-bottom: 1px solid var(--navbar-border-color);
+}
+.property-hint { line-height: 1.5; color: var(--text-soft-color); }
+
+/* ---- Overview facts ------------------------------------------------------- */
+.cst-facts {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+	gap: 0.6rem;
+}
+.cst-fact {
+	display: flex;
+	flex-direction: column;
+	gap: 0.2rem;
+	padding: 0.55rem 0.7rem;
+	border: 1px solid var(--navbar-border-color);
+	border-radius: 0.45rem;
+}
+.cst-fact-label { font-size: 11px; color: var(--text-soft-color); }
+.cst-fact-value { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.cst-yes { color: var(--success-color); }
+.cst-no { color: var(--text-soft-color); }
+
+/* Inline warning banner (Admin API off). */
+.cst-banner {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.5rem 0.75rem;
+	border-radius: 0.45rem;
+	font-size: 12px;
+}
+.cst-banner.warn { background: rgb(from var(--warning-color) r g b / 0.12); color: var(--warning-color); }
+
+/* ---- Marketing & tax toggles ---------------------------------------------- */
+.cst-toggle {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.6rem;
+	padding: 0.6rem 0.7rem;
+	border: 1px solid var(--navbar-border-color);
+	border-radius: 0.45rem;
+	cursor: pointer;
+}
+.cst-toggle input { margin-top: 0.15rem; flex: none; }
+.cst-toggle > span { display: flex; flex-direction: column; gap: 0.15rem; }
+.cst-toggle-title { font-size: 13px; font-weight: 600; }
+.cst-toggle-sub { font-size: 11px; color: var(--text-soft-color); }
+
+/* ---- Tags (chips) --------------------------------------------------------- */
+.cst-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; min-height: 1.5rem; }
+.cst-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.25rem;
+	padding: 0.15rem 0.2rem 0.15rem 0.55rem;
+	background: var(--item-selected-bg, rgba(99, 102, 241, 0.12));
+	border-radius: 9999px;
+	font-size: 12px;
+}
+.cst-chip-text { font-weight: 600; }
+.cst-chip-x {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 1.1rem;
+	height: 1.1rem;
+	border: none;
+	background: transparent;
+	color: inherit;
+	opacity: 0.6;
+	cursor: pointer;
+	border-radius: 9999px;
+	padding: 0;
+}
+.cst-chip-x:hover { opacity: 1; background: rgba(0, 0, 0, 0.1); }
+.cst-taginput { display: flex; gap: 0.5rem; align-items: center; }
+.cst-taginput input { flex: 1; min-width: 0; }
+
+/* ---- Addresses ------------------------------------------------------------ */
+.cst-address {
+	display: flex;
+	flex-direction: column;
+	gap: 0.15rem;
+	padding: 0.6rem 0.7rem;
+	border: 1px solid var(--navbar-border-color);
+	border-radius: 0.45rem;
+}
+.cst-address-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.15rem; }
+.cst-address-name { font-size: 13px; font-weight: 700; }
+.cst-address-line { font-size: 12px; color: var(--text-soft-color); }
+.cst-address-phone { margin-top: 0.15rem; }
+.cst-badge {
+	display: inline-block;
+	padding: 0 0.4rem;
+	border-radius: 9999px;
+	font-size: 10px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+	background: rgb(from var(--success-color) r g b / 0.15);
+	color: var(--success-color);
+}
+
+.cst-dialog-note { font-size: 12px; color: var(--text-soft-color); }
+
+/* Spinner (reused from the product editor look). */
+.spinner {
+	width: 1.4rem;
+	height: 1.4rem;
+	border: 2px solid var(--window-controls-border-color);
+	border-top-color: var(--pane-toggle-active-bg, #4338ca);
+	border-radius: 50%;
+	animation: cst-spin 0.8s linear infinite;
+}
+@keyframes cst-spin { to { transform: rotate(360deg); } }
+.spin { animation: cst-spin 0.8s linear infinite; }
+
+/* Transient toast. */
+.commerce-toast {
+	position: fixed;
+	bottom: 2.75rem;
+	left: 50%;
+	transform: translateX(-50%);
+	padding: 0.55rem 1rem;
+	border-radius: 0.5rem;
+	background: #1f2937;
+	color: #f8fafc;
+	font-size: 0.8125rem;
+	box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+	z-index: 1000;
+	max-width: 80%;
+}
+.commerce-toast.error { background: #dc2626; color: #fff; }

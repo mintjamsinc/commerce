@@ -1,25 +1,18 @@
-# CMS <-> Shopify reconciliation (category G, #24)
+# Shopify -> CMS reconciliation
 # Deploy to: /etc/commerce/config/reconcile.yml
-# Managed by the Commerce app (Webtop > Commerce > Reconciliation). See docs/reconciliation.md.
+# Managed by the Commerce app (Webtop > Commerce > Reconciliation).
 #
 # A periodic batch compares the CMS mirror with Shopify's current state (product status,
-# variant price, per-location inventory), records drift to a report, alerts, and refreshes
-# the CMS mirror FROM Shopify. Shopify is the single source of truth — there is no
-# CMS->Shopify push. Requires the Admin API (shopify.yml).
+# variant price), records every run to a run-history report, and refreshes the CMS mirror
+# FROM Shopify. Shopify is the single source of truth — there is no CMS->Shopify push.
+# Inventory is NOT part of the diff scope; the full inventory audit is the Bulk job broker
+# (`inventory` schedule scope). Requires the Admin API to be configured.
 
 # Master switch for the reconciliation batch.
 enabled: true
 
 # Diff page size: products fetched per page when scanning Shopify for changes (diff scope).
 maxPerRun: 50
-
-# Send a (debounced) notification when drift is detected.
-alert: true
-
-# Refresh the per-location inventory mirror from Shopify's authoritative stock during each
-# pass, then re-evaluate alerts for any item whose stock had drifted — the "nothing missed"
-# backstop for missed / lost inventory webhooks. On by default; set false to disable.
-refreshInventoryMirror: true
 
 # Diff throttle ("accelerator"): the diff scope makes one foreground GraphQL call per changed
 # product, sharing the per-app/per-shop cost bucket with foreground work (fulfillment / PIM).
@@ -30,21 +23,55 @@ reserveBudgetPercent: 50
 minDelayMsPerCall: 0
 
 # Bulk job broker watchdog (recovers a lost bulk_operations/finish webhook / releases a stuck
-# lane). Lower for testing.
+# lane). Completion is normally event-driven via the bulk_operations/finish webhook (real-time);
+# this watchdog is the SAFETY NET for a webhook that was never delivered (e.g. it arrived during a
+# brief post-restart window when the Admin API / webhook-signing key were not yet configured). 15
+# min balances "recover a lost finish reasonably fast" against "don't poll Shopify for a bulk that
+# is legitimately still generating" — when the webhook does arrive the job leaves RUNNING first, so
+# the watchdog just no-ops. Lower further only for testing.
 #   bulkWatchdogTimeoutMinutes   : a RUNNING job older than this is re-checked against Shopify.
 #   bulkProcessingTimeoutMinutes : a PROCESSING (downloading/reconciling) job stuck longer than
 #                                  this is failed (lane released).
-bulkWatchdogTimeoutMinutes: 90
+#   bulkRunningHardCapMinutes    : absolute ceiling for a RUNNING job. Past this, if Shopify still
+#                                  reports the bulk CREATED/RUNNING (or is unreadable), the watchdog
+#                                  cancels the bulk (best-effort) and moves the job to TIMED_OUT —
+#                                  releasing the Shopify producer-lane singleton + enqueue guard so
+#                                  a permanently-stuck bulk cannot deadlock the domain forever.
+bulkWatchdogTimeoutMinutes: 15
 bulkProcessingTimeoutMinutes: 180
+bulkRunningHardCapMinutes: 720
+
+# maxConcurrentIngest: cap on CMS-side reconcile ingests running at once across DISJOINT domains.
+# The CMS consumer lane (runBulkCmsLane) never runs two ingests of the SAME domain concurrently;
+# this additionally caps the TOTAL concurrent PROCESSING jobs so a burst of multi-domain backfills
+# cannot overload the CMS. 0 = unlimited (bounded only by domain-disjointness). Default 3.
+maxConcurrentIngest: 3
 
 # Additional wall-clock passes. Each entry fires
-# a reconciliation at a local HH:mm with the given scope:
+# a reconciliation at HH:mm in UTC with the given scope:
 #   diff      — only products Shopify changed since the last pass (status/price; cheap)
 #   inventory — a full inventory audit via the Bulk job broker
+# Times are UTC, FIXED — behavior does not depend on the server's default timezone
+# (the Commerce app displays/edits them in the operator's Preferences time zone and
+# converts to/from UTC automatically).
 # Empty = none. (The hourly round-robin baseline was retired on 2026-06-30.)
-# Shipped default: a daily full inventory audit at 00:00. It replaces the retired
-# round-robin's inventory backstop. Add `diff` rows for a periodic status/price backstop, and
-# more frequent `inventory` rows for a tighter recovery SLA. Removing it is the operator's call.
+# Shipped default: a nightly (01:00 JST) full inventory audit — replacing the retired
+# round-robin's inventory backstop — plus status/price diff backstops across the JST
+# business day, expressed in UTC (JST = UTC+9). Add `diff` rows for a tighter status/price
+# backstop, and more frequent `inventory` rows for a tighter recovery SLA. Removing the
+# inventory row is the operator's call.
 schedules:
-  - at: "00:00"
+  - at: "16:00"   # 01:00 JST
     scope: inventory
+  - at: "15:00"   # 00:00 JST
+    scope: diff
+  - at: "00:00"   # 09:00 JST
+    scope: diff
+  - at: "03:00"   # 12:00 JST
+    scope: diff
+  - at: "06:00"   # 15:00 JST
+    scope: diff
+  - at: "09:00"   # 18:00 JST
+    scope: diff
+  - at: "12:00"   # 21:00 JST
+    scope: diff

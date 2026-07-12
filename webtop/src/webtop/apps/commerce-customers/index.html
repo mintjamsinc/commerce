@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no">
+	<title>Commerce Customers</title>
+
+	<!-- Bootstrap Icons (bundled with webtop) -->
+	<link rel="stylesheet" href="../../assets/vendor/bootstrap-icons/bootstrap-icons.min.css?v=__BUILD_VERSION__">
+
+	<!-- App CSS + shared Webtop design system -->
+	<link href="./assets/css/style.css?v=__BUILD_VERSION__" rel="stylesheet" />
+	<link href="../../assets/css/webtop-app.css?v=__BUILD_VERSION__" rel="stylesheet" />
+</head>
+
+<body>
+	<div id="app" v-cloak class="d-flex flex-column" @mounted="onMounted" @unmount="onUnmount">
+
+		<!-- Top toolbar -->
+		<nav class="nav-bar window-drag-region">
+			<div class="toolbar-group">
+				<button class="btn-icon" @click="load" :disabled="loading" :title="t('app.commerce-customers.toolbar.refresh')">
+					<i class="bi bi-arrow-clockwise" :class="{ spin: loading }"></i>
+				</button>
+				<button class="btn-icon" @click="clearFilters" :disabled="loading || (activeFilterCount === 0 && !filters.q)"
+					:title="t('app.commerce-customers.toolbar.clearFilters')">
+					<i class="bi bi-funnel"></i>
+				</button>
+			</div>
+
+			<div class="pb-searchbar">
+				<div class="input-group">
+					<input type="search" v-model="filters.q" :placeholder="t('app.commerce-customers.search.placeholder')"
+						@keyup.enter="search" />
+					<div class="input-group-actions">
+						<button class="input-group-btn" @click="search" :disabled="loading" :title="t('common.search')">
+							<i class="bi bi-search"></i>
+						</button>
+					</div>
+				</div>
+			</div>
+
+			<span class="nav-spacer"></span>
+
+			<div class="pane-toggles">
+				<button class="btn-icon pane-toggle-btn" :class="{ active: sidebarVisible }" @click="toggleSidebar" :title="t('app.commerce-customers.toolbar.toggleSidebar', undefined, 'Toggle filters')">
+					<i class="bi bi-layout-sidebar-inset"></i>
+				</button>
+			</div>
+
+			<!-- Window controls -->
+			<div class="window-controls">
+				<button class="btn-icon" @click="onMinimizeWindow" :title="t('common.minimize')"><i class="bi bi-dash-lg"></i></button>
+				<button class="btn-icon" @click="onToggleMaximizeWindow" :title="t('common.maximize')"><i class="bi bi-square"></i></button>
+				<button class="btn-icon window-control-close" @click="onCloseWindow" :title="t('common.close')"><i class="bi bi-x-lg"></i></button>
+			</div>
+		</nav>
+
+		<!-- Content -->
+		<div class="content-body">
+
+			<!-- Left: facets -->
+			<aside v-if="sidebarVisible" class="pb-facets island" :style="{ width: sidebarWidth + 'px' }">
+				<!-- Spend axis: sort / metric / rolling window / min-spend filter -->
+				<div class="pb-facet-group">
+					<div class="pb-facet-title">{{ t('app.commerce-customers.spend.title') }}</div>
+
+					<div class="pb-sublabel">{{ t('app.commerce-customers.spend.sort') }}</div>
+					<button class="pb-facet" :class="{ active: spend.sort === 'updated' }" @click="setSpendSort('updated')">
+						<span class="pb-facet-label">{{ t('app.commerce-customers.spend.sort.updated') }}</span>
+					</button>
+					<button class="pb-facet" :class="{ active: spend.sort === 'spend' }" @click="setSpendSort('spend')">
+						<span class="pb-facet-label">{{ t('app.commerce-customers.spend.sort.spend') }}</span>
+					</button>
+
+					<div class="pb-sublabel">{{ t('app.commerce-customers.spend.metric') }}</div>
+					<button class="pb-facet" :class="{ active: spend.metric === 'totalPrice' }" @click="setSpendMetric('totalPrice')">
+						<span class="pb-facet-label">{{ t('app.commerce-customers.spend.metric.totalPrice') }}</span>
+					</button>
+					<button class="pb-facet" :class="{ active: spend.metric === 'gross' }" @click="setSpendMetric('gross')">
+						<span class="pb-facet-label">{{ t('app.commerce-customers.spend.metric.gross') }}</span>
+					</button>
+					<button class="pb-facet" :class="{ active: spend.metric === 'net' }" @click="setSpendMetric('net')">
+						<span class="pb-facet-label">{{ t('app.commerce-customers.spend.metric.net') }}</span>
+					</button>
+
+					<div class="pb-sublabel">{{ t('app.commerce-customers.spend.window') }}</div>
+					<button class="pb-facet" :class="{ active: spend.days === 0 }" @click="setSpendDays(0)">
+						<span class="pb-facet-label">{{ t('app.commerce-customers.spend.window.all') }}</span>
+					</button>
+					<button class="pb-facet" :class="{ active: spend.days === 30 }" @click="setSpendDays(30)">
+						<span class="pb-facet-label">{{ t('app.commerce-customers.spend.window.d30') }}</span>
+					</button>
+					<button class="pb-facet" :class="{ active: spend.days === 90 }" @click="setSpendDays(90)">
+						<span class="pb-facet-label">{{ t('app.commerce-customers.spend.window.d90') }}</span>
+					</button>
+					<button class="pb-facet" :class="{ active: spend.days === 365 }" @click="setSpendDays(365)">
+						<span class="pb-facet-label">{{ t('app.commerce-customers.spend.window.d365') }}</span>
+					</button>
+
+					<div class="pb-sublabel">{{ t('app.commerce-customers.spend.minSpend') }}</div>
+					<div class="pb-minspend">
+						<input class="wt" type="number" min="0" placeholder="10000" v-model="spend.minSpend"
+							@keyup.enter="applyMinSpend" />
+						<button class="wt wt-primary wt-slim" :disabled="loading" @click="applyMinSpend">
+							{{ t('app.commerce-customers.spend.apply') }}
+						</button>
+					</div>
+				</div>
+
+				<div class="pb-facet-group">
+					<div class="pb-facet-title">{{ t('app.commerce-customers.facet.tags') }}</div>
+					<button v-for="f in facetTags" :key="'t-' + f.value" class="pb-facet"
+						:class="{ active: filters.tag === f.value }" @click="toggleFacet('tag', f.value)">
+						<span class="pb-facet-label">{{ f.value }}</span>
+						<span class="pb-facet-count">{{ f.count }}</span>
+					</button>
+					<div v-if="facetTags.length === 0" class="pb-facet-empty">—</div>
+				</div>
+
+				<div class="pb-facet-group">
+					<div class="pb-facet-title">{{ t('app.commerce-customers.facet.marketing') }}</div>
+					<button v-for="f in facetMarketing" :key="'m-' + f.value" class="pb-facet"
+						:class="{ active: filters.marketing === f.value }" @click="toggleFacet('marketing', f.value)">
+						<span class="pb-facet-label">{{ marketingLabel(f.value === 'true') }}</span>
+						<span class="pb-facet-count">{{ f.count }}</span>
+					</button>
+					<div v-if="facetMarketing.length === 0" class="pb-facet-empty">—</div>
+				</div>
+
+				<div class="pb-facet-group">
+					<div class="pb-facet-title">{{ t('app.commerce-customers.facet.sourceStatus') }}</div>
+					<button v-for="f in facetSourceStatus" :key="'ss-' + f.value" class="pb-facet"
+						:class="{ active: filters.sourceStatus === f.value }" @click="toggleFacet('sourceStatus', f.value)">
+						<span class="pb-facet-label">{{ f.value }}</span>
+						<span class="pb-facet-count">{{ f.count }}</span>
+					</button>
+					<div v-if="facetSourceStatus.length === 0" class="pb-facet-empty">—</div>
+				</div>
+			</aside>
+			<div v-if="sidebarVisible" class="sidebar-resize-handle" @mousedown="onSidebarResizeStart"></div>
+
+			<!-- Right: result list -->
+			<main class="content-main island">
+				<div v-if="loading && !loaded" class="pb-state"><div class="spinner"></div><span>{{ t('app.commerce-customers.state.loading') }}</span></div>
+
+				<template v-else>
+					<div class="pb-listhead">
+						<span class="pb-count">{{ t('app.commerce-customers.list.count', { start: pageStart, end: pageEnd, total: total }) }}</span>
+						<span v-if="capped" class="pb-capped" :title="t('app.commerce-customers.list.cappedTitle')">
+							<i class="bi bi-exclamation-triangle me-1"></i>{{ t('app.commerce-customers.list.capped') }}
+						</span>
+						<span class="nav-spacer"></span>
+						<button class="btn-icon" @click="prevPage" :disabled="!hasPrev || loading" :title="t('app.commerce-customers.list.prev')">
+							<i class="bi bi-chevron-left"></i>
+						</button>
+						<button class="btn-icon" @click="nextPage" :disabled="!hasNext || loading" :title="t('app.commerce-customers.list.next')">
+							<i class="bi bi-chevron-right"></i>
+						</button>
+					</div>
+
+					<div v-if="results.length === 0" class="pb-state">
+						<i class="bi bi-people"></i>
+						<span>{{ t('app.commerce-customers.state.empty') }}</span>
+					</div>
+
+					<div v-else class="pb-table-scroll">
+						<table class="wt w-100">
+							<thead>
+								<tr>
+									<th>{{ t('app.commerce-customers.col.name') }}</th>
+									<th>{{ t('app.commerce-customers.col.email') }}</th>
+									<th v-if="spendColumns" class="pb-num">{{ t('app.commerce-customers.col.orders') }}</th>
+									<th v-if="spendColumns" class="pb-num">{{ t('app.commerce-customers.col.totalPrice') }}</th>
+									<th v-if="spendColumns" class="pb-num">{{ t('app.commerce-customers.col.netSales') }}</th>
+									<th>{{ t('app.commerce-customers.col.tags') }}</th>
+									<th>{{ t('app.commerce-customers.col.sourceStatus') }}</th>
+									<th>{{ t('app.commerce-customers.col.marketing') }}</th>
+									<th>{{ t('app.commerce-customers.col.updated') }}</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr v-for="r in results" :key="r.path" class="pb-row" @dblclick="openCustomer(r)">
+									<td>
+										<button class="pb-open" @click="openCustomer(r)" :title="t('app.commerce-customers.action.open')">
+											{{ r.name || r.email || r.id || '—' }}
+										</button>
+									</td>
+									<td class="pb-email"><span :class="{ 'text-muted': !(r.email) }">{{ r.email || '—' }}</span></td>
+									<td v-if="spendColumns" class="pb-num" :class="{ 'text-muted': !(r.spend) }">{{ r.spend ? fmtInt(r.spend.orders) : '—' }}</td>
+									<td v-if="spendColumns" class="pb-num" :class="{ 'text-muted': !(r.spend) }">{{ r.spend ? fmtMoney(r.spend.totalPrice, r.spend.baseCurrency) : '—' }}</td>
+									<td v-if="spendColumns" class="pb-num" :class="{ 'text-muted': !(r.spend) }">{{ r.spend ? fmtMoney(r.spend.net, r.spend.baseCurrency) : '—' }}</td>
+									<td class="pb-tags"><span :class="{ 'text-muted': !(r.tags) }">{{ r.tags || '—' }}</span></td>
+									<td><span class="pb-status" :class="'ss-' + (r.sourceStatus || 'unknown')"><span :class="{ 'text-muted': !(r.sourceStatus) }">{{ r.sourceStatus || '—' }}</span></span></td>
+									<td>
+										<span class="pb-marketing" :class="{ on: r.marketingEnabled }">
+											<i class="bi me-1" :class="r.marketingEnabled ? 'bi-check-circle' : 'bi-dash-circle'"></i>{{ marketingLabel(r.marketingEnabled) }}
+										</span>
+									</td>
+									<td class="pb-date"><span :class="{ 'text-muted': !(r.updatedAt) }">{{ r.updatedAt ? fmtDateTime(r.updatedAt) : '—' }}</span></td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+				</template>
+			</main>
+		</div>
+
+		<!-- Status bar -->
+		<div class="status-bar window-drag-region">
+			<div class="status-group">
+				<span v-if="total" class="status-item">{{ t('app.commerce-customers.statusbar.count', { total: total }) }}</span>
+			</div>
+			<span class="nav-spacer"></span>
+			<div class="status-group">
+				<span v-if="loading" class="status-item"><i class="bi bi-arrow-repeat me-1"></i>{{ t('app.commerce-customers.statusbar.loading') }}</span>
+				<span v-else class="status-item">{{ t('app.commerce-customers.statusbar.ready') }}</span>
+			</div>
+		</div>
+
+		<!-- Toast -->
+		<div v-if="toast" class="commerce-toast" :class="{ error: toastError }" role="alert">{{ toast }}</div>
+
+	</div>
+
+	<script type="module" src="./app.js?v=__BUILD_VERSION__"></script>
+</body>
+
+</html>

@@ -1,0 +1,19 @@
+identifier: b2d0f3a5-4c8e-4f29-8b63-7d1a9c2e5f4a
+title: Commerce Operation Log
+icon: assets/icons/icon.svg
+isAdminOnly: true
+# The commerce operation log: a searchable/filterable audit of every outbound
+# CMS → Shopify write (product/inventory edits from the editors, order
+# cancellations, incoming inventory transfers). Each row answers
+# who / when / against what / what action / result (actor / at / entity+entityId /
+# action / status / error), backed by reports.groovy?type=operations over
+# /content/commerce/sync. Observation-only: writing happens in the editors and
+# workflow tasks. CSV export for spreadsheets.
+actions:
+  open:
+    icon: open
+    label: Open
+minimumWidth: 760
+minimumHeight: 560
+customWindowControls: true
+singleton: true

@@ -1,0 +1,25 @@
+<svg viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="commerce events">
+<defs>
+  <clipPath id="clip-cevents"><rect x="0" y="0" width="180" height="180" rx="42" ry="42"></rect></clipPath>
+  <linearGradient id="hl-cevents" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="white" stop-opacity="0.25"></stop>
+    <stop offset="55%" stop-color="white" stop-opacity="0"></stop>
+  </linearGradient>
+  <linearGradient id="bg-cevents" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="#818cf8"></stop>
+    <stop offset="100%" stop-color="#4f46e5"></stop>
+  </linearGradient>
+</defs>
+<rect x="0" y="0" width="180" height="180" rx="42" ry="42" fill="url(#bg-cevents)"></rect>
+<g clip-path="url(#clip-cevents)">
+  <!-- event log: marker dot + entry line, three rows fading back in time -->
+  <circle cx="52" cy="56" r="7" fill="white" opacity="0.95"></circle>
+  <rect x="68" y="50" width="72" height="12" rx="6" fill="white" opacity="0.95"></rect>
+  <circle cx="52" cy="90" r="7" fill="white" opacity="0.7"></circle>
+  <rect x="68" y="84" width="58" height="12" rx="6" fill="white" opacity="0.7"></rect>
+  <circle cx="52" cy="124" r="7" fill="white" opacity="0.45"></circle>
+  <rect x="68" y="118" width="66" height="12" rx="6" fill="white" opacity="0.45"></rect>
+  <rect x="0" y="0" width="180" height="180" fill="url(#hl-cevents)"></rect>
+  <rect x="0.5" y="0.5" width="179" height="179" rx="41.5" ry="41.5" fill="none" stroke="white" stroke-opacity="0.18" stroke-width="1"></rect>
+</g>
+</svg>

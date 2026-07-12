@@ -1,7 +1,7 @@
 # Backorder / Pre-order Management
 
 Tracks order lines that cannot be — or should not yet be — fulfilled from on-hand
-stock, and releases them when stock arrives. Feature #12. A backorder is a
+stock, and releases them when stock arrives. A backorder is a
 line-level record with its own `commerce:status` lifecycle, modelled exactly like
 refunds and purchase orders so operators read it the same way.
 
@@ -23,7 +23,7 @@ inventory_levels/update ─→ releaseBackorders ───┘
         ▼
    backorder-release-flow.bpmn
      StartEvent
-       → UserTask "Release Backorder" (form: backorder-release.html; setBackorderWorkflowStatus → ready; notifyBackorderReady → #17)
+       → UserTask "Release Backorder" (form: backorder-release.html; setBackorderWorkflowStatus → ready; notifyBackorderReady)
        → ServiceTask "Record Release"  (recordBackorderRelease.groovy → released_at)
        → EndEvent                       (setBackorderWorkflowStatus → released)
 
@@ -95,7 +95,7 @@ GET /bin/cms.cgi/{workspace}/content/commerce/endpoints/backorders.groovy?limit=
 ```
 
 The **Release Backorder** task is a first-class human task: it participates in Task
-SLA management (#19) alongside the order / refund / product review tasks.
+SLA management alongside the order / refund / product review tasks.
 
 ## Shared logic
 

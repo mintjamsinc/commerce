@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<camel>
+
+    <!-- Swallow seed failures: the sales-fact backfill seed must never surface errors. -->
+    <routeConfiguration id="commerce-sales-backfill-error-handler">
+        <onException>
+            <exception>java.lang.Exception</exception>
+            <handled>
+                <constant>true</constant>
+            </handled>
+            <log message="commerce-sales-backfill error: ${exception.message}"
+                 loggingLevel="WARN"/>
+        </onException>
+    </routeConfiguration>
+
+    <!--
+      Historical sales-fact backfill SEED — CHAINED off the orders backfill. Fired asynchronously by
+      the bulk-result importer when an orders-backfill bulk import completes (there is no standalone
+      operator trigger any more), and runs the backfill seed task: it walks the ENTIRE order
+      mirror and ENQUEUES every distinct order for a fact recompute through the existing
+      single-writer drainer.
+
+      The seed NEVER writes a fact node itself (enqueue-only, single-writer discipline) — it only
+      stages pending markers; the drainer (commerce-sales-materialize) materializes them across its timer
+      ticks, and the seed kicks that drainer once on completion. Cluster-guarded INSIDE the script by a
+      DISTINCT cluster.tryLock lease ("commerce-sales-backfill", separate from the drainer's
+      "commerce-sales-materialize"), so a duplicate fire while a seed is running is coalesced (the second
+      acquisition returns null and skips). This is a direct kick only (no timer): the seed chains off a
+      completed backfill and is re-runnable, not a heartbeat.
+    -->
+    <route id="commerce-sales-backfill-seed" routeConfigurationId="commerce-sales-backfill-error-handler">
+        <from uri="direct:commerce-sales-backfill-seed"/>
+
+        <choice>
+            <when>
+                <simple>${header.runAs} == null || ${header.runAs} == ''</simple>
+                <setHeader name="runAs">
+                    <constant>commerce-service-user</constant>
+                </setHeader>
+            </when>
+        </choice>
+
+        <toD uri="cms:/etc/commerce/scripts/seedSalesFactBackfill.groovy"/>
+    </route>
+
+</camel>

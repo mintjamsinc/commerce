@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<camel>
+
+    <routeConfiguration id="shopify-customer-update-error-handler">
+        <onException>
+            <exception>java.lang.Exception</exception>
+            <handled>
+                <constant>true</constant>
+            </handled>
+            <redeliveryPolicy maximumRedeliveries="3" redeliveryDelay="5000"/>
+            <log message="Shopify customer update error [${exchangeId}]: ${exception.message}"
+                 loggingLevel="ERROR"/>
+
+            <!-- Record processing health (error) -->
+            <setHeader name="health_group">
+                <constant>route</constant>
+            </setHeader>
+            <setHeader name="health_name">
+                <simple>${header.shopify_topic}</simple>
+            </setHeader>
+            <setHeader name="health_ok">
+                <constant>false</constant>
+            </setHeader>
+            <toD uri="cms:/etc/commerce/scripts/shopify/recordHealth.groovy?inputs=health_*,received_at"/>
+        </onException>
+    </routeConfiguration>
+
+    <!--
+      Bespoke customers/* ingestion. One route
+      serves customers/create, customers/update AND customers/enable|disable —
+      Shopify sends the full customer object on all four, and the upsert promotes
+      the account state to commerce:source_status. The raw JSON becomes the node
+      body at /content/commerce/customers/customer_{id}.json.
+    -->
+    <route id="shopify-customer-update" routeConfigurationId="shopify-customer-update-error-handler">
+        <from uri="direct:shopify-customer-update"/>
+
+        <choice>
+            <when>
+                <simple>${header.runAs} == null || ${header.runAs} == ''</simple>
+                <setHeader name="runAs">
+                    <constant>commerce-service-user</constant>
+                </setHeader>
+            </when>
+        </choice>
+
+        <!-- Save original body before idempotency check (cms:exists overwrites body) -->
+        <setHeader name="shopify_payload">
+            <simple>${body}</simple>
+        </setHeader>
+
+        <!-- Idempotency check: skip if this webhook was already processed -->
+        <toD uri="cms:exists?query=/jcr:root/content/commerce/history/webhooks/${header.shopify_webhook_id}&amp;@header.webhookAlreadyProcessed=exists"/>
+
+        <choice>
+            <when>
+                <simple>${header.webhookAlreadyProcessed} == true &amp;&amp; ${header.replay} != 'true'</simple>
+                <log message="Duplicate webhook ${header.shopify_webhook_id} - skipping"
+                     loggingLevel="INFO"/>
+            </when>
+            <otherwise>
+                <toD uri="cms:/etc/commerce/scripts/shopify/recordCustomer.groovy?inputs=shopify_payload"/>
+
+                <!-- Record webhook as processed (idempotency marker) -->
+                <setBody>
+                    <simple>${date:now:yyyy-MM-dd'T'HH:mm:ss.SSSZ}</simple>
+                </setBody>
+                <toD uri="cms:store?path=/content/commerce/history/webhooks/${date:now:yyyy}/${date:now:MM}/${header.shopify_webhook_id}&amp;mimeType=text/plain"/>
+            </otherwise>
+        </choice>
+
+        <!-- Record processing health (success) -->
+        <setHeader name="health_group">
+            <constant>route</constant>
+        </setHeader>
+        <setHeader name="health_name">
+            <simple>${header.shopify_topic}</simple>
+        </setHeader>
+        <setHeader name="health_ok">
+            <constant>true</constant>
+        </setHeader>
+        <toD uri="cms:/etc/commerce/scripts/shopify/recordHealth.groovy?inputs=health_*,received_at"/>
+    </route>
+
+    <!-- customers/delete: mark the record deleted (lifecycle; ≠ GDPR redact). -->
+    <route id="shopify-customer-delete" routeConfigurationId="shopify-customer-update-error-handler">
+        <from uri="direct:shopify-customer-delete"/>
+
+        <choice>
+            <when>
+                <simple>${header.runAs} == null || ${header.runAs} == ''</simple>
+                <setHeader name="runAs">
+                    <constant>commerce-service-user</constant>
+                </setHeader>
+            </when>
+        </choice>
+
+        <setHeader name="shopify_payload">
+            <simple>${body}</simple>
+        </setHeader>
+
+        <toD uri="cms:/etc/commerce/scripts/shopify/deleteCustomer.groovy?inputs=shopify_payload"/>
+
+        <setHeader name="health_group">
+            <constant>route</constant>
+        </setHeader>
+        <setHeader name="health_name">
+            <simple>${header.shopify_topic}</simple>
+        </setHeader>
+        <setHeader name="health_ok">
+            <constant>true</constant>
+        </setHeader>
+        <toD uri="cms:/etc/commerce/scripts/shopify/recordHealth.groovy?inputs=health_*,received_at"/>
+    </route>
+
+</camel>

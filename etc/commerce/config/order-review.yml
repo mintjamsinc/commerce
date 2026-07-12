@@ -2,20 +2,19 @@
 # Deploy to: /etc/commerce/config/order-review.yml
 #
 # When an `orders/paid` webhook is received, the EIP route stores the order and
-# starts order-review-flow.bpmn. Its first step runs
-# etc/commerce/scripts/shopify/screenOrder.groovy, which evaluates the order
-# against the rules below. If ANY enabled rule matches, the order is routed to a
-# manual "Order Review" task (commerce:status -> review_pending) and announced to
-# the channels in notifications.yml. If no rule matches, the order is
+# starts order-review-flow.bpmn. Its first step is the order-screening script,
+# which evaluates the order against the rules below. If ANY enabled rule matches, the order is routed to a
+# manual "Order Review" task (commerce:status -> review_pending) and announced
+# through the configured notification channels. If no rule matches, the order is
 # auto-approved (commerce:status -> approved) with no human step.
 #
-# This file is kept SEPARATE from shopify.yml (API credentials) and
-# notifications.yml (alert destinations) so screening policy can be tuned
+# This file is kept SEPARATE from the API credentials and the notification
+# destinations (each in their own config) so screening policy can be tuned
 # independently.
 #
 # Design note: screening is fail-open. If this file is missing or unparseable,
-# screenOrder.groovy logs a warning and auto-approves rather than flooding
-# operators with reviews for orders it cannot evaluate.
+# the order-screening script logs a warning and auto-approves rather than
+# flooding operators with reviews for orders it cannot evaluate.
 
 # Master switch. When false, every order is auto-approved (no screening).
 enabled: true

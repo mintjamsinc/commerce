@@ -59,12 +59,19 @@ Operators work these in the Webtop **Tasks** app:
    notification channel — Slack / Discord / Teams / LINE / webhook / email).
    Open it to see the order summary, customer and addresses, line
    items, and — highlighted at the top — the **reasons it was flagged**.
-2. **Claim** the task to take ownership. Only the assignee can approve it or
+2. **Claim** the task to take ownership. Only the assignee can decide it or
    write a memo.
 3. Optionally **View on Shopify**, and leave a **memo** for the audit trail.
 4. Click **Approve order** to complete the review.
 
 ## Stage 3 — Fulfillment
+
+**Reject** is also wired (both buttons on the review form): rejecting requires a
+reason, and the flow then cancels the order in Shopify (Admin API Order Cancel,
+restock + refund; the reason rides as the staff note). The outcome is recorded
+on the order (`commerce:cancel_writeback` ok/failed, `commerce:status =
+cancelled`) and in the outbound sync audit; the cancellation itself echoes back
+through the normal webhook path.
 
 Once approved (whether auto-approved or after a review), a **Fulfill Order** task
 is raised for the warehouse and announced to every enabled notification channel

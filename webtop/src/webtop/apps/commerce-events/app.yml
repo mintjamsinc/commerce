@@ -1,0 +1,18 @@
+identifier: d4f2b5c7-6e0a-4b4c-8d85-9f3c1e4a7b6c
+title: Commerce Events
+icon: assets/icons/icon.svg
+isAdminOnly: true
+# The Shopify → CMS event log console: inspect ingested webhook/event records by
+# status / source / topic / since, and re-dispatch a single event or every event
+# matching the current filter. Extracted from the retired commerce-ops
+# "Events & replay" tab into a focused, single-concern app (1 app = 1 concern),
+# matching the commerce-products / commerce-product split. Driven by the single
+# events.groovy admin endpoint.
+actions:
+  open:
+    icon: open
+    label: Open
+minimumWidth: 760
+minimumHeight: 520
+customWindowControls: true
+singleton: true

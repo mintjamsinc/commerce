@@ -1,4 +1,4 @@
-# Event ingestion (category A: all-topics intake, multi-backend, replay)
+# Event ingestion (all-topics intake, multi-backend, replay)
 # Deploy to: /etc/commerce/config/ingest.yml
 # Managed by the Commerce app (Webtop > Commerce).
 #
@@ -6,8 +6,7 @@
 # source-agnostic ingest core (direct:commerce-ingest): it is logged to the durable
 # event log with its raw payload, then either forwarded to a dedicated workflow
 # (orders / products / refunds / inventory / locations) or normalized generically
-# (customers / fulfillments / carts / checkouts / any other topic). See
-# docs/ingestion.md.
+# (customers / fulfillments / carts / checkouts / any other topic).
 
 # Master switch for the replay/housekeeping batch (ingestion of live events is
 # always on; this only governs automatic replay + pruning).

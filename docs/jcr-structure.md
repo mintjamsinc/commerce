@@ -28,6 +28,12 @@ Runtime paths created dynamically by Camel routes. Not stored in this repository
 
 ## Node Properties
 
+> The full, consolidated property catalog across **all** entities (products, orders, refunds,
+> inventory, backorders, customers, events, entities, purchase orders, reconciliation, sync) —
+> with writers, stored types, and query notes — is in
+> [`commerce-properties.md`](commerce-properties.md). The tables below cover the core stores; the
+> catalog is the source of truth and the map of queryable axes (every property is auto-indexed).
+
 Status is modelled on two independent axes. See
 [`commerce-status.md`](commerce-status.md) for the authoritative status list.
 
@@ -102,8 +108,9 @@ Each product file (`/content/commerce/products/product_{id}.json`) carries:
 | `commerce:updated_at` | Date | Shopify `updated_at` |
 | `commerce:deletedAt` | String | Deletion timestamp (set on `products/delete`) |
 | `metafields` | String | Shopify metafields mirror (when the Admin API is enabled) |
-| `pim` | String | CMS-authored PIM overlay JSON (extended attributes, multi-language, metafields) — #23 |
+| `pim` | String | CMS-authored PIM overlay JSON (extended attributes, multi-language, metafields) |
 | `pim:updated_at` | String | Last PIM overlay edit timestamp |
+| `commerce:reorder_last_orders` | String | JSON map of the previous reorder per inventory item — `{ "<itemId>": { "at": ISO8601, "qty": N, "receivedAt": ISO8601 } }`. Written by `createIncomingTransfer.groovy` (at/qty) + `recordReceived.groovy` (receivedAt) when the reorder / receive tasks complete; the next task's form shows the previous order (date / qty / received date / lead time) for reference. (Renamed from `reorder:last_orders` 2026-07-08 — the `reorder:` namespace is not registered.) |
 
 ### Property namespace & legacy-data migration
 
@@ -129,16 +136,14 @@ trailing `*` keeps the full, namespaced name).
 │   ├── notifications.yml             # Notification channels (Slack/Discord/Teams/LINE/webhook/email)
 │   ├── health.yml                    # Integration health monitor alert thresholds
 │   ├── sla.yml                       # Task SLA escalation rules
-│   ├── inventory-rules.yml           # Dynamic inventory threshold rules (category/tag/season/velocity)
-│   ├── velocity.yml                  # Sales velocity & stockout forecast settings
-│   ├── reorder.yml                   # Auto-reorder / replenishment settings
+│   ├── inventory-alert.yml           # Inventory alert sweep behaviour
+│   ├── planning.yml                  # Planning defaults (fixed reorder threshold)
 │   ├── locations.yml                 # Multi-location allocation strategy
 │   ├── order-review.yml              # Order screening (review) rules
 │   ├── refund-review.yml             # Refund screening (review) rules
 │   ├── backorder.yml                 # Backorder / pre-order detection settings
 │   ├── ingest.yml                    # Event ingestion / replay settings
-│   ├── reconcile.yml                 # CMS <-> Shopify reconciliation settings
-│   ├── crm.yml                       # Customer segmentation / abandoned cart settings
+│   ├── reconcile.yml                 # Shopify -> CMS reconciliation settings
 │   └── storefront.yml                # Headless storefront / catalog publishing settings
 ├── routes/
 │   ├── shopify/
@@ -172,6 +177,8 @@ Per-location stock + location metadata from Shopify. See
 ├── levels/{inventory_item_id}.json    # { inventory_item_id, locations: { "<id>": { available, updatedAt } } }
 ├── locations/{location_id}.json       # raw Shopify location payload (name, …)
 ├── index/{inventory_item_id}.json     # reverse index { inventory_item_id, product_id, product_path, variant_id, variant_title, updatedAt }
+│                                       #   + JCR properties: commerce:available_total (materialized total available),
+│                                       #     commerce:available_total_at (ISO timestamp)
 ├── pending/{inventory_item_id}.json   # alert-sweep queue marker: this item changed and needs evaluation
 └── state/{inventory_item_id}.json     # alert edge-trigger state { inventory_item_id, alertState, lastEvaluatedTotal, threshold, thresholdSource, thresholdRule, evaluatedAt }
 ```
@@ -181,23 +188,47 @@ The `pending/` and `state/` entries drive the inventory-alert sweep (`sweepInven
 edge-triggers it against its threshold on the mirror total and raises `inventory-alert-flow` on
 the ok→low transition. See `commerce.InventoryAlert`.
 
+The sweep is also the **single writer of the materialized per-variant total**: for every live
+indexed item it drains, it recomputes `Locations.aggregate()` and writes it onto the index node
+as the `commerce:available_total` property (`Locations.materializeTotal`). Screens read that
+property 1:1 via `Locations.readTotal` instead of
+re-summing the per-location levels; when it is absent (item not indexed / not yet swept) they
+fall back to `Locations.aggregate`. The `inventory_levels/update` route kicks the sweep
+asynchronously (`direct:commerce-inventory-alert-sweep`) so the total refreshes within
+milliseconds; the sweep's `cluster.tryLock` serializes concurrent webhooks into one drain.
+
 The `index/` entries are built from the Shopify product payload on `products/*` ingestion
 (`indexInventoryItems.groovy`) and removed on `products/delete`
 (`removeInventoryItemIndex.groovy`). They let an `inventory_levels/update` webhook — which
 carries only an `inventory_item_id` — be resolved back to its product and variant
 (`commerce.Locations.resolveItem`).
 
-## Purchase Order Storage
+## Purchase Order Storage (historical)
 
-Reorder proposals / purchase orders created by the replenishment workflow. See
-[auto-reorder.md](auto-reorder.md).
+The standalone replenishment workflow was retired (see [planning.md](planning.md));
+existing records are kept read-only for audit. New replenishment is recorded as
+`incoming_transfer` entries in the outbound sync audit.
 
 ```
-/content/commerce/purchase-orders/
-└── {yyyy}/
-    └── {MM}/
-        └── po_{id}.json               # PO record; commerce:status:
-                                        # review_pending → approved/rejected → ordered/order_failed
+/content/commerce/purchase-orders/{yyyy}/{MM}/po_{id}.json   # legacy PO records (read-only)
+```
+
+## Migration Markers
+
+Boot-time one-shot migrations (commerce.Migrations): one marker per applied
+migration — the permanent "already ran" guard + audit record.
+
+```
+/content/commerce/migrations/{id}.json   # { id, at, result:{ ok, counters… } }
+```
+
+## GDPR Storage
+
+Data-request reports assembled for the merchant (see [gdpr.md](gdpr.md)).
+
+```
+/content/commerce/gdpr/
+└── data-requests/{yyyy}/{MM}/request_*.json
 ```
 
 ## Backorder Storage
@@ -272,7 +303,7 @@ Generic entity properties: `commerce:status`, `commerce:source`, `commerce:topic
 
 ## Outbound Sync Audit
 
-Audit trail of CMS → Shopify writes (#2), one record per attempt (incl. dry runs
+Audit trail of CMS → Shopify writes, one record per attempt (incl. dry runs
 and failures). See [bidirectional-sync.md](bidirectional-sync.md).
 
 ```
@@ -284,84 +315,67 @@ and failures). See [bidirectional-sync.md](bidirectional-sync.md).
                                     # commerce:status: ok | failed | dryrun
 ```
 
-## Content-Commerce Pages
+`action` names (the `reports.groovy?type=operations` view keys off these): `inventory`,
+`price`, `publish`, `metafields`, `incoming_transfer`, `order_cancel`, `customer_update`,
+`product_update` (product 360 base fields, `sync.groovy {action:'product'}`), and the media
+ops `media_add` / `media_delete` / `media_reorder` / `media_updateAlt`
+(`sync.groovy {action:'media', op:…}`). Live media reads use the separate read-only
+`product-media.groovy` endpoint (no audit record — it performs no write).
 
-Editorial landing pages (#22): CMS-authored block documents and their published
-projection. See [storefront.md](storefront.md).
+## Public Storefront Catalog + Embed SDK
 
-```
-/content/commerce/pages/{slug}.json      # authored block document (admin; a `welcome` seed ships)
-/content/public/commerce/
-├── landing/index.html                   # the ichigo.js landing renderer (?slug=)
-└── pages/
-    ├── index.json                       # { meta, pages:[ {slug,title} ] }
-    └── {slug}.json                      # resolved public page (product blocks → cards)
-```
-
-## Public Storefront Catalog
-
-Sanitized, anonymous-readable projection of the active catalog for the headless
-storefront (#20/#21), built by the publisher from the admin product store + PIM +
-inventory levels. The admin data under `/content/commerce/products` is never
-exposed. See [storefront.md](storefront.md).
+Sanitized, anonymous-readable projection of the active catalog, consumed by
+free-form site GSPs and the embed SDK (the fixed SPA and block-LP publishing
+were retired — see [storefront.md](storefront.md); a migration removed the
+old paths).
 
 ```
 /content/public/commerce/
-├── storefront/
-│   └── index.html                 # the ichigo.js storefront SPA
+├── sdk/
+│   └── commerce.js                # embed SDK (data-attribute widgets + JS API)
 └── catalog/                       # published projection (service user writes, anon reads)
     ├── index.json                 # { meta, products:[ card … ] } — list/search
     ├── products/{id}.json         # full public product detail (variants, images, localized)
-    ├── inventory.json             # { updatedAt, items:{ itemId: available } } — realtime (#21)
-    └── store.json                 # { name, shopDomain, currency, lowStock } — store + checkout
+    ├── inventory.json             # { updatedAt, items:{ itemId: available } } — realtime
+    └── store.json                 # { name, shopDomain, currency, low_stock } — store + checkout
+
+/content/WEB-INF/templates/commerce/   # starter GSP templates (product/collection)
 ```
 
-## CRM Storage
+## Customer Storage
 
-Per-customer purchase-history rollup + segment from the CRM batch (#13/#15). See
-[crm.md](crm.md).
+First-class customer store (see [crm.md](crm.md); replaced `crm/customers` +
+`entities/*/customers`, migrated into this store). Each node carries the customer
+MIME `application/vnd.mintjams.commerce.customer+json` (new nodes stamped by
+`Customers.upsertFromWebhook`, existing nodes backfilled by a migration), which launches the
+customer editor.
 
 ```
-/content/commerce/crm/
-├── customers/
-│   └── {key}.json                 # key = id_{customerId} | email_{hash};
-│                                   # { orders, totalSpent, currency, aov,
-│                                   #   firstOrderAt, lastOrderAt, segment, vip,
-│                                   #   recency } + commerce:segment / :vip /
-│                                   #   :recency / :orders / :total_spent /
-│                                   #   :last_order_at / :email
-└── abandoned-alert-state.json      # abandoned-cart operator-alert cooldown
+/content/commerce/customers/
+├── customer_{id}.json             # member — body = raw Shopify customer JSON;
+│                                   # profile/lifecycle as TYPED props
+│                                   # (commerce-properties.md)
+└── customer_email_{hash}.json     # guest (order-derived; body {})
 ```
-
-Abandoned-cart reminder bookkeeping is stored on the **checkout entity** records
-(`/content/commerce/entities/{source}/checkouts/{id}.json`): `commerce:reminders_sent`
-and `commerce:last_reminder_at` (#14).
 
 ## Reconciliation Storage
 
-Drift reports + the round-robin cursor from the CMS ↔ Shopify reconciliation batch
-(#24). See [reconciliation.md](reconciliation.md).
+Run-history reports + the diff watermark from the Shopify → CMS reconciliation batch
+(one report per run — including no-change and failed runs). See
+[reconciliation.md](reconciliation.md).
 
 ```
 /content/commerce/reconciliation/
 ├── {yyyy}/
 │   └── {MM}/
-│       └── recon_{epochMs}.json   # { generatedAt, checked, productsWithDrift,
-│                                   #   totalDiffs, healed, diffs:[…] } + commerce:* props
-├── state.json                      # { cursor, lastRunAt } (batch resume point)
-└── alert-state.json                # drift-alert cooldown
+│       └── recon_{epochMs}.json   # { startedAt, finishedAt, checked, productsWithDrift,
+│                                   #   totalDiffs, refreshed, refreshedProducts, errors,
+│                                   #   result, diffs:[…] } + commerce:* props
+├── state.json                      # { diffSince, lastRunAt } (diff watermark)
+└── schedule-state.json             # per-slot "fired today" state for wall-clock schedules
 ```
 
-## Analytics Storage
-
-Sales velocity cache + stockout-forecast cooldown state. See
-[sales-velocity.md](sales-velocity.md).
-
-```
-/content/commerce/analytics/
-├── velocity.json                      # cached per-variant velocity (units/day)
-└── forecast-state.json                # per-variant stockout alert cooldowns
-```
+(`alert-state.json` — the retired drift-alert cooldown — may linger in older installs.)
 
 ## Task SLA Storage
 
@@ -383,36 +397,39 @@ Cooldown state for task SLA escalations. See [task-sla.md](task-sla.md).
 /content/commerce/endpoints/
 ├── health.groovy                     # Health snapshot JSON (admin/authenticated)
 ├── tasks.groovy                      # Open tasks + SLA status JSON (admin/authenticated)
-├── forecast.groovy                   # Stockout forecast JSON (admin/authenticated)
 ├── inventory-locations.groovy        # Per-location breakdown + allocation JSON (admin/authenticated)
 ├── backorders.groovy                 # Backorder book snapshot JSON (admin/authenticated)
 ├── events.groovy                     # Event log list + replay (admin/authenticated)
 ├── sync.groovy                       # CMS → Shopify outbound sync (admin/authenticated)
+│                                       #   actions: inventory / price / publish / metafields / customer /
+│                                       #   product (base fields, productUpdate) / media (op add|delete|reorder|updateAlt)
+├── product-media.groovy              # Product 360 live media read — GET ?productId → { productId, enabled,
+│                                       #   media:[{ id(=MediaImage gid), alt, status, url, width, height }] }.
+│                                       #   Read-only (no writes); Admin-API-gated; degrades to { enabled:false, media:[] }.
+│                                       #   Media writes go through sync.groovy {action:'media',…} (admin/authenticated)
 ├── pim.groovy                        # PIM overlay view/edit + product search (admin/authenticated)
 ├── reconcile.groovy                  # Reconciliation report + trigger (admin/authenticated)
 ├── reports.groovy                    # Sales / operations reports (JSON/CSV) (admin/authenticated)
-├── crm.groovy                        # Customer segments + abandoned carts (admin/authenticated)
-├── storefront.groovy                 # Storefront publish status + rebuild (admin/authenticated)
-├── pages.groovy                      # Landing page CRUD (content commerce) (admin/authenticated)
+├── crm.groovy                        # Read-only customer browse / search / detail (admin/authenticated)
+├── storefront.groovy                 # Catalog projection status + rebuild (admin/authenticated)
 └── dashboard.groovy                  # Aggregated dashboard snapshot JSON (admin/authenticated)
 ```
 
 The webhook receiver is a backend adapter: it verifies Shopify's HMAC and forwards
 **every** topic to the source-agnostic ingest core (`direct:commerce-ingest`). Topics
-with a dedicated workflow — `orders/paid`, `products/create`, `products/update`,
-`products/delete`, `refunds/create`, `inventory_levels/update`, `locations/create`,
-`locations/update` — are handled by their routes; every other topic (`customers/*`,
-`fulfillments/*`, `carts/*`, `checkouts/*`, …) is normalized generically. See
-[ingestion.md](ingestion.md).
+with a dedicated workflow — `orders/paid`, `products/*`, `refunds/create`,
+`inventory_levels/update`, `locations/*`, `customers/*` (the customer store) and
+the GDPR compliance topics (`customers/redact`, `customers/data_request`,
+`shop/redact`) — are handled by their routes; every other topic
+(`fulfillments/*`, `carts/*`, `checkouts/*`, …) is normalized generically. See
+[ingestion.md](ingestion.md) and [gdpr.md](gdpr.md).
 
 HTTP access:
-- `GET  /bin/cms.cgi/{workspace}/content/public/commerce/storefront/index.html`  (public storefront)
 - `GET  /bin/cms.cgi/{workspace}/content/public/commerce/catalog/index.json`  (public catalog)
-- `GET  /bin/cms.cgi/{workspace}/content/public/commerce/landing/index.html?slug=welcome`  (content-commerce page)
+- `GET  /bin/cms.cgi/{workspace}/content/public/commerce/sdk/commerce.js`  (embed SDK)
 - `POST /bin/cms.cgi/{workspace}/content/public/commerce/endpoints/shopify/webhook.groovy`
 - `GET  /bin/cms.cgi/{workspace}/content/commerce/endpoints/health.groovy?days=7`
 - `GET  /bin/cms.cgi/{workspace}/content/commerce/endpoints/tasks.groovy`
-- `GET  /bin/cms.cgi/{workspace}/content/commerce/endpoints/forecast.groovy?warnDays=7`
 - `GET  /bin/cms.cgi/{workspace}/content/commerce/endpoints/inventory-locations.groovy?productId=123`
 - `GET  /bin/cms.cgi/{workspace}/content/commerce/endpoints/backorders.groovy?limit=50`
 - `GET  /bin/cms.cgi/{workspace}/content/commerce/endpoints/events.groovy?status=error&limit=100`
@@ -421,11 +438,14 @@ HTTP access:
 - `POST /bin/cms.cgi/{workspace}/content/commerce/endpoints/sync.groovy   {"action":"inventory",…}`
 - `GET  /bin/cms.cgi/{workspace}/content/commerce/endpoints/pim.groovy?productId=123`
 - `POST /bin/cms.cgi/{workspace}/content/commerce/endpoints/pim.groovy   {"productId":123,"pim":{…}}`
+- `GET  /bin/cms.cgi/{workspace}/content/commerce/endpoints/product-media.groovy?productId=123`  (live media read)
+- `POST /bin/cms.cgi/{workspace}/content/commerce/endpoints/sync.groovy   {"action":"product","productId":1,"fields":{…}}`
+- `POST /bin/cms.cgi/{workspace}/content/commerce/endpoints/sync.groovy   {"action":"media","op":"add","productId":1,"originalSource":"https://…"}`
 - `GET  /bin/cms.cgi/{workspace}/content/commerce/endpoints/reconcile.groovy`
 - `POST /bin/cms.cgi/{workspace}/content/commerce/endpoints/reconcile.groovy`
 - `GET  /bin/cms.cgi/{workspace}/content/commerce/endpoints/reports.groovy?type=sales&days=30&format=csv`
-- `GET  /bin/cms.cgi/{workspace}/content/commerce/endpoints/crm.groovy?view=segments`
-- `POST /bin/cms.cgi/{workspace}/content/commerce/endpoints/crm.groovy`
+- `GET  /bin/cms.cgi/{workspace}/content/commerce/endpoints/crm.groovy?view=browse`
+- `GET  /bin/cms.cgi/{workspace}/content/commerce/endpoints/crm.groovy?view=customer&customerId=123`
 - `GET  /bin/cms.cgi/{workspace}/content/commerce/endpoints/dashboard.groovy?days=7&salesDays=30`
 
 ## Finder App Workflow

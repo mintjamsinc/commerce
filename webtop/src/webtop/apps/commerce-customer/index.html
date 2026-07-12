@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no">
+	<title>Commerce Customer</title>
+
+	<!-- Bootstrap Icons (bundled with webtop) -->
+	<link rel="stylesheet" href="../../assets/vendor/bootstrap-icons/bootstrap-icons.min.css?v=__BUILD_VERSION__">
+
+	<!-- App CSS + shared Webtop design system -->
+	<link href="./assets/css/style.css?v=__BUILD_VERSION__" rel="stylesheet" />
+	<link href="../../assets/css/webtop-app.css?v=__BUILD_VERSION__" rel="stylesheet" />
+</head>
+
+<body>
+	<div id="app" v-cloak class="d-flex flex-column" @mounted="onMounted" @unmount="onUnmount">
+
+		<!-- Top toolbar -->
+		<nav class="nav-bar window-drag-region">
+			<div class="toolbar-group">
+				<button class="btn-icon" @click="save" :disabled="!hasChanges || saving || !customer" :title="t('app.commerce-customer.toolbar.save')">
+					<i class="bi bi-cloud-arrow-up"></i>
+				</button>
+				<button class="btn-icon" @click="revert" :disabled="!hasChanges || saving" :title="t('app.commerce-customer.toolbar.revert')">
+					<i class="bi bi-arrow-counterclockwise"></i>
+				</button>
+				<button class="btn-icon" @click="reload" :disabled="!customer || saving" :title="t('app.commerce-customer.toolbar.reload')">
+					<i class="bi bi-arrow-clockwise"></i>
+				</button>
+			</div>
+
+			<!-- Section switcher -->
+			<div class="toolbar-group">
+				<button class="btn-icon section-toggle" :class="{ active: section === 'overview' }"
+					@click="selectSection('overview')" :title="t('app.commerce-customer.section.overview')">
+					<i class="bi bi-person-badge"></i>
+				</button>
+				<button class="btn-icon section-toggle" :class="{ active: section === 'marketing' }"
+					@click="selectSection('marketing')" :title="t('app.commerce-customer.section.marketing')">
+					<i class="bi bi-envelope-check"></i>
+				</button>
+				<button class="btn-icon section-toggle" :class="{ active: section === 'tags' }"
+					@click="selectSection('tags')" :title="t('app.commerce-customer.section.tags')">
+					<i class="bi bi-tags"></i>
+				</button>
+				<button class="btn-icon section-toggle" :class="{ active: section === 'note' }"
+					@click="selectSection('note')" :title="t('app.commerce-customer.section.note')">
+					<i class="bi bi-journal-text"></i>
+				</button>
+				<button class="btn-icon section-toggle" :class="{ active: section === 'addresses' }"
+					@click="selectSection('addresses')" :title="t('app.commerce-customer.section.addresses')">
+					<i class="bi bi-geo-alt"></i>
+				</button>
+			</div>
+
+			<span class="nav-spacer"></span>
+
+			<!-- Window controls -->
+			<div class="window-controls">
+				<button class="btn-icon" @click="onMinimizeWindow" :title="t('common.minimize')">
+					<i class="bi bi-dash-lg"></i>
+				</button>
+				<button class="btn-icon" @click="onToggleMaximizeWindow" :title="t('common.maximize')">
+					<i class="bi bi-square"></i>
+				</button>
+				<button class="btn-icon window-control-close" @click="onCloseWindow" :title="t('common.close')">
+					<i class="bi bi-x-lg"></i>
+				</button>
+			</div>
+		</nav>
+
+		<!-- Content -->
+		<div class="content-body">
+			<main class="content-main island">
+
+				<div v-if="loading" class="cst-state"><div class="spinner"></div><span>{{ t('app.commerce-customer.state.loading') }}</span></div>
+
+				<div v-else-if="!customer" class="cst-state">
+					<i class="bi bi-person"></i>
+					<span>{{ t('app.commerce-customer.state.empty') }}</span>
+				</div>
+
+				<template v-else>
+					<!-- Customer header (always visible) -->
+					<header class="cst-head">
+						<div>
+							<h2 class="cst-title">{{ displayName }}</h2>
+							<div class="cst-meta">
+								<span class="pim-status" :class="'st-' + (accountState || 'unknown')"><span :class="{ 'text-muted': !(accountState) }">{{ accountState || '—' }}</span></span>
+								<span v-if="body.email">· {{ body.email }}</span>
+								<span>· {{ customerId }}</span>
+							</div>
+						</div>
+					</header>
+
+					<!-- ================= OVERVIEW ================= -->
+					<template v-if="section === 'overview'">
+						<section class="property-group">
+							<div class="property-group-title"><i class="bi bi-person-badge me-2"></i>{{ t('app.commerce-customer.overview.groupTitle') }}</div>
+							<div class="property-hint">{{ t('app.commerce-customer.overview.hint') }}</div>
+							<div class="cst-facts">
+								<div class="cst-fact">
+									<span class="cst-fact-label">{{ t('app.commerce-customer.field.email') }}</span>
+									<span class="cst-fact-value" :class="{ 'text-muted': !(body.email) }">{{ body.email || '—' }}</span>
+								</div>
+								<div class="cst-fact">
+									<span class="cst-fact-label">{{ t('app.commerce-customer.field.phone') }}</span>
+									<span class="cst-fact-value" :class="{ 'text-muted': !(body.phone) }">{{ body.phone || '—' }}</span>
+								</div>
+								<div class="cst-fact">
+									<span class="cst-fact-label">{{ t('app.commerce-customer.field.ordersCount') }}</span>
+									<span class="cst-fact-value" :class="{ 'text-muted': !(body.orders_count != null) }">{{ body.orders_count != null ? body.orders_count : '—' }}</span>
+								</div>
+								<div class="cst-fact">
+									<span class="cst-fact-label">{{ t('app.commerce-customer.field.totalSpent') }}</span>
+									<span class="cst-fact-value">{{ fmtMoney(body.total_spent) }}</span>
+								</div>
+								<div class="cst-fact">
+									<span class="cst-fact-label">{{ t('app.commerce-customer.field.state') }}</span>
+									<span class="cst-fact-value"><span class="pim-status" :class="'st-' + (accountState || 'unknown')"><span :class="{ 'text-muted': !(accountState) }">{{ accountState || '—' }}</span></span></span>
+								</div>
+								<div class="cst-fact">
+									<span class="cst-fact-label">{{ t('app.commerce-customer.field.verifiedEmail') }}</span>
+									<span class="cst-fact-value">
+										<i class="bi me-1" :class="body.verified_email ? 'bi-check-circle-fill cst-yes' : 'bi-dash-circle cst-no'"></i>
+										{{ body.verified_email ? t('app.commerce-customer.value.yes') : t('app.commerce-customer.value.no') }}
+									</span>
+								</div>
+								<div class="cst-fact">
+									<span class="cst-fact-label">{{ t('app.commerce-customer.field.marketing') }}</span>
+									<span class="cst-fact-value" :class="{ 'text-muted': !(marketingState) }">{{ marketingState ? t('app.commerce-customer.marketing.state.' + marketingState, undefined, marketingState) : '—' }}</span>
+								</div>
+								<div class="cst-fact">
+									<span class="cst-fact-label">{{ t('app.commerce-customer.field.createdAt') }}</span>
+									<span class="cst-fact-value" :class="{ 'text-muted': !(fmtDateTime(body.created_at)) }">{{ fmtDateTime(body.created_at) || '—' }}</span>
+								</div>
+							</div>
+						</section>
+					</template>
+
+					<!-- ================= MARKETING & TAX ================= -->
+					<template v-if="section === 'marketing'">
+						<section class="property-group">
+							<div class="property-group-title"><i class="bi bi-envelope-check me-2"></i>{{ t('app.commerce-customer.marketing.groupTitle') }}</div>
+							<div class="property-hint">{{ t('app.commerce-customer.marketing.hint') }}</div>
+							<div v-if="!adminApiEnabled" class="cst-banner warn">
+								<i class="bi bi-exclamation-triangle"></i>
+								<span>{{ t('app.commerce-customer.hint.adminApiOff') }}</span>
+							</div>
+
+							<label class="cst-toggle">
+								<input type="checkbox" v-model="edit.marketingSubscribed" />
+								<span>
+									<span class="cst-toggle-title">{{ t('app.commerce-customer.marketing.consentLabel') }}</span>
+									<span class="cst-toggle-sub">{{ t('app.commerce-customer.marketing.consentHint') }}</span>
+								</span>
+							</label>
+
+							<label class="cst-toggle">
+								<input type="checkbox" v-model="edit.taxExempt" />
+								<span>
+									<span class="cst-toggle-title">{{ t('app.commerce-customer.marketing.taxExemptLabel') }}</span>
+									<span class="cst-toggle-sub">{{ t('app.commerce-customer.marketing.taxExemptHint') }}</span>
+								</span>
+							</label>
+						</section>
+					</template>
+
+					<!-- ================= TAGS ================= -->
+					<template v-if="section === 'tags'">
+						<section class="property-group">
+							<div class="property-group-title"><i class="bi bi-tags me-2"></i>{{ t('app.commerce-customer.tags.groupTitle') }}</div>
+							<div class="property-hint">{{ t('app.commerce-customer.tags.hint') }}</div>
+
+							<div class="cst-chips">
+								<span v-for="(tag, i) in edit.tags" :key="i" class="cst-chip">
+									<span class="cst-chip-text">{{ tag }}</span>
+									<button class="cst-chip-x" @click="removeTag(i)" :title="t('app.commerce-customer.tags.remove')">
+										<i class="bi bi-x"></i>
+									</button>
+								</span>
+								<span v-if="edit.tags.length === 0" class="property-hint">{{ t('app.commerce-customer.tags.empty') }}</span>
+							</div>
+
+							<div class="cst-taginput">
+								<input type="text" class="wt w-100" v-model="tagInput"
+									:placeholder="t('app.commerce-customer.tags.placeholder')" @keyup.enter="addTag" />
+								<button class="wt wt-slim" @click="addTag" :disabled="!tagInput.trim()">
+									<i class="bi bi-plus-lg me-1"></i>{{ t('app.commerce-customer.tags.add') }}
+								</button>
+							</div>
+						</section>
+					</template>
+
+					<!-- ================= NOTE ================= -->
+					<template v-if="section === 'note'">
+						<section class="property-group">
+							<div class="property-group-title"><i class="bi bi-journal-text me-2"></i>{{ t('app.commerce-customer.note.groupTitle') }}</div>
+							<div class="property-hint">{{ t('app.commerce-customer.note.hint') }}</div>
+							<textarea class="wt w-100" rows="8" v-model="edit.note"
+								:placeholder="t('app.commerce-customer.note.placeholder')"></textarea>
+						</section>
+					</template>
+
+					<!-- ================= ADDRESSES (read-only) ================= -->
+					<template v-if="section === 'addresses'">
+						<section class="property-group">
+							<div class="property-group-title"><i class="bi bi-geo-alt me-2"></i>{{ t('app.commerce-customer.addresses.groupTitle') }}</div>
+							<div class="property-hint">{{ t('app.commerce-customer.addresses.hint') }}</div>
+
+							<div v-if="addresses.length === 0" class="property-hint">{{ t('app.commerce-customer.addresses.empty') }}</div>
+
+							<div v-for="(a, i) in addresses" :key="i" class="cst-address">
+								<div class="cst-address-head">
+									<span class="cst-address-name" :class="{ 'text-muted': !(a.name) }">{{ a.name || '—' }}</span>
+									<span v-if="a.isDefault" class="cst-badge">{{ t('app.commerce-customer.addresses.default') }}</span>
+								</div>
+								<div v-if="a.company" class="cst-address-line">{{ a.company }}</div>
+								<div v-for="(ln, j) in a.lines" :key="j" class="cst-address-line">{{ ln }}</div>
+								<div v-if="a.cityLine" class="cst-address-line">{{ a.cityLine }}</div>
+								<div v-if="a.country" class="cst-address-line">{{ a.country }}</div>
+								<div v-if="a.phone" class="cst-address-line cst-address-phone"><i class="bi bi-telephone me-1"></i>{{ a.phone }}</div>
+							</div>
+						</section>
+					</template>
+				</template>
+			</main>
+		</div>
+
+		<!-- Status bar -->
+		<div class="status-bar window-drag-region">
+			<span class="nav-spacer"></span>
+			<div class="status-group">
+				<span v-if="saving" class="status-item"><i class="bi bi-cloud-arrow-up me-1"></i>{{ t('app.commerce-customer.statusbar.saving') }}</span>
+				<span v-else-if="hasChanges" class="status-item">{{ t('app.commerce-customer.statusbar.unsaved') }}</span>
+				<span v-else-if="statusKind === 'ok'" class="status-item status-ok"><i class="bi bi-check-lg me-1"></i>{{ status }}</span>
+				<span v-else-if="statusKind === 'err'" class="status-item status-err">{{ status }}</span>
+				<span v-else class="status-item">{{ t('app.commerce-customer.statusbar.ready') }}</span>
+			</div>
+		</div>
+
+		<!-- Toast -->
+		<div v-if="toast" class="commerce-toast" :class="{ error: toastError }" role="alert">{{ toast }}</div>
+
+		<!-- Unsaved-changes dialog -->
+		<div v-if="confirmDialog.visible" class="dialog-overlay">
+			<div class="dialog-frame" style="max-width: 32rem;">
+				<div class="island p-2">
+					<div class="dialog-header">
+						<h3><i class="bi bi-exclamation-triangle-fill me-2"></i>{{ t('app.commerce-customer.dialog.title') }}</h3>
+					</div>
+					<div class="dialog-body">
+						<p class="mt-0">{{ t('app.commerce-customer.dialog.body1') }}</p>
+						<p>{{ t('app.commerce-customer.dialog.body2') }}</p>
+					</div>
+					<div class="dialog-footer flex-wrap">
+						<button class="wt" @click="onConfirmAction('cancel')">{{ t('common.cancel') }}</button>
+						<button class="wt wt-danger" @click="onConfirmAction('discard')">
+							<i class="bi bi-trash me-1"></i>{{ t('app.commerce-customer.dialog.discard') }}
+						</button>
+						<button class="wt wt-primary" @click="onConfirmAction('save')">
+							<i class="bi bi-cloud-arrow-up me-1"></i>{{ t('common.save') }}
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Shopify-write confirmation dialog -->
+		<div v-if="actionDialog.visible" class="dialog-overlay">
+			<div class="dialog-frame" style="max-width: 32rem;">
+				<div class="island p-2">
+					<div class="dialog-header">
+						<h3><i class="bi bi-cloud-arrow-up me-2"></i>{{ actionDialog.title }}</h3>
+					</div>
+					<div class="dialog-body">
+						<p class="mt-0">{{ actionDialog.message }}</p>
+						<p class="cst-dialog-note">{{ t('app.commerce-customer.confirm.note') }}</p>
+					</div>
+					<div class="dialog-footer flex-wrap">
+						<button class="wt" @click="onActionDialog(false)">{{ t('common.cancel') }}</button>
+						<button class="wt wt-primary" @click="onActionDialog(true)">
+							<i class="bi bi-cloud-arrow-up me-1"></i>{{ actionDialog.ok }}
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+
+	</div>
+
+	<script type="module" src="./app.js?v=__BUILD_VERSION__"></script>
+</body>
+
+</html>

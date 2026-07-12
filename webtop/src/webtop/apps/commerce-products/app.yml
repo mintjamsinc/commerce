@@ -1,0 +1,17 @@
+identifier: d8124555-df36-442d-ac2e-18845218bfad
+title: Commerce Products
+icon: assets/icons/icon.svg
+isAdminOnly: true
+# The product facet browser: drill into the mirrored catalog by the
+# auto-indexed commerce:* properties (vendor / product type / tags / Shopify
+# status / processing status) plus full-text search, and open any product in
+# the Commerce Product editor (the same editor the Content Browser launches
+# via the product MIME type). Read-only: all editing lives in the editor.
+actions:
+  open:
+    icon: open
+    label: Open
+minimumWidth: 760
+minimumHeight: 520
+customWindowControls: true
+singleton: true

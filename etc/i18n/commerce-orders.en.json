@@ -1,0 +1,48 @@
+{
+	"app.commerce-orders.title": "Commerce Orders",
+
+	"app.commerce-orders.toolbar.refresh": "Refresh",
+	"app.commerce-orders.toolbar.clearFilters": "Clear search & filters",
+	"app.commerce-orders.toolbar.toggleSidebar": "Toggle filters",
+
+	"app.commerce-orders.search.placeholder": "Search orders…",
+
+	"app.commerce-orders.filter.title": "Filters",
+	"app.commerce-orders.filter.customerId": "Customer ID",
+	"app.commerce-orders.filter.customerIdPlaceholder": "gid://shopify/Customer/… or numeric ID",
+	"app.commerce-orders.filter.productId": "Product ID",
+	"app.commerce-orders.filter.productIdPlaceholder": "gid://shopify/Product/… or numeric ID",
+	"app.commerce-orders.filter.from": "From",
+	"app.commerce-orders.filter.to": "To",
+
+	"app.commerce-orders.facet.status": "Status",
+	"app.commerce-orders.facet.financial": "Financial status",
+	"app.commerce-orders.facet.currency": "Currency",
+
+	"app.commerce-orders.state.loading": "Loading orders…",
+	"app.commerce-orders.state.empty": "No orders match the current search / filters.",
+
+	"app.commerce-orders.list.count": "{start}–{end} of {total}",
+	"app.commerce-orders.list.capped": "Large result set — counts are approximate",
+	"app.commerce-orders.list.cappedTitle": "The scan stopped at the safety cap; narrow the filters for exact counts.",
+	"app.commerce-orders.list.prev": "Previous page",
+	"app.commerce-orders.list.next": "Next page",
+
+	"app.commerce-orders.col.orderNumber": "Order",
+	"app.commerce-orders.col.orderedAt": "Ordered at",
+	"app.commerce-orders.col.email": "Customer",
+	"app.commerce-orders.col.total": "Total",
+	"app.commerce-orders.col.status": "Status",
+	"app.commerce-orders.col.financial": "Financial status",
+
+	"app.commerce-orders.total.refundedTitle": "{count, plural, one {# refund} other {# refunds}} on this order",
+
+	"app.commerce-orders.action.open": "Open in the order editor",
+
+	"app.commerce-orders.statusbar.loading": "Loading…",
+	"app.commerce-orders.statusbar.count": "{total} orders",
+	"app.commerce-orders.statusbar.ready": "Ready",
+
+	"app.commerce-orders.err.loadFailed": "Could not load orders.",
+	"app.commerce-orders.err.noEditor": "The Commerce Order editor is not installed."
+}

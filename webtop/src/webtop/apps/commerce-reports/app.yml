@@ -1,0 +1,16 @@
+identifier: a1c9e2f4-3b7d-4e18-9a52-6c0f8b1d4e39
+title: Commerce Reports
+icon: assets/icons/icon.svg
+isAdminOnly: true
+# The sales report console: daily orders + revenue (per currency + base-currency
+# rollup) and top products over an operator-picked date range, with CSV
+# export (reports.groovy?type=sales). Read-only — one app, one concern (split out
+# of the retired Commerce Operations console).
+actions:
+  open:
+    icon: open
+    label: Open
+minimumWidth: 760
+minimumHeight: 560
+customWindowControls: true
+singleton: true

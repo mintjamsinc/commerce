@@ -185,6 +185,34 @@ mutation {
     }
 
     /**
+     * Best-effort CANCEL of a Bulk Operation by gid — the watchdog's HARD CAP on a bulk that has
+     * been RUNNING on Shopify far past its budget (frees the app's single bulk slot so the next
+     * scheduled export can start). Returns a Map describing the outcome —
+     * [id, status, userErrors] from a response, or [error: message] on a transport/GraphQL failure
+     * — and NEVER throws, so a cancel attempt can't break the watchdog sweep. Mirrors bulkByGid's
+     * swallow-and-degrade style. Note: bulkOperationCancel is asynchronous, so `status` is typically
+     * CANCELING; the broker still marks the job terminal via BulkJobs.markCanceled.
+     */
+    static Map cancelBulk(HttpClient client, String endpoint, String accessToken, String gid) {
+        try {
+            def mutation = """
+mutation {
+  bulkOperationCancel(id: ${gqlString(gid)}) {
+    bulkOperation { id status }
+    userErrors { field message }
+  }
+}
+""".trim()
+            def resp = graphql(client, endpoint, accessToken, [query: mutation])
+            def r = resp?.data?.bulkOperationCancel
+            def b = r?.bulkOperation
+            return [id: b?.id?.toString(), status: b?.status?.toString(), userErrors: r?.userErrors]
+        } catch (Exception e) {
+            return [error: e.message]
+        }
+    }
+
+    /**
      * Status + downloadable result URL for a Bulk Operation by gid, or null.
      *
      * `node(id:)` returns null for a BulkOperation on newer API versions, so:

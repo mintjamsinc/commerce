@@ -1,5 +1,5 @@
 // Task listener: notify configured destinations when a "Release Backorder" task is
-// created in the backorder-release workflow (feature #12).
+// created in the backorder-release workflow.
 //
 // Attached as a Camunda "create" task listener via CmsDelegate. The awaited stock
 // for a backordered order line has arrived, so an operator is asked to release it

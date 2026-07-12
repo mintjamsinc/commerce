@@ -95,9 +95,9 @@
 						<div>
 							<div class="dash-card-head" style="margin-bottom: 0.5rem;">{{ t('app.commerce-dashboard.card.topProducts') }}</div>
 							<div class="dash-rows">
-								<div class="dash-row" v-for="(p, i) in salesTrend.topProducts" :key="i">
-									<span class="dash-row-label">{{ p.title }}</span>
-									<span class="dash-row-value">{{ p.revenue }} {{ p.currency }}</span>
+								<div class="dash-row" v-for="(p, i) in salesTrend.topProducts" :key="i" :title="t('app.commerce-dashboard.salesTrend.grossTip') + ': ' + p.gross + ' ' + p.currency">
+									<span class="dash-row-label">{{ p.title }} × {{ p.qty }}</span>
+									<span class="dash-row-value">{{ p.net }} {{ p.currency }}</span>
 								</div>
 								<div class="dash-row" v-if="salesTrend.topProducts.length === 0">
 									<span class="dash-row-label">{{ t('app.commerce-dashboard.salesTrend.noProducts') }}</span>
@@ -145,24 +145,6 @@
 					</div>
 				</div>
 
-				<!-- ===== Forecast ===== -->
-				<div class="island dash-card">
-					<div class="dash-card-head"><i class="bi bi-graph-down-arrow"></i>{{ t('app.commerce-dashboard.card.forecast') }}</div>
-					<div class="dash-metric">
-						<span class="dash-metric-value" :class="{ 'dash-value-danger': forecast.atRisk > 0 }">{{ forecast.atRisk }}</span>
-						<span class="dash-metric-unit">{{ t('app.commerce-dashboard.unit.atRiskDays', { days: forecast.warnDays }) }}</span>
-					</div>
-					<div class="dash-rows">
-						<div class="dash-row" v-for="r in forecast.top">
-							<span class="dash-row-label"><i class="bi bi-hourglass-split"></i>{{ r.label }}</span>
-							<span class="dash-pill" :class="r.days <= 2 ? 'danger' : 'warn'">{{ t('app.commerce-dashboard.pill.daysLeft', { days: r.days }) }}</span>
-						</div>
-						<div class="dash-row" v-if="forecast.atRisk === 0">
-							<span class="dash-row-label">{{ t('app.commerce-dashboard.forecast.noStockouts') }}</span>
-							<span class="dash-pill ok">{{ t('common.ok') }}</span>
-						</div>
-					</div>
-				</div>
 
 				<!-- ===== Locations ===== -->
 				<div class="island dash-card">
@@ -224,24 +206,6 @@
 						<span class="dash-metric-value">{{ crm.customers }}</span>
 						<span class="dash-metric-unit">{{ t('app.commerce-dashboard.unit.customers') }}</span>
 					</div>
-					<div class="dash-rows">
-						<div class="dash-row">
-							<span class="dash-row-label"><i class="bi bi-gem"></i>{{ t('app.commerce-dashboard.row.vip') }}</span>
-							<span class="dash-row-value">{{ crm.vip }}</span>
-						</div>
-						<div class="dash-row">
-							<span class="dash-row-label">{{ t('app.commerce-dashboard.row.atRisk') }}</span>
-							<span class="dash-pill" :class="crm.atRisk > 0 ? 'warn' : 'ok'">{{ crm.atRisk }}</span>
-						</div>
-						<div class="dash-row">
-							<span class="dash-row-label">{{ t('app.commerce-dashboard.row.dormant') }}</span>
-							<span class="dash-pill" :class="crm.dormant > 0 ? 'warn' : 'ok'">{{ crm.dormant }}</span>
-						</div>
-						<div class="dash-row">
-							<span class="dash-row-label"><i class="bi bi-cart-x"></i>{{ t('app.commerce-dashboard.row.abandonedCarts') }}</span>
-							<span class="dash-row-value" :class="{ 'dash-value-warn': crm.abandoned > 0 }">{{ crm.abandoned }}</span>
-						</div>
-					</div>
 				</div>
 
 				<!-- ===== Tasks ===== -->
@@ -302,7 +266,7 @@
 				<div class="island dash-card">
 					<div class="dash-card-head has-link">
 						<span class="head-title"><i class="bi bi-inboxes"></i>{{ t('app.commerce-dashboard.card.events') }}</span>
-						<button class="dash-card-link" :title="t('app.commerce-dashboard.events.openTitle')"
+						<button class="btn-icon" :title="t('app.commerce-dashboard.events.openTitle')"
 							@click="openOps('events', { eventFilter: { status: 'error' } })">
 							<i class="bi bi-box-arrow-up-right"></i>
 						</button>
@@ -331,7 +295,7 @@
 				<div class="island dash-card">
 					<div class="dash-card-head has-link">
 						<span class="head-title"><i class="bi bi-arrow-left-right"></i>{{ t('app.commerce-dashboard.card.reconciliation') }}</span>
-						<button class="dash-card-link" :title="t('app.commerce-dashboard.reconciliation.openTitle')"
+						<button class="btn-icon" :title="t('app.commerce-dashboard.reconciliation.openTitle')"
 							@click="openOps('reconcile')">
 							<i class="bi bi-box-arrow-up-right"></i>
 						</button>
@@ -346,8 +310,8 @@
 							<span class="dash-row-value">{{ reconciliation.diffs }}</span>
 						</div>
 						<div class="dash-row">
-							<span class="dash-row-label"><i class="bi bi-bandaid"></i>{{ t('app.commerce-dashboard.row.autoHealed') }}</span>
-							<span class="dash-row-value">{{ reconciliation.healed }}</span>
+							<span class="dash-row-label"><i class="bi bi-bandaid"></i>{{ t('app.commerce-dashboard.row.autoRefreshed') }}</span>
+							<span class="dash-row-value">{{ reconciliation.refreshed }}</span>
 						</div>
 						<div class="dash-row" v-if="reconciliation.lastRunAt">
 							<span class="dash-row-label">{{ t('app.commerce-dashboard.row.lastRun') }}</span>
@@ -360,7 +324,7 @@
 				<div class="island dash-card">
 					<div class="dash-card-head has-link">
 						<span class="head-title"><i class="bi bi-cloud-upload"></i>{{ t('app.commerce-dashboard.card.outboundSync') }}</span>
-						<button class="dash-card-link" :title="t('app.commerce-dashboard.outboundSync.openTitle')"
+						<button class="btn-icon" :title="t('app.commerce-dashboard.outboundSync.openTitle')"
 							@click="openOps('sync')">
 							<i class="bi bi-box-arrow-up-right"></i>
 						</button>

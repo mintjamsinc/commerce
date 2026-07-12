@@ -1,0 +1,21 @@
+# Sales aggregation configuration.
+#
+# Read by commerce.SalesQuery (the index-backed facet reader — the ONLY sales read path) and the
+# reports endpoint. This is the operator's control surface for the "operator sovereignty" principle
+# (top-level design principle): the system never hard-codes THE sales metric or population — gross/net/total, the
+# financial-status population, whether cancelled orders count, and the returns date basis are all
+# chosen HERE (or per-request), not in code.
+#
+# Two-level structure only (commerce.SimpleYaml): top-level scalars + one nested `defaults:` level.
+
+defaults:
+  # financialStatus: comma-separated Shopify financial_status values that count as the sales population
+  # (empty = ALL). Refunded orders STAY in the population and are netted via the returns component
+  # (so gross and net are both visible over the same population), not excluded here.
+  financialStatus: paid,partially_refunded,refunded
+  # includeCancelled: whether cancelled orders remain in the population (returns net them either way).
+  includeCancelled: false
+  # returnsBasis: order  — order-cohort; returns attributed to the order's date (net_sales-consistent). DEFAULT.
+  #               refund — refund-period; returns read from the refund store by commerce:refunded_at.
+  # The response is always LABELLED with the basis in effect.
+  returnsBasis: order

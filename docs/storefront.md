@@ -1,149 +1,85 @@
-# Headless Storefront
+# Self-Hosted Storefront = Product Data + a Thin JS Client
 
-Category F. A customer-facing storefront built with ichigo.js (#20) with real-time
-inventory badges (#21), served entirely from public, sanitized catalog data — the
-admin product store is never exposed.
+The platform does **not** ship a storefront — it exposes a small,
+sanitized **product read endpoint** plus a tiny **data-only JS client**. You build
+your own promotion / feature pages as ordinary same-origin CMS pages and pull product
+data in with the client; **you render and style everything yourself**. Purchase goes to
+Shopify's hosted checkout via a cart permalink.
 
-## Architecture
+History: the fixed ichigo.js SPA and the block-page LP publisher were removed
+by the storefront-embed migration; the pre-built public catalog projection, the server GSP
+templates, the declarative SDK widgets and the commerce-publish app were removed by the
+2026-07-03 simplification. The storefront-retire migration hard-deletes the leftover projection data.
+
+## How it works
 
 ```
-admin data (NOT public)                     public projection (anonymous-readable)
-/content/commerce/products  ─┐              /content/public/commerce/catalog/
-+ PIM overlay (#23)          │  publish       ├─ index.json        (cards, for list/search)
-+ inventory levels (#6)      ├──────────────▶ ├─ products/{id}.json (full detail)
-                             │  (service user) ├─ inventory.json    (itemId → available, #21)
-                             ┘                 └─ store.json        (name, shopDomain, currency, lowStock)
-                                                        ▲
-                                                        │ fetch (relative, anonymous)
-                              /content/public/commerce/storefront/index.html  (ichigo.js SPA)
+Shopify (source of truth) ──webhook/Admin API──▶ /content/commerce/products (admin mirror)
+                                                      ▲ read directly (everyone has /content READ)
+public page (same-origin) ─fetch─▶ /content/public/commerce/endpoints/catalog.groovy (anonymous)
+                                     ▼
+                                 commerce.Catalog.detail / card (sanitize)
+                                     → customer-safe JSON (Shopify-active products only)
 ```
 
-- **Why a projection** — an anonymous visitor cannot read `/content/commerce`. Rather
-  than loosen ACLs or run a public script as a privileged user, a publisher (service
-  user) writes a *sanitized* copy under `/content/public/commerce/catalog/` with only
-  customer-safe fields (no `commerce:*` admin metadata, costs, or internal PIM
-  attributes — only the localized marketing overlay). The storefront reads those
-  files directly. `commerce.Catalog` builds the projection objects; `publishCatalog.groovy`
-  does the IO.
-- **Freshness** — the `commerce-catalog-publish` timer rebuilds the catalog every 5
-  minutes (and prunes removed products). **Inventory is near-real-time**: the
-  `inventory_levels/update` route calls `publishInventory.groovy` to update
-  `inventory.json` within seconds of a stock change.
-- **Only active products** are published (`commerce:source_status == active`, not
-  deleted).
+There is **no pre-built projection** any more: the endpoint reads the admin mirror on
+demand and sanitizes per request, so the data is always fresh. Every session — including
+the anonymous one the public endpoint runs as — has repository READ on `/content`
+(granted to everyone; only `/etc` is denied), so the endpoint reads the mirror **directly**
+with no privileged delegation. Sanitizing to a customer-safe subset (`Catalog.detail`) is
+what keeps the raw admin JSON from leaking, and only `commerce:source_status = active`
+products are returned.
 
-## Storefront app (#20)
+## Read endpoint
 
-A single ichigo.js page (`storefront/index.html`, no build step — ESM from CDN, like
-the task forms) with hash-routed views:
+`GET /content/public/commerce/endpoints/catalog.groovy` (same-origin; returns JSON):
 
-- **Catalog** `#/` — card grid, client-side search (title / vendor / type / tags) and
-  sort (name / price), with availability badges.
-- **Product** `#/product/{handle}` — gallery, variant selector, price (with
-  compare-at), description, availability badge, add-to-cart.
-- **Cart** `#/cart` — line items (persisted in `localStorage`), quantity edit,
-  remove, total, checkout.
-
-## Checkout (#20)
-
-Checkout redirects to **Shopify's hosted checkout** via a cart permalink —
-`https://{shopDomain}/cart/{variantId}:{qty},…` — so there is **no Storefront API
-token or secret**, and payment/checkout stays on Shopify. The shop domain comes from
-`shopify.yml` (`adminApi.shopDomain`), published into `store.json`.
-
-## Real-time inventory (#21)
-
-The storefront polls `inventory.json` every 30s; the polled quantity overrides the
-published snapshot, and badges recompute live:
-
-| available | badge |
+| Query | Returns |
 |---|---|
-| `null` (untracked) | none — treated as purchasable |
-| `0` | **Sold out** (add-to-cart disabled) |
-| `≤ lowStock` | **Only N left** |
-| `> lowStock` | In stock |
+| `?id={id}` / `?handle={handle}` | one sanitized product detail (with live stock) |
+| `?view=list[&tag=&type=&vendor=&q=&limit=]` | sanitized product cards (bounded; cards omit live stock) |
 
-(A public SSE channel is not available to anonymous pages, so polling is used; the
-client abstracts availability so SSE can replace polling later without UI changes.)
+Handles resolve through the auto-indexed `commerce:handle` property. Sanitized fields:
+`id / handle / title / bodyHtml / vendor / productType / tags / images / options /
+variants(id, title, sku, price, compareAtPrice, available) / localized` (the multi-
+language PIM overlay). Admin metadata, cost, and internal PIM attributes are never
+emitted. The response is cacheable (`Cache-Control: public, max-age=30`).
 
-## URLs
+## Client SDK — data only
 
-```
-Storefront : /bin/cms.cgi/{workspace}/content/public/commerce/storefront/index.html
-Catalog    : /bin/cms.cgi/{workspace}/content/public/commerce/catalog/{index|store|inventory}.json
-Admin      : GET/POST /bin/cms.cgi/{workspace}/content/commerce/endpoints/storefront.groovy  (status / rebuild)
-```
+`/content/public/commerce/sdk/commerce.js` (v2): a tiny, dependency-free **data client**
+— no rendering, no cart, no widgets (you design the page). Configure it on the tag (the
+endpoint is same-origin; the shop domain is a public value used to build checkout links):
 
-## Configuration (`/etc/commerce/config/storefront.yml`)
-
-| Key | Meaning |
-|---|---|
-| `enabled` | master switch for catalog publishing |
-| `storeName` | storefront title |
-| `currency` | fallback display currency |
-| `lowStock` | "only a few left" threshold (0 → sold out) |
-
-## Content-commerce landing pages (#22)
-
-Editorial landing pages that mix prose with product showcases — articles × products
-on one page — built on the same publish-projection model.
-
-```
-admin (authored)                          public projection
-/content/commerce/pages/{slug}.json  ──▶  /content/public/commerce/pages/{slug}.json
-  block document                  publishPages.groovy   resolved (product blocks → cards)
-                                  (service user)        + pages/index.json
-                                                                 ▲ fetch (anonymous)
-                              /content/public/commerce/landing/index.html?slug=…  (ichigo.js)
+```html
+<script src="/content/public/commerce/sdk/commerce.js"
+        data-commerce-endpoint="/bin/cms.cgi/{workspace}/content/public/commerce/endpoints/catalog.groovy"
+        data-commerce-shop-domain="your-shop.myshopify.com"
+        data-commerce-currency="JPY"></script>
 ```
 
-A page is a **block document** authored in the CMS (versioned, ACL-governed):
+JS API:
 
-| Block `type` | Renders |
-|---|---|
-| `hero` | a banner (title / subtitle / image / CTA) |
-| `heading` | a section heading |
-| `markdown` | prose (a minimal, dependency-free markdown renderer) |
-| `html` | trusted author HTML |
-| `products` | a product grid, by `productIds` (explicit, ordered) or `tag` (+`limit`) |
+- `Commerce.product(idOrHandle)` — one sanitized product detail (Promise; numeric → id, else handle)
+- `Commerce.products({tag, type, vendor, q, limit})` — sanitized product cards (Promise)
+- `Commerce.checkoutUrl(variantId, qty)` — Shopify cart permalink (string)
+- `Commerce.formatMoney(amount, currency?)`
 
-`commerce.Pages.publicPage` resolves the `products` blocks against the published
-catalog cards (#20), so embedded cards carry the same image / price / handle and
-**live inventory** (#21, polled) and link into the storefront
-(`../storefront/index.html#/product/{handle}`). `publishPages.groovy` runs on the
-`commerce-pages-publish` timer (after the catalog) and on demand; it prunes removed
-pages.
+Vanilla JS, no dependencies; version through the URL (`commerce.js?v=2`).
 
-The landing renderer (`landing/index.html`) reads `?slug=` (default `welcome`). A
-seed page ships at `/content/commerce/pages/welcome.json`.
+## Checkout
 
-### URLs
+Shopify hosted checkout via cart permalink
+(`https://{shopDomain}/cart/{variantId}:{qty}`) — no Storefront API token.
+`Commerce.checkoutUrl(variantId, qty)` builds it from `data-commerce-shop-domain` (the
+public shop domain you set on the script tag). You render the buy button.
 
-```
-Landing : /bin/cms.cgi/{workspace}/content/public/commerce/landing/index.html?slug=welcome
-Pages   : /bin/cms.cgi/{workspace}/content/public/commerce/pages/{index|{slug}}.json
-```
+## Notes
 
-## Operator UI
-
-The **Commerce Publishing** Webtop app (`webtop/src/webtop/apps/commerce-publish`)
-drives both publishing and landing-page authoring:
-
-- **Publish tab** — catalog / inventory / page publish status (counts + timestamps)
-  from `storefront.groovy`, a **Rebuild now** trigger, and quick links to the public
-  storefront / landing / catalog JSON.
-- **Pages tab** — a CRUD block editor for the landing documents over a dedicated
-  admin endpoint, `pages.groovy`:
-
-  ```
-  GET  …/endpoints/pages.groovy            # list source pages (+ which are live)
-  GET  …/endpoints/pages.groovy?slug=…     # one source page document
-  POST …/endpoints/pages.groovy {slug, page:{…}}   # create / replace (stamped)
-  POST …/endpoints/pages.groovy {slug, delete:true} # delete
-  ```
-
-  Blocks are added/reordered/removed with type-specific fields (hero / heading /
-  markdown / html / products), with status (published/draft) and slug validation.
-  Saves persist the source document; a **Rebuild** then projects it to the public
-  storefront. Unsaved edits are guarded on switch and window close; deletes are
-  confirmed.
+- **Same-origin**: pages that embed the SDK are served from this CMS host, so the
+  endpoint sends no CORS headers, and the read runs as the page visitor's session.
+- **Never touches `/etc`**: the endpoint reads only `/content/commerce` (product mirror,
+  PIM overlay, inventory levels). The checkout shop domain is configured on the client,
+  so no Admin API config is read.
+- **No admin UI**: there is no publish / rebuild console (the commerce-publish app was
+  removed; webtop apps 7 → 6). Nothing is published — reads are on demand.

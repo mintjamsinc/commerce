@@ -70,10 +70,10 @@ if (topic == null || topic.trim().isEmpty() || webhookID == null || webhookID.tr
     return
 }
 
-// This endpoint is the Shopify ADAPTER (#3 multi-backend): it verifies Shopify's
+// This endpoint is the Shopify ADAPTER: it verifies Shopify's
 // signature, then hands a source-agnostic envelope to the shared ingest core
 // (direct:commerce-ingest), which logs, dispatches and (when needed) normalizes
-// every topic (#1) and supports replay (#4). Another backend connects by adding
+// every topic and supports replay. Another backend connects by adding
 // its own adapter that produces the same envelope — no change here or downstream.
 try {
     IntegrationAPI.createMessageSender()

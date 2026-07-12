@@ -1,0 +1,60 @@
+{
+	"app.commerce-customers.title": "Commerce Customers",
+
+	"app.commerce-customers.toolbar.refresh": "Refresh",
+	"app.commerce-customers.toolbar.clearFilters": "Clear search & filters",
+	"app.commerce-customers.toolbar.toggleSidebar": "Toggle filters",
+
+	"app.commerce-customers.search.placeholder": "Search customers…",
+
+	"app.commerce-customers.spend.title": "Spend",
+	"app.commerce-customers.spend.sort": "Sort",
+	"app.commerce-customers.spend.sort.updated": "Last updated",
+	"app.commerce-customers.spend.sort.spend": "Top spend",
+	"app.commerce-customers.spend.metric": "Metric",
+	"app.commerce-customers.spend.metric.totalPrice": "Total paid",
+	"app.commerce-customers.spend.metric.gross": "Gross sales",
+	"app.commerce-customers.spend.metric.net": "Net sales",
+	"app.commerce-customers.spend.window": "Window",
+	"app.commerce-customers.spend.window.all": "All time",
+	"app.commerce-customers.spend.window.d30": "Last 30 days",
+	"app.commerce-customers.spend.window.d90": "Last 90 days",
+	"app.commerce-customers.spend.window.d365": "Last 365 days",
+	"app.commerce-customers.spend.minSpend": "Minimum spend",
+	"app.commerce-customers.spend.apply": "Apply",
+
+	"app.commerce-customers.facet.tags": "Tags",
+	"app.commerce-customers.facet.marketing": "Marketing consent",
+	"app.commerce-customers.facet.sourceStatus": "Source status",
+
+	"app.commerce-customers.state.loading": "Loading customers…",
+	"app.commerce-customers.state.empty": "No customers match the current search / filters.",
+
+	"app.commerce-customers.list.count": "{start}–{end} of {total}",
+	"app.commerce-customers.list.capped": "Large audience — counts are approximate",
+	"app.commerce-customers.list.cappedTitle": "The scan stopped at the safety cap; narrow the filters for exact counts.",
+	"app.commerce-customers.list.prev": "Previous page",
+	"app.commerce-customers.list.next": "Next page",
+
+	"app.commerce-customers.col.name": "Name",
+	"app.commerce-customers.col.email": "Email",
+	"app.commerce-customers.col.orders": "Orders",
+	"app.commerce-customers.col.totalPrice": "Total paid",
+	"app.commerce-customers.col.netSales": "Net sales",
+	"app.commerce-customers.col.tags": "Tags",
+	"app.commerce-customers.col.sourceStatus": "Source status",
+	"app.commerce-customers.col.marketing": "Marketing",
+	"app.commerce-customers.col.updated": "Updated",
+
+	"app.commerce-customers.marketing.subscribed": "Subscribed",
+	"app.commerce-customers.marketing.unsubscribed": "Not subscribed",
+
+	"app.commerce-customers.action.open": "Open in the customer editor",
+
+	"app.commerce-customers.statusbar.loading": "Loading…",
+	"app.commerce-customers.statusbar.count": "{total} customers",
+	"app.commerce-customers.statusbar.ready": "Ready",
+
+	"app.commerce-customers.err.loadFailed": "Could not load customers.",
+	"app.commerce-customers.err.noEditor": "The Commerce Customer editor is not installed."
+}

@@ -6,28 +6,43 @@
                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                   xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
                   id="Definitions_inventory_alert" targetNamespace="http://bpmn.io/schema/bpmn">
-  <!-- Inventory alert workflow.
-       Started by sweepInventoryAlerts.groovy (via
-       ProcessAPI) once the multi-location mirror total of a variant crosses below its
-       effective threshold (the ok→low edge). The sweep guards against duplicates with an
-       active-instance query keyed by the product ID, so at most one open review per product.
+  <!-- Unified Inventory & Reorder Review workflow (inventory alert plus receiving confirmation).
+       Started by the inventory-alert sweep (via ProcessAPI) once the
+       multi-location mirror total of a variant crosses below its threshold =
+       REORDER POINT (the ok→low edge). The sweep guards against duplicates with
+       an active-instance query keyed by the product ID, so at most one open
+       review per product.
 
-       The flow itself is minimal: present the Manual Inventory Check to an operator and end.
-       The low/threshold decision was already made by the sweep, so there is no re-check here
-       (the review form fetches the current per-location state itself).
+       ONE task covers both the inventory check and the reorder decision. There
+       is NO system-suggested quantity — the operator, who purchases through
+       their own channel, enters the order quantity manually (the form shows the
+       current stock, the fixed threshold, and the previous order date/qty +
+       LEAD TIME for reference). On completion a service task records that
+       quantity in Shopify as INCOMING stock (inventory transfer).
 
-       Process variables (set by the ProcessStarter): productID, productPath.
+       When a reorder was actually placed (reorderPlaced), the flow raises a
+       second manual task, RECEIVE CONFIRMATION: it sits open until the goods
+       physically arrive, and its completion records the receipt date (+ qty +
+       note) onto reorder:last_orders so the NEXT review can show the actual lead
+       time. Completing the review with quantity 0 / no entry means "no reorder
+       needed" — the gateway skips receiving straight to the end.
 
-       NOTE: the user task id is intentionally "UserTask_355fcd40" so the shared
-       setWorkflowStatus.groovy maps it to commerce:status = "review_pending" with no change
-       (the same task previously lived in product-update-flow, from which it was removed). -->
-  <bpmn:process id="inventory-alert-flow" name="Inventory Alert Flow" isExecutable="true">
+       Process variables (set by the ProcessStarter): productID, productPath,
+       inventoryItemId, variantId, variantTitle, availableTotal, threshold.
+
+       NOTE: the review task id is intentionally "UserTask_355fcd40" so the shared
+       workflow-status listener maps it to commerce:status = "review_pending" (the
+       same task previously lived in product-update-flow, from which it was removed).
+       The receiving task carries no status listener — commerce:status stays as-is
+       until the end event marks it "monitored" (a dedicated "receiving_pending"
+       status is a possible future refinement). -->
+  <bpmn:process id="inventory-alert-flow" name="Inventory &amp; Reorder Review Flow" isExecutable="true">
     <bpmn:startEvent id="StartEvent_inventoryAlert">
       <bpmn:outgoing>Flow_start_review</bpmn:outgoing>
     </bpmn:startEvent>
 
-    <!-- An operator reviews the low-stock alert via a manual task. -->
-    <bpmn:userTask id="UserTask_355fcd40" name="Manual Inventory Check" camunda:formKey="cms:/content/commerce/forms/shopify/inventory-level-review.html">
+    <!-- An operator reviews stock + the reorder proposal via one manual task. -->
+    <bpmn:userTask id="UserTask_355fcd40" name="Inventory &amp; Reorder Review" camunda:formKey="cms:/content/commerce/forms/shopify/inventory-level-review.html">
       <bpmn:extensionElements>
         <!-- Advance the processing status to "review_pending" (waiting on an operator). -->
         <camunda:taskListener event="create" class="org.mintjams.script.bpm.CmsDelegate">
@@ -53,8 +68,76 @@
         </camunda:taskListener>
       </bpmn:extensionElements>
       <bpmn:incoming>Flow_start_review</bpmn:incoming>
-      <bpmn:outgoing>Flow_review_end</bpmn:outgoing>
+      <bpmn:outgoing>Flow_review_incoming</bpmn:outgoing>
     </bpmn:userTask>
+
+    <!-- Record the operator's CONFIRMED quantity in Shopify as incoming stock
+         (inventory transfer). Reads the reorder:* properties the review form
+         wrote on the product node; a 0 / absent quantity is a no-op. Best-effort:
+         a Shopify failure is audited (sync trail) and never blocks completion.
+         Publishes `reorderPlaced` so the gateway can skip receiving when no order
+         was placed. -->
+    <bpmn:serviceTask id="ServiceTask_createIncoming" name="Record Incoming Stock" camunda:class="org.mintjams.script.bpm.CmsDelegate">
+      <bpmn:extensionElements>
+        <camunda:field name="path">
+          <camunda:string>/etc/commerce/scripts/shopify/createIncomingTransfer.groovy</camunda:string>
+        </camunda:field>
+        <camunda:field name="inputs">
+          <camunda:string>productPath,productID,inventoryItemId,variantId,variantTitle</camunda:string>
+        </camunda:field>
+        <camunda:field name="outputs">
+          <camunda:string>reorderPlaced</camunda:string>
+        </camunda:field>
+        <camunda:field name="runAs">
+          <camunda:string>commerce-service-user</camunda:string>
+        </camunda:field>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_review_incoming</bpmn:incoming>
+      <bpmn:outgoing>Flow_incoming_gw</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- Was a reorder actually placed? Only then is a receiving task meaningful. -->
+    <bpmn:exclusiveGateway id="Gateway_reorderPlaced" name="Reorder placed?" default="Flow_reorder_no">
+      <bpmn:incoming>Flow_incoming_gw</bpmn:incoming>
+      <bpmn:outgoing>Flow_reorder_yes</bpmn:outgoing>
+      <bpmn:outgoing>Flow_reorder_no</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- An operator confirms the physical receipt once the goods arrive. This
+         task sits open until then; its completion records the receipt date/qty/note
+         on reorder:last_orders (for the next review's lead-time display). No status
+         listener + no create-notification (the task is raised at order time, not at
+         arrival, so a create notice would be premature). -->
+    <bpmn:userTask id="UserTask_receiving" name="Receive Confirmation" camunda:formKey="cms:/content/commerce/forms/shopify/inventory-received.html">
+      <bpmn:incoming>Flow_reorder_yes</bpmn:incoming>
+      <bpmn:outgoing>Flow_receiving_record</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- Record the receipt on reorder:last_orders (CMS-side only; the Shopify
+         receive / inventory_levels round-trip is separate). Reads the reorder:
+         received_* properties the receiving form wrote. Best-effort. -->
+    <bpmn:serviceTask id="ServiceTask_recordReceived" name="Record Receipt" camunda:class="org.mintjams.script.bpm.CmsDelegate">
+      <bpmn:extensionElements>
+        <camunda:field name="path">
+          <camunda:string>/etc/commerce/scripts/shopify/recordReceived.groovy</camunda:string>
+        </camunda:field>
+        <camunda:field name="inputs">
+          <camunda:string>productPath,productID,inventoryItemId,variantTitle</camunda:string>
+        </camunda:field>
+        <camunda:field name="runAs">
+          <camunda:string>commerce-service-user</camunda:string>
+        </camunda:field>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_receiving_record</bpmn:incoming>
+      <bpmn:outgoing>Flow_record_join</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- Join the "no reorder" and "received" branches. -->
+    <bpmn:exclusiveGateway id="Gateway_receivingJoin">
+      <bpmn:incoming>Flow_reorder_no</bpmn:incoming>
+      <bpmn:incoming>Flow_record_join</bpmn:incoming>
+      <bpmn:outgoing>Flow_join_end</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
 
     <bpmn:endEvent id="EndEvent_inventoryAlert">
       <bpmn:extensionElements>
@@ -71,12 +154,20 @@
           </camunda:field>
         </camunda:executionListener>
       </bpmn:extensionElements>
-      <bpmn:incoming>Flow_review_end</bpmn:incoming>
+      <bpmn:incoming>Flow_join_end</bpmn:incoming>
     </bpmn:endEvent>
 
     <!-- Sequence flows -->
     <bpmn:sequenceFlow id="Flow_start_review" sourceRef="StartEvent_inventoryAlert" targetRef="UserTask_355fcd40"/>
-    <bpmn:sequenceFlow id="Flow_review_end" sourceRef="UserTask_355fcd40" targetRef="EndEvent_inventoryAlert"/>
+    <bpmn:sequenceFlow id="Flow_review_incoming" sourceRef="UserTask_355fcd40" targetRef="ServiceTask_createIncoming"/>
+    <bpmn:sequenceFlow id="Flow_incoming_gw" sourceRef="ServiceTask_createIncoming" targetRef="Gateway_reorderPlaced"/>
+    <bpmn:sequenceFlow id="Flow_reorder_yes" name="Yes" sourceRef="Gateway_reorderPlaced" targetRef="UserTask_receiving">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${reorderPlaced == true}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_reorder_no" name="No" sourceRef="Gateway_reorderPlaced" targetRef="Gateway_receivingJoin"/>
+    <bpmn:sequenceFlow id="Flow_receiving_record" sourceRef="UserTask_receiving" targetRef="ServiceTask_recordReceived"/>
+    <bpmn:sequenceFlow id="Flow_record_join" sourceRef="ServiceTask_recordReceived" targetRef="Gateway_receivingJoin"/>
+    <bpmn:sequenceFlow id="Flow_join_end" sourceRef="Gateway_receivingJoin" targetRef="EndEvent_inventoryAlert"/>
   </bpmn:process>
 
   <bpmndi:BPMNDiagram id="BPMNDiagram_inventory_alert">
@@ -87,16 +178,66 @@
       <bpmndi:BPMNShape id="Shape_UserTask_355fcd40" bpmnElement="UserTask_355fcd40">
         <dc:Bounds x="240" y="180" width="100" height="80"/>
       </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_ServiceTask_createIncoming" bpmnElement="ServiceTask_createIncoming">
+        <dc:Bounds x="400" y="180" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Gateway_reorderPlaced" bpmnElement="Gateway_reorderPlaced">
+        <dc:Bounds x="560" y="195" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="548" y="169" width="74" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_UserTask_receiving" bpmnElement="UserTask_receiving">
+        <dc:Bounds x="660" y="300" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_ServiceTask_recordReceived" bpmnElement="ServiceTask_recordReceived">
+        <dc:Bounds x="820" y="300" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Gateway_receivingJoin" bpmnElement="Gateway_receivingJoin">
+        <dc:Bounds x="980" y="195" width="50" height="50"/>
+      </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_EndEvent_inventoryAlert" bpmnElement="EndEvent_inventoryAlert">
-        <dc:Bounds x="402" y="202" width="36" height="36"/>
+        <dc:Bounds x="1092" y="202" width="36" height="36"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNEdge id="Edge_Flow_start_review" bpmnElement="Flow_start_review">
         <di:waypoint x="176" y="220"/>
         <di:waypoint x="240" y="220"/>
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Edge_Flow_review_end" bpmnElement="Flow_review_end">
+      <bpmndi:BPMNEdge id="Edge_Flow_review_incoming" bpmnElement="Flow_review_incoming">
         <di:waypoint x="340" y="220"/>
-        <di:waypoint x="402" y="220"/>
+        <di:waypoint x="400" y="220"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_incoming_gw" bpmnElement="Flow_incoming_gw">
+        <di:waypoint x="500" y="220"/>
+        <di:waypoint x="560" y="220"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_reorder_no" bpmnElement="Flow_reorder_no">
+        <di:waypoint x="610" y="220"/>
+        <di:waypoint x="980" y="220"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="789" y="202" width="15" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_reorder_yes" bpmnElement="Flow_reorder_yes">
+        <di:waypoint x="585" y="245"/>
+        <di:waypoint x="585" y="340"/>
+        <di:waypoint x="660" y="340"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="569" y="271" width="20" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_receiving_record" bpmnElement="Flow_receiving_record">
+        <di:waypoint x="760" y="340"/>
+        <di:waypoint x="820" y="340"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_record_join" bpmnElement="Flow_record_join">
+        <di:waypoint x="920" y="340"/>
+        <di:waypoint x="1005" y="340"/>
+        <di:waypoint x="1005" y="245"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_join_end" bpmnElement="Flow_join_end">
+        <di:waypoint x="1030" y="220"/>
+        <di:waypoint x="1092" y="220"/>
       </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>

@@ -11,6 +11,7 @@
 //
 // (Read-only: it never escalates or mutates tasks; that is the SLA scanner's job.)
 
+import commerce.Api
 import commerce.SimpleYaml
 import commerce.TaskSla
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -21,7 +22,7 @@ if (request.getMethod() != "GET") {
 }
 
 // Our BPMN flows that raise human tasks.
-def PROCESS_KEYS = ["order-review-flow", "refund-review-flow", "product-update-flow", "backorder-release-flow"]
+def PROCESS_KEYS = ["order-review-flow", "refund-review-flow", "product-update-flow", "backorder-release-flow", "inventory-alert-flow"]
 
 try {
     def cfg = [:]
@@ -65,8 +66,8 @@ try {
                 priority     : t.getPriority(),
                 processKey   : key,
                 processInstanceId: t.getProcessInstanceId(),
-                createTime   : createTime == null ? null : createTime.toInstant().toString(),
-                dueDate      : dueDate == null ? null : dueDate.toInstant().toString(),
+                createTime   : Api.instant(createTime),
+                dueDate      : Api.instant(dueDate),
                 ageMinutes   : Math.max(0L, (now - createMs) / 60000L as long),
                 slaStatus    : slaStatus,
             ]
@@ -83,7 +84,7 @@ try {
 
     response.setStatus(200)
     response.setHeader("Content-Type", "application/json")
-    response.getWriter().write(new ObjectMapper().writeValueAsString([now: java.time.Instant.now().toString(), count: out.size(), tasks: out]))
+    response.getWriter().write(new ObjectMapper().writeValueAsString([now: Api.now(), count: out.size(), tasks: out]))
 } catch (Exception e) {
     log.error("tasks endpoint error: ${e.message}", e)
     response.setStatus(500)

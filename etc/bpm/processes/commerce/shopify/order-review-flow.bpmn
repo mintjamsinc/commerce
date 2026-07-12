@@ -73,13 +73,79 @@
         </camunda:taskListener>
       </bpmn:extensionElements>
       <bpmn:incoming>Flow_review_yes</bpmn:incoming>
-      <bpmn:outgoing>Flow_review_join</bpmn:outgoing>
+      <bpmn:outgoing>Flow_review_decision</bpmn:outgoing>
     </bpmn:userTask>
 
-    <!-- 2b. Join the auto-approve and reviewed branches. -->
+    <!-- 2a-2. Read the reviewer's decision (approved | rejected) off the order
+         node — the review form wrote it before completing the task. Absent
+         decision defaults to approved (pre-rejection behaviour). -->
+    <bpmn:serviceTask id="ServiceTask_readDecision" name="Read Review Decision" camunda:class="org.mintjams.script.bpm.CmsDelegate">
+      <bpmn:extensionElements>
+        <camunda:field name="path">
+          <camunda:string>/etc/commerce/scripts/shopify/readOrderReviewDecision.groovy</camunda:string>
+        </camunda:field>
+        <camunda:field name="inputs">
+          <camunda:string>orderPath</camunda:string>
+        </camunda:field>
+        <camunda:field name="outputs">
+          <camunda:string>reviewDecision</camunda:string>
+        </camunda:field>
+        <camunda:field name="runAs">
+          <camunda:string>commerce-service-user</camunda:string>
+        </camunda:field>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_review_decision</bpmn:incoming>
+      <bpmn:outgoing>Flow_decision_gw</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- 2a-3. Approved or rejected? -->
+    <bpmn:exclusiveGateway id="Gateway_decision" name="Approved?">
+      <bpmn:incoming>Flow_decision_gw</bpmn:incoming>
+      <bpmn:outgoing>Flow_decision_approved</bpmn:outgoing>
+      <bpmn:outgoing>Flow_decision_rejected</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- 2a-4. Rejected: cancel the order in Shopify (restock+refund, the
+         operator's reason as the staff note). The cancellation echoes back via
+         webhook; the CMS records only the outbound call + audit. -->
+    <bpmn:serviceTask id="ServiceTask_cancelOrder" name="Cancel Order (Shopify)" camunda:class="org.mintjams.script.bpm.CmsDelegate">
+      <bpmn:extensionElements>
+        <camunda:field name="path">
+          <camunda:string>/etc/commerce/scripts/shopify/cancelOrder.groovy</camunda:string>
+        </camunda:field>
+        <camunda:field name="inputs">
+          <camunda:string>orderPath,order_id</camunda:string>
+        </camunda:field>
+        <camunda:field name="runAs">
+          <camunda:string>commerce-service-user</camunda:string>
+        </camunda:field>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_decision_rejected</bpmn:incoming>
+      <bpmn:outgoing>Flow_cancel_end</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:endEvent id="EndEvent_orderCancelled">
+      <bpmn:extensionElements>
+        <!-- Workflow finished on the reject branch: mark the order "cancelled". -->
+        <camunda:executionListener event="end" class="org.mintjams.script.bpm.CmsDelegate">
+          <camunda:field name="path">
+            <camunda:string>/etc/commerce/scripts/shopify/setOrderWorkflowStatus.groovy</camunda:string>
+          </camunda:field>
+          <camunda:field name="inputs">
+            <camunda:string>orderPath</camunda:string>
+          </camunda:field>
+          <camunda:field name="runAs">
+            <camunda:string>commerce-service-user</camunda:string>
+          </camunda:field>
+        </camunda:executionListener>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_cancel_end</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- 2b. Join the auto-approve and reviewed-approved branches. -->
     <bpmn:exclusiveGateway id="Gateway_reviewJoin">
       <bpmn:incoming>Flow_review_no</bpmn:incoming>
-      <bpmn:incoming>Flow_review_join</bpmn:incoming>
+      <bpmn:incoming>Flow_decision_approved</bpmn:incoming>
       <bpmn:outgoing>Flow_join_approve</bpmn:outgoing>
     </bpmn:exclusiveGateway>
 
@@ -176,7 +242,15 @@
     <bpmn:sequenceFlow id="Flow_review_yes" name="Yes" sourceRef="Gateway_reviewRequired" targetRef="UserTask_orderReview">
       <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${requiresReview == true}</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
-    <bpmn:sequenceFlow id="Flow_review_join" sourceRef="UserTask_orderReview" targetRef="Gateway_reviewJoin"/>
+    <bpmn:sequenceFlow id="Flow_review_decision" sourceRef="UserTask_orderReview" targetRef="ServiceTask_readDecision"/>
+    <bpmn:sequenceFlow id="Flow_decision_gw" sourceRef="ServiceTask_readDecision" targetRef="Gateway_decision"/>
+    <bpmn:sequenceFlow id="Flow_decision_approved" name="Yes" sourceRef="Gateway_decision" targetRef="Gateway_reviewJoin">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${reviewDecision != 'rejected'}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_decision_rejected" name="No" sourceRef="Gateway_decision" targetRef="ServiceTask_cancelOrder">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${reviewDecision == 'rejected'}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_cancel_end" sourceRef="ServiceTask_cancelOrder" targetRef="EndEvent_orderCancelled"/>
     <bpmn:sequenceFlow id="Flow_join_approve" sourceRef="Gateway_reviewJoin" targetRef="ServiceTask_approveOrder"/>
     <bpmn:sequenceFlow id="Flow_approve_fulfill" sourceRef="ServiceTask_approveOrder" targetRef="UserTask_fulfillOrder"/>
     <bpmn:sequenceFlow id="Flow_fulfill_record" sourceRef="UserTask_fulfillOrder" targetRef="ServiceTask_createFulfillment"/>
@@ -199,6 +273,21 @@
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_UserTask_orderReview" bpmnElement="UserTask_orderReview">
         <dc:Bounds x="450" y="300" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_ServiceTask_readDecision" bpmnElement="ServiceTask_readDecision">
+        <dc:Bounds x="590" y="300" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Gateway_decision" bpmnElement="Gateway_decision">
+        <dc:Bounds x="720" y="315" width="50" height="50"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="712" y="289" width="66" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_ServiceTask_cancelOrder" bpmnElement="ServiceTask_cancelOrder">
+        <dc:Bounds x="695" y="420" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_EndEvent_orderCancelled" bpmnElement="EndEvent_orderCancelled">
+        <dc:Bounds x="852" y="442" width="36" height="36"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Gateway_reviewJoin" bpmnElement="Gateway_reviewJoin">
         <dc:Bounds x="535" y="195" width="50" height="50"/>
@@ -238,10 +327,32 @@
           <dc:Bounds x="394" y="271" width="20" height="14"/>
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Edge_Flow_review_join" bpmnElement="Flow_review_join">
+      <bpmndi:BPMNEdge id="Edge_Flow_review_decision" bpmnElement="Flow_review_decision">
         <di:waypoint x="550" y="340"/>
-        <di:waypoint x="560" y="340"/>
-        <di:waypoint x="560" y="245"/>
+        <di:waypoint x="590" y="340"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_decision_gw" bpmnElement="Flow_decision_gw">
+        <di:waypoint x="690" y="340"/>
+        <di:waypoint x="720" y="340"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_decision_approved" bpmnElement="Flow_decision_approved">
+        <di:waypoint x="745" y="315"/>
+        <di:waypoint x="745" y="220"/>
+        <di:waypoint x="585" y="220"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="750" y="260" width="20" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_decision_rejected" bpmnElement="Flow_decision_rejected">
+        <di:waypoint x="745" y="365"/>
+        <di:waypoint x="745" y="420"/>
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="750" y="385" width="18" height="14"/>
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_cancel_end" bpmnElement="Flow_cancel_end">
+        <di:waypoint x="795" y="460"/>
+        <di:waypoint x="852" y="460"/>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_Flow_join_approve" bpmnElement="Flow_join_approve">
         <di:waypoint x="585" y="220"/>

@@ -98,7 +98,7 @@
                 </setHeader>
 
                 <!-- Save raw JSON to JCR -->
-                <toD uri="cms:store?mimeType=application/json&amp;path=${header.orderPath}"/>
+                <toD uri="cms:store?mimeType=application/vnd.mintjams.commerce.order%2Bjson&amp;path=${header.orderPath}"/>
 
                 <!-- Parse order metadata and set as JCR properties -->
                 <setHeader name="commerce:order_id">
@@ -107,14 +107,38 @@
                 <setHeader name="commerce:customer_email">
                     <jsonpath>$.contact_email</jsonpath>
                 </setHeader>
+                <!-- Shopify customer numeric id — the stable, GDPR-durable customer
+                     grouping axis for sales aggregation (survives redaction, which only
+                     dummies commerce:customer_email). Absent for guest checkouts, so
+                     suppressExceptions omits it rather than moving the order to error. -->
+                <setHeader name="commerce:customer_id">
+                    <jsonpath suppressExceptions="true">$.customer.id</jsonpath>
+                </setHeader>
                 <setHeader name="commerce:total_price">
                     <jsonpath>$.total_price</jsonpath>
                 </setHeader>
                 <setHeader name="commerce:currency">
                     <jsonpath>$.currency</jsonpath>
                 </setHeader>
+                <!-- Base-currency amount: Shopify's own conversion of the order
+                     total to the shop currency (total_price_set.shop_money). Typed
+                     Decimal so cross-currency aggregation is a property sum. -->
+                <setHeader name="commerce:total_price_base">
+                    <jsonpath suppressExceptions="true">$.total_price_set.shop_money.amount</jsonpath>
+                </setHeader>
+                <setHeader name="commerce:base_currency">
+                    <jsonpath suppressExceptions="true">$.total_price_set.shop_money.currency_code</jsonpath>
+                </setHeader>
                 <setHeader name="commerce:order_number">
                     <jsonpath>$.order_number</jsonpath>
+                </setHeader>
+                <!-- commerce:ordered_at is the Shopify order date (created_at) — the
+                     primary Date index axis for sales period/timeseries aggregation
+                     (facet range/group, PoP windows), order-cohort basis. NB it is the
+                     order's true business date, NOT the paid month the node is foldered
+                     under; consumers aggregate on @commerce:ordered_at, never the path. -->
+                <setHeader name="commerce:ordered_at">
+                    <jsonpath>$.created_at</jsonpath>
                 </setHeader>
                 <!-- commerce:source_status mirrors Shopify's business status for the
                      order (financial_status, e.g. paid / pending / refunded). It is
@@ -124,7 +148,7 @@
                     <jsonpath>$.financial_status</jsonpath>
                 </setHeader>
                 <!-- commerce:status is the integration processing lifecycle status,
-                     consistent with products. See docs/commerce-status.md. -->
+                     consistent with products. -->
                 <setHeader name="commerce:status">
                     <constant>received</constant>
                 </setHeader>
@@ -136,8 +160,18 @@
                     <simple>${null}</simple>
                 </setHeader>
 
-                <!-- Normalize property types (e.g. total_price should be decimal) -->
-                <toD uri="transform:toDecimal?targets=commerce:total_price"/>
+                <!-- Normalize property types (money is Decimal, counters are Long) -->
+                <toD uri="transform:toDecimal?targets=commerce:total_price,commerce:total_price_base"/>
+                <toD uri="transform:toLong?targets=commerce:order_number"/>
+                <!-- ordered_at as a real Date so xs:dateTime range/order-by works. -->
+                <toD uri="transform:toDate?targets=commerce:ordered_at"/>
+                <!-- Shopify entity ids are String (equality/lookup only, never
+                     range-queried, and can exceed a UI-safe integer). The jsonpath
+                     $.id yields a JSON number, so coerce it to String before persist.
+                     customer_id gets the same String treatment (numeric id, never
+                     range-queried); an absent guest customer_id is simply not written.
+                     NB: order_number stays Long above - it is a real numeric value. -->
+                <toD uri="transform:toString?targets=commerce:order_id,commerce:customer_id"/>
 
                 <!-- Write metadata to JCR node properties -->
                 <toD uri="cms:setProperties?path=${header.orderPath}&amp;includes=commerce:*"/>
@@ -171,10 +205,14 @@
                     </otherwise>
                 </choice>
 
-                <!-- Detect backorders / pre-orders for this order (#12): record a
+                <!-- Detect backorders / pre-orders for this order: record a
                      line-level backorder for any line short on stock or sold ahead
                      as a pre-order. Defensive - never moves the order to error. -->
                 <toD uri="cms:/etc/commerce/scripts/shopify/detectBackorders.groovy?inputs=orderPath,order_id"/>
+
+                <!-- Enqueue the order for a sales-fact recompute. Async-drained by the
+                     single cluster-guarded drainer; never blocks or fails the order route. -->
+                <toD uri="cms:/etc/commerce/scripts/markSalesPending.groovy?inputs=order_id"/>
             </otherwise>
         </choice>
 

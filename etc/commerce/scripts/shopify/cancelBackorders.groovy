@@ -1,4 +1,4 @@
-// Cancel an order's open backorders when a refund arrives (feature #12).
+// Cancel an order's open backorders when a refund arrives.
 //
 // Invoked from the refunds/create Camel route (refund-created.xml) as the service
 // user. A refund means the order is being unwound, so any backorders for it that

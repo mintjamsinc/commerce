@@ -1,0 +1,26 @@
+<svg viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="commerce customers">
+<defs>
+  <clipPath id="clip-ccust"><rect x="0" y="0" width="180" height="180" rx="42" ry="42"></rect></clipPath>
+  <linearGradient id="hl-ccust" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="white" stop-opacity="0.25"></stop>
+    <stop offset="55%" stop-color="white" stop-opacity="0"></stop>
+  </linearGradient>
+  <linearGradient id="bg-ccust" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="#f472b6"></stop>
+    <stop offset="100%" stop-color="#be185d"></stop>
+  </linearGradient>
+</defs>
+<rect x="0" y="0" width="180" height="180" rx="42" ry="42" fill="url(#bg-ccust)"></rect>
+<g clip-path="url(#clip-ccust)">
+  <!-- primary person -->
+  <circle cx="78" cy="70" r="22" fill="white"></circle>
+  <path d="M 40 132 A 38 38 0 0 1 116 132 Z" fill="white"></path>
+  <!-- secondary person -->
+  <circle cx="124" cy="76" r="15" fill="white" opacity="0.65"></circle>
+  <path d="M 100 130 A 26 26 0 0 1 150 130 Z" fill="white" opacity="0.65"></path>
+  <!-- 360 ring -->
+  <circle cx="90" cy="94" r="62" fill="none" stroke="white" stroke-opacity="0.5" stroke-width="6" stroke-dasharray="18 12"></circle>
+  <rect x="0" y="0" width="180" height="180" fill="url(#hl-ccust)"></rect>
+  <rect x="0.5" y="0.5" width="179" height="179" rx="41.5" ry="41.5" fill="none" stroke="white" stroke-opacity="0.18" stroke-width="1"></rect>
+</g>
+</svg>

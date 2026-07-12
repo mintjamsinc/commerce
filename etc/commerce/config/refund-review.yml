@@ -2,24 +2,23 @@
 # Deploy to: /etc/commerce/config/refund-review.yml
 #
 # When a `refunds/create` webhook is received, the EIP route stores the refund
-# and starts refund-review-flow.bpmn. Its first step runs
-# etc/commerce/scripts/shopify/screenRefund.groovy, which evaluates the refund
-# against the rules below. If ANY enabled rule matches, the refund is routed to a
-# manual "Refund Review" task (commerce:status -> review_pending) and announced to
-# the channels in notifications.yml. If no rule matches, the refund is
+# and starts refund-review-flow.bpmn. Its first step is the refund-screening
+# script, which evaluates the refund against the rules below. If ANY enabled rule matches, the refund is routed to a
+# manual "Refund Review" task (commerce:status -> review_pending) and announced
+# through the configured notification channels. If no rule matches, the refund is
 # auto-acknowledged (no human step) and simply recorded.
 #
 # A refund is already executed in Shopify by the time this fires, so review here
 # is for audit / fraud-monitoring, NOT for issuing the money. Nothing is written
 # back to Shopify.
 #
-# This file is kept SEPARATE from shopify.yml (API credentials), order-review.yml
-# (order screening) and notifications.yml (alert destinations) so refund policy
+# This file is kept SEPARATE from the API credentials, the order-screening rules,
+# and the notification destinations (each in their own config) so refund policy
 # can be tuned independently.
 #
 # Design note: screening is fail-open. If this file is missing or unparseable,
-# screenRefund.groovy logs a warning and auto-acknowledges rather than flooding
-# operators with reviews for refunds it cannot evaluate.
+# the refund-screening script logs a warning and auto-acknowledges rather than
+# flooding operators with reviews for refunds it cannot evaluate.
 
 # Master switch. When false, every refund is auto-acknowledged (no screening).
 enabled: true

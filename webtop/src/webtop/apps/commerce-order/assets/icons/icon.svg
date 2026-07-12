@@ -1,0 +1,23 @@
+<svg viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="commerce order">
+<defs>
+  <clipPath id="clip-cord1"><rect x="0" y="0" width="180" height="180" rx="42" ry="42"></rect></clipPath>
+  <linearGradient id="hl-cord1" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="white" stop-opacity="0.25"></stop>
+    <stop offset="55%" stop-color="white" stop-opacity="0"></stop>
+  </linearGradient>
+  <linearGradient id="bg-cord1" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="#f59e0b"></stop>
+    <stop offset="100%" stop-color="#b45309"></stop>
+  </linearGradient>
+</defs>
+<rect x="0" y="0" width="180" height="180" rx="42" ry="42" fill="url(#bg-cord1)"></rect>
+<g clip-path="url(#clip-cord1)">
+  <!-- receipt / order slip -->
+  <path d="M 58 34 H 122 V 140 L 110 132 L 98 140 L 90 132 L 82 140 L 70 132 L 58 140 Z" fill="white"></path>
+  <rect x="72" y="58" width="36" height="8" rx="4" fill="#b45309"></rect>
+  <rect x="72" y="78" width="36" height="8" rx="4" fill="#b45309"></rect>
+  <rect x="72" y="98" width="24" height="8" rx="4" fill="#b45309"></rect>
+  <rect x="0" y="0" width="180" height="180" fill="url(#hl-cord1)"></rect>
+  <rect x="0.5" y="0.5" width="179" height="179" rx="41.5" ry="41.5" fill="none" stroke="white" stroke-opacity="0.18" stroke-width="1"></rect>
+</g>
+</svg>

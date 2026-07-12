@@ -1,0 +1,39 @@
+{
+	"app.commerce-reconcile.title": "Commerce Reconcile",
+
+	"app.commerce-reconcile.toolbar.refresh": "Refresh",
+	"app.commerce-reconcile.toolbar.toggleSidebar": "Toggle sidebar",
+	"app.commerce-reconcile.toolbar.timeRange": "Time range",
+
+	"app.commerce-reconcile.adminApi.disabled": "The Shopify Admin API is not configured. Reconciliation cannot run until it is set up in Commerce settings.",
+	"app.commerce-reconcile.adminApi.required": "Configure the Shopify Admin API first.",
+
+	"app.commerce-reconcile.reconcile.target": "Target",
+	"app.commerce-reconcile.reconcile.target.inventory": "Inventory",
+	"app.commerce-reconcile.reconcile.target.products": "Products",
+	"app.commerce-reconcile.reconcile.runNow": "Run now",
+	"app.commerce-reconcile.reconcile.runTitle": "Run reconciliation",
+	"app.commerce-reconcile.reconcile.runMsg": "Run a product reconciliation pass now? It detects drift and refreshes the CMS mirror from Shopify (nothing is written to Shopify).",
+	"app.commerce-reconcile.reconcile.runMsgInventory": "Run a full inventory audit now? It re-checks every inventory item against Shopify through a Bulk operation and refreshes the CMS mirror (nothing is written to Shopify).",
+	"app.commerce-reconcile.reconcile.runOk": "Run",
+	"app.commerce-reconcile.reconcile.started": "Reconciliation started. Refreshing shortly…",
+	"app.commerce-reconcile.reconcile.startedInventory": "Inventory audit job enqueued. It appears in the history once it finishes.",
+	"app.commerce-reconcile.reconcile.alreadyRunning": "An inventory audit is already running.",
+	"app.commerce-reconcile.reconcile.couldNotStart": "Could not start ({status}).",
+
+	"app.commerce-reconcile.download": "Download CSV",
+
+	"app.commerce-reconcile.history.type": "Type",
+	"app.commerce-reconcile.history.type.inventory": "Inventory",
+	"app.commerce-reconcile.history.type.products": "Products",
+	"app.commerce-reconcile.history.startedAt": "Started",
+	"app.commerce-reconcile.history.finishedAt": "Finished",
+	"app.commerce-reconcile.history.updated": "Updated",
+	"app.commerce-reconcile.history.result": "Result",
+	"app.commerce-reconcile.history.success": "Success",
+	"app.commerce-reconcile.history.error": "Error",
+	"app.commerce-reconcile.history.empty": "No runs in the selected period.",
+
+	"app.commerce-reconcile.statusbar.working": "Working…",
+	"app.commerce-reconcile.statusbar.ready": "Ready"
+}

@@ -2,11 +2,11 @@
 <camel>
 
     <!--
-      Source-agnostic ingestion core (category A: #1 all-topics, #3 multi-backend,
-      #4 replay). EVERY inbound integration event, from ANY backend, funnels through
+      Source-agnostic ingestion core (all-topics, multi-backend, replay). EVERY
+      inbound integration event, from ANY backend, funnels through
       here:
 
-        backend adapter (e.g. content/public/commerce/endpoints/shopify/webhook.groovy)
+        backend adapter (e.g. the Shopify webhook adapter)
           ─ verifies the backend's signature/auth
           ─ maps the request to a source-agnostic envelope:
                 body            = raw payload
@@ -18,7 +18,7 @@
 
       To connect another backend (Rakuten / BASE / a self-hosted store / an ERP),
       add an adapter endpoint that produces the same envelope and points here — no
-      change to the core or the downstream handlers. See docs/ingestion.md.
+      change to the core or the downstream handlers.
 
       The core: (1) logs the event with its raw payload to the durable event log
       (replayable + auditable), (2) forwards topics that have a dedicated workflow
@@ -35,14 +35,14 @@
             <log message="commerce-ingest error [${exchangeId}] topic=${header.event_topic} id=${header.event_id}: ${exception.message}"
                  loggingLevel="ERROR"/>
 
-            <!-- Mark the event failed so it becomes eligible for replay (#4). -->
+            <!-- Mark the event failed so it becomes eligible for replay. -->
             <setHeader name="event_status">
                 <constant>error</constant>
             </setHeader>
             <setHeader name="event_error">
                 <simple>${exception.message}</simple>
             </setHeader>
-            <toD uri="cms:/etc/commerce/scripts/commerce/markEvent.groovy?inputs=event_path,event_status,event_error"/>
+            <toD uri="cms:/etc/commerce/scripts/markEvent.groovy?inputs=event_path,event_status,event_error"/>
 
             <!-- Record processing health (error). -->
             <setHeader name="health_group">
@@ -84,7 +84,7 @@
 
         <!-- 1. Durable event log (raw payload kept for replay + audit). Outputs the
                 event-log path so we can stamp its terminal status later. -->
-        <toD uri="cms:/etc/commerce/scripts/commerce/logEvent.groovy?inputs=event_source,event_topic,event_id,received_at,ingest_payload&amp;outputs=event_path"/>
+        <toD uri="cms:/etc/commerce/scripts/logEvent.groovy?inputs=event_source,event_topic,event_id,received_at,ingest_payload&amp;outputs=event_path"/>
 
         <setBody>
             <simple>${header.ingest_payload}</simple>
@@ -108,6 +108,15 @@
             <when>
                 <simple>${header.event_topic} == 'orders/paid'</simple>
                 <toD uri="direct:shopify-order-paid"/>
+            </when>
+            <!-- orders/updated re-upserts the mirror body/props so editor writes
+                 (note/tags/customAttributes) round-trip back, without touching the
+                 integration lifecycle (commerce:status). Order-editing session
+                 topics (orders/edited) are deferred with line-item editing — an
+                 edit also emits orders/updated, so the mirror still refreshes. -->
+            <when>
+                <simple>${header.event_topic} == 'orders/updated'</simple>
+                <toD uri="direct:shopify-order-updated"/>
             </when>
             <when>
                 <simple>${header.event_topic} == 'products/create' || ${header.event_topic} == 'products/update'</simple>
@@ -133,12 +142,36 @@
                 <simple>${header.event_topic} == 'bulk_operations/finish'</simple>
                 <toD uri="direct:commerce-shopify-bulk-finish"/>
             </when>
+            <!-- Bespoke customer store (customers/enable|disable carry the full
+                 customer object; the upsert reads the account state from it). -->
+            <when>
+                <simple>${header.event_topic} == 'customers/create' || ${header.event_topic} == 'customers/update' || ${header.event_topic} == 'customers/enable' || ${header.event_topic} == 'customers/disable'</simple>
+                <toD uri="direct:shopify-customer-update"/>
+            </when>
+            <when>
+                <simple>${header.event_topic} == 'customers/delete'</simple>
+                <toD uri="direct:shopify-customer-delete"/>
+            </when>
+            <!-- GDPR compliance topics (mandatory; registered as compliance
+                 webhooks on the Shopify side, delivered to the same adapter). -->
+            <when>
+                <simple>${header.event_topic} == 'customers/redact'</simple>
+                <toD uri="direct:shopify-customer-redact"/>
+            </when>
+            <when>
+                <simple>${header.event_topic} == 'customers/data_request'</simple>
+                <toD uri="direct:shopify-customer-data-request"/>
+            </when>
+            <when>
+                <simple>${header.event_topic} == 'shop/redact'</simple>
+                <toD uri="direct:shopify-shop-redact"/>
+            </when>
             <otherwise>
                 <!-- Any other topic (customers/*, fulfillments/*, carts/*,
                      checkouts/*, …) is normalized into a current-state entity
-                     record (#1). Failures here propagate to the error handler so
+                     record. Failures here propagate to the error handler so
                      the event is marked failed and can be replayed. -->
-                <toD uri="cms:/etc/commerce/scripts/commerce/normalizeEvent.groovy?inputs=event_source,event_topic,event_id,ingest_payload"/>
+                <toD uri="cms:/etc/commerce/scripts/normalizeEvent.groovy?inputs=event_source,event_topic,event_id,ingest_payload"/>
 
                 <!-- Record processing health (success) for the generic path; the
                      bespoke routes record their own. -->
@@ -161,7 +194,7 @@
         <setHeader name="event_status">
             <constant>processed</constant>
         </setHeader>
-        <toD uri="cms:/etc/commerce/scripts/commerce/markEvent.groovy?inputs=event_path,event_status"/>
+        <toD uri="cms:/etc/commerce/scripts/markEvent.groovy?inputs=event_path,event_status"/>
     </route>
 
 </camel>

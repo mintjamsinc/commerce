@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no">
+	<title>Commerce Order</title>
+
+	<!-- Bootstrap Icons (bundled with webtop) -->
+	<link rel="stylesheet" href="../../assets/vendor/bootstrap-icons/bootstrap-icons.min.css?v=__BUILD_VERSION__">
+
+	<!-- App CSS + shared Webtop design system -->
+	<link href="./assets/css/style.css?v=__BUILD_VERSION__" rel="stylesheet" />
+	<link href="../../assets/css/webtop-app.css?v=__BUILD_VERSION__" rel="stylesheet" />
+</head>
+
+<body>
+	<div id="app" v-cloak class="d-flex flex-column" @mounted="onMounted" @unmount="onUnmount">
+
+		<!-- Top toolbar -->
+		<nav class="nav-bar window-drag-region">
+			<div class="toolbar-group">
+				<button class="btn-icon" @click="save" :disabled="!hasChanges || saving || !order" :title="t('app.commerce-order.toolbar.save')">
+					<i class="bi bi-cloud-arrow-up"></i>
+				</button>
+				<button class="btn-icon" @click="revert" :disabled="!hasChanges || saving" :title="t('app.commerce-order.toolbar.revert')">
+					<i class="bi bi-arrow-counterclockwise"></i>
+				</button>
+				<button class="btn-icon" @click="reload" :disabled="!order || saving" :title="t('app.commerce-order.toolbar.reload')">
+					<i class="bi bi-arrow-clockwise"></i>
+				</button>
+			</div>
+
+			<!-- Section switcher -->
+			<div class="toolbar-group">
+				<button class="btn-icon section-toggle" :class="{ active: section === 'overview' }"
+					@click="selectSection('overview')" :title="t('app.commerce-order.section.overview')">
+					<i class="bi bi-receipt"></i>
+				</button>
+				<button class="btn-icon section-toggle" :class="{ active: section === 'lineitems' }"
+					@click="selectSection('lineitems')" :title="t('app.commerce-order.section.lineItems')">
+					<i class="bi bi-box-seam"></i>
+				</button>
+				<button class="btn-icon section-toggle" :class="{ active: section === 'note' }"
+					@click="selectSection('note')" :title="t('app.commerce-order.section.note')">
+					<i class="bi bi-journal-text"></i>
+				</button>
+				<button class="btn-icon section-toggle" :class="{ active: section === 'tags' }"
+					@click="selectSection('tags')" :title="t('app.commerce-order.section.tags')">
+					<i class="bi bi-tags"></i>
+				</button>
+				<button class="btn-icon section-toggle" :class="{ active: section === 'attributes' }"
+					@click="selectSection('attributes')" :title="t('app.commerce-order.section.attributes')">
+					<i class="bi bi-card-list"></i>
+				</button>
+				<button class="btn-icon section-toggle" :class="{ active: section === 'addresses' }"
+					@click="selectSection('addresses')" :title="t('app.commerce-order.section.addresses')">
+					<i class="bi bi-geo-alt"></i>
+				</button>
+			</div>
+
+			<span class="nav-spacer"></span>
+
+			<!-- Window controls -->
+			<div class="window-controls">
+				<button class="btn-icon" @click="onMinimizeWindow" :title="t('common.minimize')">
+					<i class="bi bi-dash-lg"></i>
+				</button>
+				<button class="btn-icon" @click="onToggleMaximizeWindow" :title="t('common.maximize')">
+					<i class="bi bi-square"></i>
+				</button>
+				<button class="btn-icon window-control-close" @click="onCloseWindow" :title="t('common.close')">
+					<i class="bi bi-x-lg"></i>
+				</button>
+			</div>
+		</nav>
+
+		<!-- Content -->
+		<div class="content-body">
+			<main class="content-main island">
+
+				<div v-if="loading" class="cst-state"><div class="spinner"></div><span>{{ t('app.commerce-order.state.loading') }}</span></div>
+
+				<div v-else-if="!order" class="cst-state">
+					<i class="bi bi-receipt"></i>
+					<span>{{ t('app.commerce-order.state.empty') }}</span>
+				</div>
+
+				<template v-else>
+					<!-- Order header (always visible) -->
+					<header class="cst-head">
+						<div>
+							<h2 class="cst-title">{{ orderTitle }}</h2>
+							<div class="cst-meta">
+								<span class="pim-status" :class="'st-' + (integrationStatus || 'unknown')"><span :class="{ 'text-muted': !(integrationStatus) }">{{ integrationStatus || '—' }}</span></span>
+								<span v-if="financialStatus">· {{ financialLabel() }}</span>
+								<span>· {{ orderId }}</span>
+							</div>
+						</div>
+					</header>
+
+					<!-- ================= OVERVIEW ================= -->
+					<template v-if="section === 'overview'">
+						<section class="property-group">
+							<div class="property-group-title"><i class="bi bi-receipt me-2"></i>{{ t('app.commerce-order.overview.groupTitle') }}</div>
+							<div class="property-hint">{{ t('app.commerce-order.overview.hint') }}</div>
+							<div class="cst-facts">
+								<div class="cst-fact">
+									<span class="cst-fact-label">{{ t('app.commerce-order.field.orderNumber') }}</span>
+									<span class="cst-fact-value">{{ orderTitle }}</span>
+								</div>
+								<div class="cst-fact">
+									<span class="cst-fact-label">{{ t('app.commerce-order.field.createdAt') }}</span>
+									<span class="cst-fact-value" :class="{ 'text-muted': !(fmtDateTime(body.created_at)) }">{{ fmtDateTime(body.created_at) || '—' }}</span>
+								</div>
+								<div v-if="body.processed_at" class="cst-fact">
+									<span class="cst-fact-label">{{ t('app.commerce-order.field.processedAt') }}</span>
+									<span class="cst-fact-value" :class="{ 'text-muted': !(fmtDateTime(body.processed_at)) }">{{ fmtDateTime(body.processed_at) || '—' }}</span>
+								</div>
+								<div class="cst-fact">
+									<span class="cst-fact-label">{{ t('app.commerce-order.field.customer') }}</span>
+									<span class="cst-fact-value" :class="{ 'text-muted': !(customerName) }">{{ customerName || '—' }}</span>
+								</div>
+								<div class="cst-fact">
+									<span class="cst-fact-label">{{ t('app.commerce-order.field.email') }}</span>
+									<span class="cst-fact-value" :class="{ 'text-muted': !(customerEmail) }">{{ customerEmail || '—' }}</span>
+								</div>
+								<div class="cst-fact">
+									<span class="cst-fact-label">{{ t('app.commerce-order.field.financialStatus') }}</span>
+									<span class="cst-fact-value">{{ financialLabel() }}</span>
+								</div>
+								<div class="cst-fact">
+									<span class="cst-fact-label">{{ t('app.commerce-order.field.fulfillmentStatus') }}</span>
+									<span class="cst-fact-value">{{ fulfillmentLabel() }}</span>
+								</div>
+								<div class="cst-fact">
+									<span class="cst-fact-label">{{ t('app.commerce-order.field.total') }}</span>
+									<span class="cst-fact-value">{{ fmtMoney(body.total_price) }}</span>
+								</div>
+								<div v-if="showBaseTotal" class="cst-fact">
+									<span class="cst-fact-label">{{ t('app.commerce-order.field.totalBase') }}</span>
+									<span class="cst-fact-value">{{ fmtMoneyBase(order.props.totalPriceBase) }}</span>
+								</div>
+								<div v-if="refundCount > 0 || (refundedAmount && Number(refundedAmount.amount) > 0)" class="cst-fact">
+									<span class="cst-fact-label">{{ t('app.commerce-order.field.refunded') }}</span>
+									<span class="cst-fact-value">{{ fmtMoney(refundedAmount) }}<span v-if="refundCount > 0" class="cst-fact-sub"> · {{ t('app.commerce-order.field.refundCount', { count: refundCount }) }}</span></span>
+								</div>
+								<div v-if="trackingText" class="cst-fact">
+									<span class="cst-fact-label">{{ t('app.commerce-order.field.tracking') }}</span>
+									<span class="cst-fact-value">{{ trackingText }}</span>
+								</div>
+								<div v-if="isCancelled" class="cst-fact">
+									<span class="cst-fact-label">{{ t('app.commerce-order.field.cancelledAt') }}</span>
+									<span class="cst-fact-value" :class="{ 'text-muted': !(fmtDateTime(cancelledAt)) }">{{ fmtDateTime(cancelledAt) || '—' }}</span>
+								</div>
+								<div v-if="fulfilledAt" class="cst-fact">
+									<span class="cst-fact-label">{{ t('app.commerce-order.field.fulfilledAt') }}</span>
+									<span class="cst-fact-value" :class="{ 'text-muted': !(fmtDateTime(fulfilledAt)) }">{{ fmtDateTime(fulfilledAt) || '—' }}</span>
+								</div>
+							</div>
+						</section>
+					</template>
+
+					<!-- ================= LINE ITEMS (read-only) ================= -->
+					<template v-if="section === 'lineitems'">
+						<section class="property-group">
+							<div class="property-group-title"><i class="bi bi-box-seam me-2"></i>{{ t('app.commerce-order.lineItems.groupTitle') }}</div>
+							<div class="property-hint">{{ t('app.commerce-order.lineItems.hint') }}</div>
+
+							<!-- Edit-guard: quantity editing is a follow-up phase (deferred). -->
+							<div class="cst-banner info">
+								<i class="bi bi-info-circle"></i>
+								<span>{{ t('app.commerce-order.lineItems.editGuard') }}</span>
+							</div>
+							<!-- Why it cannot be edited at all when cancelled / fulfilled. -->
+							<div v-if="isCancelled" class="cst-banner warn">
+								<i class="bi bi-x-octagon"></i>
+								<span>{{ t('app.commerce-order.lineItems.lockedCancelled') }}</span>
+							</div>
+							<div v-else-if="isFulfilled" class="cst-banner warn">
+								<i class="bi bi-lock"></i>
+								<span>{{ t('app.commerce-order.lineItems.lockedFulfilled') }}</span>
+							</div>
+
+							<div v-if="lineItems.length === 0" class="property-hint">{{ t('app.commerce-order.lineItems.empty') }}</div>
+
+							<div v-else class="cst-lines-scroll">
+								<table class="wt w-100">
+									<thead>
+										<tr>
+											<th>{{ t('app.commerce-order.lineItems.col.title') }}</th>
+											<th>{{ t('app.commerce-order.lineItems.col.sku') }}</th>
+											<th class="num">{{ t('app.commerce-order.lineItems.col.qty') }}</th>
+											<th class="num">{{ t('app.commerce-order.lineItems.col.price') }}</th>
+											<th class="num">{{ t('app.commerce-order.lineItems.col.total') }}</th>
+										</tr>
+									</thead>
+									<tbody>
+										<tr v-for="(li, i) in lineItems" :key="i">
+											<td>
+												<div class="cst-line-title" :class="{ 'text-muted': !(li.title) }">{{ li.title || '—' }}</div>
+												<div v-if="li.variantTitle" class="cst-line-variant">{{ li.variantTitle }}</div>
+											</td>
+											<td class="cst-line-sku" :class="{ 'text-muted': !(li.sku) }">{{ li.sku || '—' }}</td>
+											<td class="num" :class="{ 'text-muted': (li.quantity) == null }">{{ li.quantity ?? '—' }}</td>
+											<td class="num" :class="{ 'text-muted': !(li.price != null) }">{{ li.price != null ? fmtMoney(li.price) : '—' }}</td>
+											<td class="num" :class="{ 'text-muted': !(li.total != null) }">{{ li.total != null ? fmtMoney(li.total) : '—' }}</td>
+										</tr>
+									</tbody>
+								</table>
+							</div>
+						</section>
+					</template>
+
+					<!-- ================= NOTE ================= -->
+					<template v-if="section === 'note'">
+						<section class="property-group">
+							<div class="property-group-title"><i class="bi bi-journal-text me-2"></i>{{ t('app.commerce-order.note.groupTitle') }}</div>
+							<div class="property-hint">{{ t('app.commerce-order.note.hint') }}</div>
+							<div v-if="!adminApiEnabled" class="cst-banner warn">
+								<i class="bi bi-exclamation-triangle"></i>
+								<span>{{ t('app.commerce-order.hint.adminApiOff') }}</span>
+							</div>
+							<textarea class="wt w-100" rows="8" v-model="edit.note"
+								:placeholder="t('app.commerce-order.note.placeholder')"></textarea>
+						</section>
+					</template>
+
+					<!-- ================= TAGS ================= -->
+					<template v-if="section === 'tags'">
+						<section class="property-group">
+							<div class="property-group-title"><i class="bi bi-tags me-2"></i>{{ t('app.commerce-order.tags.groupTitle') }}</div>
+							<div class="property-hint">{{ t('app.commerce-order.tags.hint') }}</div>
+
+							<div class="cst-chips">
+								<span v-for="(tag, i) in edit.tags" :key="i" class="cst-chip">
+									<span class="cst-chip-text">{{ tag }}</span>
+									<button class="cst-chip-x" @click="removeTag(i)" :title="t('app.commerce-order.tags.remove')">
+										<i class="bi bi-x"></i>
+									</button>
+								</span>
+								<span v-if="edit.tags.length === 0" class="property-hint">{{ t('app.commerce-order.tags.empty') }}</span>
+							</div>
+
+							<div class="cst-taginput">
+								<input type="text" class="wt w-100" v-model="tagInput"
+									:placeholder="t('app.commerce-order.tags.placeholder')" @keyup.enter="addTag" />
+								<button class="wt wt-slim" @click="addTag" :disabled="!tagInput.trim()">
+									<i class="bi bi-plus-lg me-1"></i>{{ t('app.commerce-order.tags.add') }}
+								</button>
+							</div>
+						</section>
+					</template>
+
+					<!-- ================= CUSTOM ATTRIBUTES ================= -->
+					<template v-if="section === 'attributes'">
+						<section class="property-group">
+							<div class="property-group-title"><i class="bi bi-card-list me-2"></i>{{ t('app.commerce-order.attributes.groupTitle') }}</div>
+							<div class="property-hint">{{ t('app.commerce-order.attributes.hint') }}</div>
+
+							<div v-if="edit.customAttributes.length === 0" class="property-hint">{{ t('app.commerce-order.attributes.empty') }}</div>
+
+							<div v-for="(attr, i) in edit.customAttributes" :key="i" class="cst-attr-row">
+								<div class="cst-attr-field">
+									<label class="cst-attr-label" v-if="i === 0">{{ t('app.commerce-order.attributes.key') }}</label>
+									<input type="text" class="wt w-100" v-model="attr.key"
+										:placeholder="t('app.commerce-order.attributes.keyPlaceholder')" />
+								</div>
+								<div class="cst-attr-field">
+									<label class="cst-attr-label" v-if="i === 0">{{ t('app.commerce-order.attributes.value') }}</label>
+									<input type="text" class="wt w-100" v-model="attr.value"
+										:placeholder="t('app.commerce-order.attributes.valuePlaceholder')" />
+								</div>
+								<button class="btn-icon cst-attr-del" @click="removeAttr(i)" :title="t('app.commerce-order.attributes.remove')">
+									<i class="bi bi-trash"></i>
+								</button>
+							</div>
+
+							<div class="form-actions">
+								<button class="wt wt-slim" @click="addAttr">
+									<i class="bi bi-plus-lg me-1"></i>{{ t('app.commerce-order.attributes.add') }}
+								</button>
+							</div>
+						</section>
+					</template>
+
+					<!-- ================= ADDRESSES (read-only) ================= -->
+					<template v-if="section === 'addresses'">
+						<section class="property-group">
+							<div class="property-group-title"><i class="bi bi-geo-alt me-2"></i>{{ t('app.commerce-order.addresses.groupTitle') }}</div>
+							<div class="property-hint">{{ t('app.commerce-order.addresses.hint') }}</div>
+
+							<div v-if="addresses.length === 0" class="property-hint">{{ t('app.commerce-order.addresses.empty') }}</div>
+
+							<div v-for="(a, i) in addresses" :key="i" class="cst-address">
+								<div class="cst-address-head">
+									<span class="cst-badge">{{ t('app.commerce-order.addresses.' + a.role) }}</span>
+									<span class="cst-address-name" :class="{ 'text-muted': !(a.name) }">{{ a.name || '—' }}</span>
+								</div>
+								<div v-if="a.company" class="cst-address-line">{{ a.company }}</div>
+								<div v-for="(ln, j) in a.lines" :key="j" class="cst-address-line">{{ ln }}</div>
+								<div v-if="a.cityLine" class="cst-address-line">{{ a.cityLine }}</div>
+								<div v-if="a.country" class="cst-address-line">{{ a.country }}</div>
+								<div v-if="a.phone" class="cst-address-line cst-address-phone"><i class="bi bi-telephone me-1"></i>{{ a.phone }}</div>
+							</div>
+						</section>
+					</template>
+				</template>
+			</main>
+		</div>
+
+		<!-- Status bar -->
+		<div class="status-bar window-drag-region">
+			<span class="nav-spacer"></span>
+			<div class="status-group">
+				<span v-if="saving" class="status-item"><i class="bi bi-cloud-arrow-up me-1"></i>{{ t('app.commerce-order.statusbar.saving') }}</span>
+				<span v-else-if="hasChanges" class="status-item">{{ t('app.commerce-order.statusbar.unsaved') }}</span>
+				<span v-else-if="statusKind === 'ok'" class="status-item status-ok"><i class="bi bi-check-lg me-1"></i>{{ status }}</span>
+				<span v-else-if="statusKind === 'err'" class="status-item status-err">{{ status }}</span>
+				<span v-else class="status-item">{{ t('app.commerce-order.statusbar.ready') }}</span>
+			</div>
+		</div>
+
+		<!-- Toast -->
+		<div v-if="toast" class="commerce-toast" :class="{ error: toastError }" role="alert">{{ toast }}</div>
+
+		<!-- Unsaved-changes dialog -->
+		<div v-if="confirmDialog.visible" class="dialog-overlay">
+			<div class="dialog-frame" style="max-width: 32rem;">
+				<div class="island p-2">
+					<div class="dialog-header">
+						<h3><i class="bi bi-exclamation-triangle-fill me-2"></i>{{ t('app.commerce-order.dialog.title') }}</h3>
+					</div>
+					<div class="dialog-body">
+						<p class="mt-0">{{ t('app.commerce-order.dialog.body1') }}</p>
+						<p>{{ t('app.commerce-order.dialog.body2') }}</p>
+					</div>
+					<div class="dialog-footer flex-wrap">
+						<button class="wt" @click="onConfirmAction('cancel')">{{ t('common.cancel') }}</button>
+						<button class="wt wt-danger" @click="onConfirmAction('discard')">
+							<i class="bi bi-trash me-1"></i>{{ t('app.commerce-order.dialog.discard') }}
+						</button>
+						<button class="wt wt-primary" @click="onConfirmAction('save')">
+							<i class="bi bi-cloud-arrow-up me-1"></i>{{ t('common.save') }}
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Shopify-write confirmation dialog -->
+		<div v-if="actionDialog.visible" class="dialog-overlay">
+			<div class="dialog-frame" style="max-width: 32rem;">
+				<div class="island p-2">
+					<div class="dialog-header">
+						<h3><i class="bi bi-cloud-arrow-up me-2"></i>{{ actionDialog.title }}</h3>
+					</div>
+					<div class="dialog-body">
+						<p class="mt-0">{{ actionDialog.message }}</p>
+						<p class="cst-dialog-note">{{ t('app.commerce-order.confirm.note') }}</p>
+					</div>
+					<div class="dialog-footer flex-wrap">
+						<button class="wt" @click="onActionDialog(false)">{{ t('common.cancel') }}</button>
+						<button class="wt wt-primary" @click="onActionDialog(true)">
+							<i class="bi bi-cloud-arrow-up me-1"></i>{{ actionDialog.ok }}
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+
+	</div>
+
+	<script type="module" src="./app.js?v=__BUILD_VERSION__"></script>
+</body>
+
+</html>

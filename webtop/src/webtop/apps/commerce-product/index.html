@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no">
+	<title>Commerce Product</title>
+
+	<!-- Bootstrap Icons (bundled with webtop) -->
+	<link rel="stylesheet" href="../../assets/vendor/bootstrap-icons/bootstrap-icons.min.css?v=__BUILD_VERSION__">
+
+	<!-- App CSS + shared Webtop design system -->
+	<link href="./assets/css/style.css?v=__BUILD_VERSION__" rel="stylesheet" />
+	<link href="../../assets/css/webtop-app.css?v=__BUILD_VERSION__" rel="stylesheet" />
+</head>
+
+<body>
+	<div id="app" v-cloak class="d-flex flex-column" @mounted="onMounted" @unmount="onUnmount">
+
+		<!-- Top toolbar -->
+		<nav class="nav-bar window-drag-region">
+			<div class="toolbar-group">
+				<button class="btn-icon" @click="save" :disabled="!hasChanges || saving || !product" :title="t('app.commerce-product.toolbar.save')">
+					<i class="bi bi-floppy"></i>
+				</button>
+				<button class="btn-icon" @click="revert" :disabled="!hasChanges || saving" :title="t('app.commerce-product.toolbar.revert')">
+					<i class="bi bi-arrow-counterclockwise"></i>
+				</button>
+			</div>
+
+			<!-- Section switcher -->
+			<div class="toolbar-group">
+				<button class="btn-icon section-toggle" :class="{ active: section === 'overview' }"
+					@click="selectSection('overview')" :title="t('app.commerce-product.section.overview')">
+					<i class="bi bi-info-circle"></i>
+					<span class="tab-dirty-dot" v-if="sectionDirty('overview')" :title="t('app.commerce-product.tab.unsaved')"></span>
+				</button>
+				<button class="btn-icon section-toggle" :class="{ active: section === 'variants' }"
+					@click="selectSection('variants')" :title="t('app.commerce-product.section.variants')">
+					<i class="bi bi-box-seam"></i>
+				</button>
+				<button class="btn-icon section-toggle" :class="{ active: section === 'content' }"
+					@click="selectSection('content')" :title="t('app.commerce-product.section.content')">
+					<i class="bi bi-translate"></i>
+					<span class="tab-dirty-dot" v-if="sectionDirty('content')" :title="t('app.commerce-product.tab.unsaved')"></span>
+				</button>
+				<button class="btn-icon section-toggle" :class="{ active: section === 'metafields' }"
+					@click="selectSection('metafields')" :title="t('app.commerce-product.section.metafields')">
+					<i class="bi bi-cloud"></i>
+					<span class="tab-dirty-dot" v-if="sectionDirty('metafields')" :title="t('app.commerce-product.tab.unsaved')"></span>
+				</button>
+				<button class="btn-icon section-toggle" :class="{ active: section === 'media' }"
+					@click="selectSection('media')" :title="t('app.commerce-product.section.media')">
+					<i class="bi bi-images"></i>
+				</button>
+				<button class="btn-icon section-toggle" :class="{ active: section === 'planning' }"
+					@click="selectSection('planning')" :title="t('app.commerce-product.section.planning')">
+					<i class="bi bi-clipboard-data"></i>
+					<span class="tab-dirty-dot" v-if="sectionDirty('planning')" :title="t('app.commerce-product.tab.unsaved')"></span>
+				</button>
+			</div>
+
+			<span class="nav-spacer"></span>
+
+			<!-- Window controls -->
+			<div class="window-controls">
+				<button class="btn-icon" @click="onMinimizeWindow" :title="t('common.minimize')">
+					<i class="bi bi-dash-lg"></i>
+				</button>
+				<button class="btn-icon" @click="onToggleMaximizeWindow" :title="t('common.maximize')">
+					<i class="bi bi-square"></i>
+				</button>
+				<button class="btn-icon window-control-close" @click="onCloseWindow" :title="t('common.close')">
+					<i class="bi bi-x-lg"></i>
+				</button>
+			</div>
+		</nav>
+
+		<!-- Content -->
+		<div class="content-body">
+
+			<!-- Editor -->
+			<main class="content-main island">
+
+				<div v-if="loading" class="pim-state"><div class="spinner"></div><span>{{ t('app.commerce-product.state.loading') }}</span></div>
+
+				<div v-else-if="!product" class="pim-state">
+					<i class="bi bi-tags"></i>
+					<span>{{ t('app.commerce-product.state.empty') }}</span>
+				</div>
+
+				<template v-else>
+					<!-- Product header (always visible) -->
+					<header class="pim-head">
+						<div>
+							<h2 class="pim-title">{{ base.title || (t('app.commerce-product.product.idFallback', { id: product.id })) }}</h2>
+							<div class="pim-meta">
+								<span class="pim-status" :class="'st-' + (base.status || 'unknown')"><span :class="{ 'text-muted': !(base.status) }">{{ base.status || '—' }}</span></span>
+								<span v-if="base.handle">/{{ base.handle }}</span>
+								<span>· {{ product.id }}</span>
+								<span v-if="base.vendor">· {{ base.vendor }}</span>
+								<span v-if="base.productType">· {{ base.productType }}</span>
+							</div>
+							<div v-if="overlayStampDate" class="pim-stamp">{{ t('app.commerce-product.product.overlayUpdated', { time: fmtDateTime(overlayStampDate), user: overlayStampUser, hasUser: overlayStampUser ? 'yes' : 'no' }) }}</div>
+						</div>
+					</header>
+
+					<!-- ================= OVERVIEW ================= -->
+					<template v-if="section === 'overview'">
+						<section class="property-group">
+							<div class="property-group-title"><i class="bi bi-info-circle me-2"></i>{{ t('app.commerce-product.overview.groupTitle') }}</div>
+							<div class="property-hint">{{ t('app.commerce-product.overview.hint') }}</div>
+							<div v-if="!adminApiEnabled" class="prod-banner warn">
+								<i class="bi bi-exclamation-triangle"></i>
+								<span>{{ t('app.commerce-product.hint.adminApiOff') }}</span>
+							</div>
+							<div class="prod-form">
+								<div class="prod-form-field prod-form-wide">
+									<label class="property-label">{{ t('app.commerce-product.overview.title') }}</label>
+									<input type="text" class="wt w-100" v-model="baseEdit.title" :disabled="!adminApiEnabled" />
+								</div>
+								<div class="prod-form-field">
+									<label class="property-label">{{ t('app.commerce-product.overview.status') }}</label>
+									<div class="wt-select" :class="{ disabled: !adminApiEnabled }">
+										<button type="button" class="wt-select-trigger" :disabled="!adminApiEnabled" @click.stop="openProductStatusMenu($event)">
+											<span class="wt-select-value">{{ productStatusLabel(baseEdit.status) }}</span>
+											<i class="bi bi-chevron-down wt-select-chevron"></i>
+										</button>
+									</div>
+								</div>
+								<div class="prod-form-field">
+									<label class="property-label">{{ t('app.commerce-product.overview.vendor') }}</label>
+									<input type="text" class="wt w-100" v-model="baseEdit.vendor" :disabled="!adminApiEnabled" />
+								</div>
+								<div class="prod-form-field">
+									<label class="property-label">{{ t('app.commerce-product.overview.productType') }}</label>
+									<input type="text" class="wt w-100" v-model="baseEdit.productType" :disabled="!adminApiEnabled" />
+								</div>
+								<div class="prod-form-field">
+									<label class="property-label">{{ t('app.commerce-product.overview.handle') }}</label>
+									<input type="text" class="wt w-100" v-model="baseEdit.handle" :disabled="!adminApiEnabled" />
+								</div>
+								<div class="prod-form-field prod-form-wide">
+									<label class="property-label">{{ t('app.commerce-product.overview.tags') }}</label>
+									<input type="text" class="wt w-100" v-model="baseEdit.tags"
+										:placeholder="t('app.commerce-product.overview.tagsPlaceholder')" :disabled="!adminApiEnabled" />
+								</div>
+								<div class="prod-form-field prod-form-wide">
+									<label class="property-label">{{ t('app.commerce-product.overview.description') }}</label>
+									<textarea class="wt w-100" rows="6" v-model="baseEdit.description" :disabled="!adminApiEnabled"></textarea>
+								</div>
+							</div>
+							<div class="form-actions">
+								<button class="wt wt-slim" @click="saveBase" :disabled="applying || saving || !adminApiEnabled || !baseChanged"
+									:title="adminApiEnabled ? '' : t('app.commerce-product.hint.adminApiOff')">
+									<i class="bi bi-cloud-arrow-up me-1"></i>{{ t('app.commerce-product.action.saveBase') }}
+								</button>
+							</div>
+						</section>
+
+						<section class="property-group">
+							<div class="property-group-title">{{ t('app.commerce-product.overview.variantsTitle', { count: base.variants.length }) }}</div>
+							<table class="wt w-100">
+								<thead><tr><th>{{ t('app.commerce-product.col.variant') }}</th><th>{{ t('app.commerce-product.col.sku') }}</th><th>{{ t('app.commerce-product.col.price') }}</th></tr></thead>
+								<tbody>
+									<tr v-for="v in base.variants" :key="v.id">
+										<td :class="{ 'text-muted': (v.title) == null }">{{ v.title ?? '—' }}</td><td :class="{ 'text-muted': (v.sku) == null }">{{ v.sku ?? '—' }}</td><td :class="{ 'text-muted': (v.price) == null }">{{ v.price ?? '—' }}</td>
+									</tr>
+								</tbody>
+							</table>
+						</section>
+					</template>
+
+					<!-- ================= VARIANTS (price & stock) ================= -->
+					<template v-if="section === 'variants'">
+						<section class="property-group">
+							<div class="property-group-title"><i class="bi bi-box-seam me-2"></i>{{ t('app.commerce-product.variants.groupTitle') }}</div>
+							<div class="property-hint">{{ t('app.commerce-product.variants.hint') }}</div>
+							<div v-if="!adminApiEnabled" class="prod-banner warn">
+								<i class="bi bi-exclamation-triangle"></i>
+								<span>{{ t('app.commerce-product.hint.adminApiOff') }}</span>
+							</div>
+
+							<div v-if="stockLoading" class="pim-hint"><div class="spinner"></div></div>
+							<div v-else-if="stockRows.length === 0" class="property-hint">{{ t('app.commerce-product.variants.empty') }}</div>
+
+							<div v-for="row in stockRows" :key="row.variantId" class="pim-card">
+								<div class="prod-variant-head">
+									<span class="prod-variant-title">{{ row.title || ('#' + row.variantId) }}</span>
+									<span class="prod-variant-sub" v-if="row.sku">{{ t('app.commerce-product.col.sku') }}: {{ row.sku }}</span>
+									<span class="prod-variant-sub">{{ t('app.commerce-product.variants.total', { total: row.total }) }}</span>
+								</div>
+								<div class="pim-row">
+									<div class="prod-col-price">
+										<label class="property-label">{{ t('app.commerce-product.col.price') }}</label>
+										<input type="text" class="wt w-100" v-model="row.newPrice" inputmode="decimal" />
+									</div>
+									<button class="wt wt-slim" @click="applyPrice(row)"
+										:disabled="applying || !adminApiEnabled || String(row.newPrice) === String(row.price)">
+										<i class="bi bi-cloud-arrow-up me-1"></i>{{ t('app.commerce-product.action.applyPrice') }}
+									</button>
+								</div>
+								<table class="wt w-100" v-if="row.byLocation.length">
+									<thead>
+										<tr>
+											<th>{{ t('app.commerce-product.col.location') }}</th>
+											<th class="prod-num">{{ t('app.commerce-product.col.available') }}</th>
+											<th class="prod-num">{{ t('app.commerce-product.col.newQty') }}</th>
+											<th></th>
+										</tr>
+									</thead>
+									<tbody>
+										<tr v-for="loc in row.byLocation" :key="loc.locationId">
+											<td :class="{ 'text-muted': (loc.name) == null }">{{ loc.name ?? '—' }}</td>
+											<td class="prod-num"><span :class="{ 'text-muted': (loc.available) == null }">{{ loc.available ?? '—' }}</span></td>
+											<td class="prod-num"><input type="number" class="wt prod-qty" v-model.number="loc.newQty" /></td>
+											<td class="prod-num">
+												<button class="wt wt-slim" @click="applyStock(row, loc)"
+													:disabled="applying || !adminApiEnabled || Number(loc.newQty) === Number(loc.available)">
+													<i class="bi bi-cloud-arrow-up me-1"></i>{{ t('app.commerce-product.action.applyStock') }}
+												</button>
+											</td>
+										</tr>
+									</tbody>
+								</table>
+								<div v-else class="property-hint">{{ t('app.commerce-product.variants.noLocations') }}</div>
+							</div>
+							<div class="form-actions">
+								<button class="wt wt-slim" @click="loadStock" :disabled="stockLoading">
+									<i class="bi bi-arrow-clockwise me-1" :class="{ spin: stockLoading }"></i>{{ t('app.commerce-product.action.reload') }}
+								</button>
+							</div>
+						</section>
+					</template>
+
+					<!-- ================= CONTENT (localized overlay) ================= -->
+					<template v-if="section === 'content'">
+						<section class="property-group">
+							<div class="property-group-title"><i class="bi bi-translate me-2"></i>{{ t('app.commerce-product.localized.groupTitle') }}</div>
+							<div v-if="localized.length === 0" class="property-hint">{{ t('app.commerce-product.localized.empty') }}</div>
+							<div v-for="(loc, i) in localized" :key="i" class="pim-card">
+								<div class="pim-row">
+									<div class="pim-col-locale">
+										<label class="property-label">{{ t('app.commerce-product.localized.labelLocale') }}</label>
+										<input type="text" class="wt w-100" v-model="loc.locale" :placeholder="t('app.commerce-product.localized.placeholderLocale')" />
+									</div>
+									<div class="pim-col-grow">
+										<label class="property-label">{{ t('app.commerce-product.localized.labelTitle') }}</label>
+										<input type="text" class="wt w-100" v-model="loc.title" />
+									</div>
+									<button class="btn-icon pim-del" @click="localized.splice(i, 1)" :title="t('app.commerce-product.action.removeLocale')">
+										<i class="bi bi-trash"></i>
+									</button>
+								</div>
+								<div>
+									<label class="property-label">{{ t('app.commerce-product.localized.labelDescription') }}</label>
+									<textarea class="wt w-100" rows="3" v-model="loc.description_html"></textarea>
+								</div>
+							</div>
+							<div class="form-actions">
+								<button class="wt wt-slim" @click="addLocale"><i class="bi bi-plus-lg me-1"></i>{{ t('app.commerce-product.action.addLocale') }}</button>
+							</div>
+						</section>
+					</template>
+
+					<!-- ================= METAFIELDS ================= -->
+					<template v-if="section === 'metafields'">
+						<section class="property-group">
+							<div class="property-group-title"><i class="bi bi-cloud me-2"></i>{{ t('app.commerce-product.metafields.groupTitle') }}</div>
+							<div class="property-hint">{{ t('app.commerce-product.metafields.hint') }}</div>
+							<div v-for="(m, i) in metafields" :key="i" class="pim-row pim-mf">
+								<div class="pim-col-mf">
+									<label class="property-label" v-if="i === 0">{{ t('app.commerce-product.metafields.labelNamespace') }}</label>
+									<input type="text" class="wt w-100" v-model="m.namespace" :placeholder="t('app.commerce-product.metafields.placeholderNamespace')" />
+								</div>
+								<div class="pim-col-mf">
+									<label class="property-label" v-if="i === 0">{{ t('app.commerce-product.field.key') }}</label>
+									<input type="text" class="wt w-100" v-model="m.key" :placeholder="t('app.commerce-product.metafields.placeholderKey')" />
+								</div>
+								<div class="pim-col-mf">
+									<label class="property-label" v-if="i === 0">{{ t('app.commerce-product.metafields.labelType') }}</label>
+									<input type="text" class="wt w-100" v-model="m.type" :placeholder="t('app.commerce-product.metafields.placeholderType')" />
+								</div>
+								<div class="pim-col-grow">
+									<label class="property-label" v-if="i === 0">{{ t('app.commerce-product.field.value') }}</label>
+									<input type="text" class="wt w-100" v-model="m.value" />
+								</div>
+								<button class="btn-icon pim-del" @click="metafields.splice(i, 1)" :title="t('app.commerce-product.action.removeMetafield')">
+									<i class="bi bi-trash"></i>
+								</button>
+							</div>
+							<div class="form-actions">
+								<button class="wt wt-slim" @click="addMetafield"><i class="bi bi-plus-lg me-1"></i>{{ t('app.commerce-product.action.addMetafield') }}</button>
+								<button class="wt wt-slim" @click="pushMetafields"
+									:disabled="pushing || metafields.length === 0 || !adminApiEnabled || hasChanges"
+									:title="adminApiEnabled ? t('app.commerce-product.metafields.pushTitle') : t('app.commerce-product.hint.adminApiOff')">
+									<i class="bi bi-cloud-upload me-1" :class="{ spin: pushing }"></i>{{ t('app.commerce-product.action.push') }}
+								</button>
+							</div>
+						</section>
+					</template>
+
+					<!-- ================= MEDIA ================= -->
+					<template v-if="section === 'media'">
+						<section class="property-group">
+							<div class="property-group-title"><i class="bi bi-images me-2"></i>{{ t('app.commerce-product.media.groupTitle') }}</div>
+							<div class="property-hint">{{ t('app.commerce-product.media.hint') }}</div>
+							<div v-if="!adminApiEnabled" class="prod-banner warn">
+								<i class="bi bi-exclamation-triangle"></i>
+								<span>{{ t('app.commerce-product.hint.adminApiOff') }}</span>
+							</div>
+
+							<template v-else>
+								<!-- Add image by URL -->
+								<div class="media-add">
+									<div class="media-add-url">
+										<label class="property-label">{{ t('app.commerce-product.media.addUrlLabel') }}</label>
+										<input type="text" class="wt w-100" v-model="mediaAddUrl"
+											:placeholder="t('app.commerce-product.media.addUrlPlaceholder')" />
+									</div>
+									<div class="media-add-alt">
+										<label class="property-label">{{ t('app.commerce-product.media.addAltLabel') }}</label>
+										<input type="text" class="wt w-100" v-model="mediaAddAlt"
+											:placeholder="t('app.commerce-product.media.addAltPlaceholder')" />
+									</div>
+									<button class="wt wt-slim" @click="addMedia" :disabled="applying || !adminApiEnabled || !mediaAddUrl.trim()">
+										<i class="bi bi-plus-lg me-1"></i>{{ t('app.commerce-product.action.addMedia') }}
+									</button>
+								</div>
+
+								<div v-if="mediaLoading" class="pim-hint"><div class="spinner"></div></div>
+								<div v-else-if="media.length === 0" class="property-hint">{{ t('app.commerce-product.media.empty') }}</div>
+
+								<div v-else class="media-grid">
+									<div v-for="(m, i) in media" :key="m.id" class="media-card">
+										<img v-if="m.url" class="media-thumb" :src="m.url" :alt="m.alt" />
+										<div v-else class="media-thumb media-thumb-empty">
+											<i class="bi bi-hourglass-split me-1"></i>{{ m.status || t('app.commerce-product.media.processing') }}
+										</div>
+										<span v-if="m.status && m.status !== 'READY'" class="pim-status media-status">{{ m.status }}</span>
+										<div>
+											<label class="property-label">{{ t('app.commerce-product.media.altLabel') }}</label>
+											<div class="pim-row">
+												<input type="text" class="wt w-100" v-model="m.altEdit"
+													:placeholder="t('app.commerce-product.media.altPlaceholder')" />
+												<button class="btn-icon" @click="updateAlt(m)"
+													:disabled="applying || !adminApiEnabled || m.altEdit === m.alt"
+													:title="t('app.commerce-product.action.updateAlt')">
+													<i class="bi bi-check-lg"></i>
+												</button>
+											</div>
+										</div>
+										<div class="media-actions">
+											<span class="media-move">
+												<button class="btn-icon" @click="moveMedia(i, -1)"
+													:disabled="applying || !adminApiEnabled || i === 0"
+													:title="t('app.commerce-product.action.moveUp')">
+													<i class="bi bi-arrow-up"></i>
+												</button>
+												<button class="btn-icon" @click="moveMedia(i, 1)"
+													:disabled="applying || !adminApiEnabled || i === media.length - 1"
+													:title="t('app.commerce-product.action.moveDown')">
+													<i class="bi bi-arrow-down"></i>
+												</button>
+											</span>
+											<button class="btn-icon pim-del" @click="deleteMedia(m)"
+												:disabled="applying || !adminApiEnabled" :title="t('app.commerce-product.action.deleteMedia')">
+												<i class="bi bi-trash"></i>
+											</button>
+										</div>
+									</div>
+								</div>
+							</template>
+							<div class="form-actions">
+								<button class="wt wt-slim" @click="loadMedia(true)" :disabled="mediaLoading || !adminApiEnabled">
+									<i class="bi bi-arrow-clockwise me-1" :class="{ spin: mediaLoading }"></i>{{ t('app.commerce-product.action.reload') }}
+								</button>
+							</div>
+						</section>
+					</template>
+
+					<!-- ================= PLANNING ================= -->
+					<template v-if="section === 'planning'">
+						<section class="property-group">
+							<div class="property-group-title"><i class="bi bi-clipboard-data me-2"></i>{{ t('app.commerce-product.planning.groupTitle') }}</div>
+							<div class="property-hint">{{ t('app.commerce-product.planning.hint') }}</div>
+
+							<div v-if="planningRows.length === 0" class="property-hint">{{ t('app.commerce-product.planning.empty') }}</div>
+
+							<div class="prod-table-scroll" v-else>
+								<table class="wt w-100 prod-plan-table">
+									<thead>
+										<tr>
+											<th>{{ t('app.commerce-product.col.variant') }}</th>
+											<th class="prod-num">{{ t('app.commerce-product.planning.colThreshold') }}</th>
+										</tr>
+									</thead>
+									<tbody>
+										<tr v-for="row in planningRows" :key="row.variantId">
+											<td class="prod-plan-variant">{{ row.title || ('#' + row.variantId) }}</td>
+											<td class="prod-num"><input type="number" class="wt prod-qty" v-model="row.threshold" :placeholder="defaultFor('threshold')" /></td>
+										</tr>
+									</tbody>
+								</table>
+							</div>
+							<div class="property-hint">{{ t('app.commerce-product.planning.footnote') }}</div>
+						</section>
+					</template>
+				</template>
+			</main>
+		</div>
+
+		<!-- Status bar -->
+		<div class="status-bar window-drag-region">
+			<span class="nav-spacer"></span>
+			<div class="status-group">
+				<span v-if="saving" class="status-item"><i class="bi bi-arrow-repeat me-1"></i>{{ t('app.commerce-product.statusbar.saving') }}</span>
+				<span v-else-if="pushing" class="status-item"><i class="bi bi-cloud-upload me-1"></i>{{ t('app.commerce-product.statusbar.pushing') }}</span>
+				<span v-else-if="applying" class="status-item"><i class="bi bi-cloud-arrow-up me-1"></i>{{ t('app.commerce-product.statusbar.applying') }}</span>
+				<span v-else-if="hasChanges" class="status-item">{{ t('app.commerce-product.statusbar.unsaved') }}</span>
+				<span v-else-if="statusKind === 'ok'" class="status-item status-ok"><i class="bi bi-check-lg me-1"></i>{{ status }}</span>
+				<span v-else-if="statusKind === 'err'" class="status-item status-err">{{ status }}</span>
+				<span v-else class="status-item">{{ t('app.commerce-product.statusbar.ready') }}</span>
+			</div>
+		</div>
+
+		<!-- Toast -->
+		<div v-if="toast" class="commerce-toast" :class="{ error: toastError }" role="alert">{{ toast }}</div>
+
+		<!-- Unsaved-changes dialog -->
+		<div v-if="confirmDialog.visible" class="dialog-overlay">
+			<div class="dialog-frame" style="max-width: 32rem;">
+				<div class="island p-2">
+					<div class="dialog-header">
+						<h3><i class="bi bi-exclamation-triangle-fill me-2"></i>{{ t('app.commerce-product.dialog.title') }}</h3>
+					</div>
+					<div class="dialog-body">
+						<p class="mt-0">{{ t('app.commerce-product.dialog.body1') }}</p>
+						<p>{{ t('app.commerce-product.dialog.body2') }}</p>
+					</div>
+					<div class="dialog-footer flex-wrap">
+						<button class="wt" @click="onConfirmAction('cancel')">{{ t('common.cancel') }}</button>
+						<button class="wt wt-danger" @click="onConfirmAction('discard')">
+							<i class="bi bi-trash me-1"></i>{{ t('app.commerce-product.dialog.discard') }}
+						</button>
+						<button class="wt wt-primary" @click="onConfirmAction('save')">
+							<i class="bi bi-floppy me-1"></i>{{ t('common.save') }}
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Shopify-write confirmation dialog -->
+		<div v-if="actionDialog.visible" class="dialog-overlay">
+			<div class="dialog-frame" style="max-width: 32rem;">
+				<div class="island p-2">
+					<div class="dialog-header">
+						<h3><i class="bi bi-cloud-arrow-up me-2"></i>{{ actionDialog.title }}</h3>
+					</div>
+					<div class="dialog-body">
+						<p class="mt-0">{{ actionDialog.message }}</p>
+					</div>
+					<div class="dialog-footer flex-wrap">
+						<button class="wt" @click="onActionDialog(false)">{{ t('common.cancel') }}</button>
+						<button class="wt wt-primary" @click="onActionDialog(true)">
+							<i class="bi bi-cloud-arrow-up me-1"></i>{{ actionDialog.ok }}
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+
+	</div>
+
+	<script type="module" src="./app.js?v=__BUILD_VERSION__"></script>
+</body>
+
+</html>

@@ -31,18 +31,19 @@ new values without updating this list.
 |---|---|---|---|
 | `received` | Webhook received, raw JSON and metadata stored. | Camel route (product-update / order-paid) | No |
 | `threshold_pending` | Workflow raised the "Set Inventory Threshold" task; waiting on an operator. | BPMN `create` task listener (`setWorkflowStatus.groovy`) | No |
-| `review_pending` | A manual review task is open, waiting on an operator. **Products:** a variant dropped below its threshold ("Manual Inventory Check"). **Orders:** a screening rule matched ("Order Review"). **Refunds:** a screening rule matched ("Refund Review"). | BPMN `create` task listener (`setWorkflowStatus.groovy` / `setOrderWorkflowStatus.groovy` / `setRefundWorkflowStatus.groovy`) | No |
+| `review_pending` | A manual review task is open, waiting on an operator. **Products:** a variant dropped below its fixed reorder point ("Inventory & Reorder Review"). **Orders:** a screening rule matched ("Order Review"). **Refunds:** a screening rule matched ("Refund Review"). | BPMN `create` task listener (`setWorkflowStatus.groovy` / `setOrderWorkflowStatus.groovy` / `setRefundWorkflowStatus.groovy`) | No |
 | `monitored` | Product workflow finished: thresholds are configured and stock is OK, or the review was completed. The product is now under routine monitoring. | BPMN end-event execution listener (`setWorkflowStatus.groovy`) | Yes |
 | `approved` | Order review cleared (auto-approved or a manual review was completed); the order is queued for fulfillment. | BPMN service task `ServiceTask_approveOrder` (`setOrderWorkflowStatus.groovy`) | No |
 | `fulfillment_pending` | Order workflow raised the "Fulfill Order" task; waiting on a fulfiller to pick, pack and ship. | BPMN `create` task listener (`setOrderWorkflowStatus.groovy`) | No |
 | `fulfilled` | Order workflow finished: the order was fulfilled (tracking recorded, and written back to Shopify when the Admin API is enabled). | BPMN end-event execution listener (`setOrderWorkflowStatus.groovy`) | Yes |
+| `cancelled` | Order workflow finished on the reject branch: the reviewer rejected the order (reason required) and the flow cancelled it in Shopify (Order Cancel, restock + refund). `commerce:cancel_writeback` / `commerce:cancel_reason` carry the detail. **Order-scoped.** | BPMN end-event execution listener (`setOrderWorkflowStatus.groovy`) | Yes |
 | `resolved` | Refund workflow finished: the refund was screened, optionally reviewed, and recorded (the order's refund summary updated). A refund is already executed in Shopify, so this is the terminal audit state. | BPMN end-event execution listener (`setRefundWorkflowStatus.groovy`) | Yes |
 | `backordered` | A paid order line could not be fulfilled from stock (shortfall) or is sold ahead as a pre-order; a line-level backorder record is waiting for stock. **Backorder-scoped.** | Camel route (order-paid → `detectBackorders.groovy`) | No |
 | `ready` | The awaited stock for a backorder has arrived; the "Release Backorder" task is open, waiting on an operator. **Backorder-scoped.** | BPMN `create` task listener (`setBackorderWorkflowStatus.groovy`) | No |
 | `released` | Backorder workflow finished: the operator released the in-stock line to normal fulfilment. **Backorder-scoped.** | BPMN end-event execution listener (`setBackorderWorkflowStatus.groovy`) | Yes |
 | `cancelled` | A backorder was cancelled before release (e.g. the order was refunded while it still awaited stock). `commerce:cancelled_at` / `commerce:cancel_reason` carry the detail. **Backorder-scoped.** | Camel route (refund-created → `cancelBackorders.groovy`) | Yes |
 | `processed` | An event-log entry was handled (forwarded to its workflow, or normalized). `commerce:attempts` counts ingest passes. **Event-log-scoped.** | Ingest core (`markEvent.groovy`) | No (replayable) |
-| `ok` / `failed` / `dryrun` | Outcome of a CMS → Shopify outbound write (#2): applied / rejected / validated-only. **Sync-audit-scoped.** | `endpoints/sync.groovy` | Yes |
+| `ok` / `failed` / `dryrun` | Outcome of a CMS → Shopify outbound write: applied / rejected / validated-only. **Sync-audit-scoped.** | `endpoints/sync.groovy` | Yes |
 | `error` | Processing failed; for entities `commerce:errorMessage` / `commerce:stackTrace`, for event-log entries `commerce:last_error`, carry details. | Camel route error handlers / ingest core | Yes (until reprocessed) |
 | `deleted` | The record was deleted in Shopify. `commerce:deletedAt` carries the timestamp. | Camel route (product-delete) | Yes |
 
@@ -103,29 +104,20 @@ also updates the **order's** `commerce:source_status` to `refunded` /
 distinct: the refund's processing status is `resolved`, while the order's
 business status reflects how much of it was refunded.
 
-### Reorder (purchase order) lifecycle transitions
+### Reorder handling
 
-The replenishment workflow (#7) creates purchase-order records under
-`/content/commerce/purchase-orders/`, each its own resource with its own
-`commerce:status`. See [auto-reorder.md](auto-reorder.md).
-
-```
-review_pending ─→ (operator decision)
-                    ├─ rejected
-                    └─ approved ─→ (supplier delivery)
-                                     ├─ none ───────────────→ approved   (order manually)
-                                     ├─ email/webhook ok ───→ ordered
-                                     └─ email/webhook fails →  order_failed
-```
-
-These values are scoped to the reorder entity (`review_pending` and `approved`
-are shared with the order vocabulary; `ordered` / `rejected` / `order_failed` are
-reorder-specific). Routing/ops decisions for reorders read this status off the PO
-record.
+Reordering does not create a separate purchase-order resource with its own
+`commerce:status`. When a variant drops below its fixed threshold, the unified
+"Inventory & Reorder Review" task opens; on completion the quantity the operator
+entered is recorded as incoming stock in Shopify (nothing is written for a
+quantity of 0), and the last order (date + quantity) is stored on the product
+node for reference. Received stock later flows back in via the
+`inventory_levels/update` webhook. See
+[inventory-alert-tool.md](inventory-alert-tool.md).
 
 ### Backorder lifecycle transitions
 
-The backorder/pre-order feature (#12) creates line-level backorder records under
+The backorder/pre-order feature creates line-level backorder records under
 `/content/commerce/backorders/`, each its own resource with its own
 `commerce:status`. See [backorders.md](backorders.md).
 
@@ -146,7 +138,7 @@ backorder-specific; `backordered` is shared with nothing else).
 
 ### Event-log lifecycle transitions
 
-The ingestion core (#1/#3/#4) records every inbound event under
+The ingestion core records every inbound event under
 `/content/commerce/events/`, each its own resource with its own `commerce:status`.
 See [ingestion.md](ingestion.md).
 
@@ -180,7 +172,7 @@ driven by `commerce:status`, not by `commerce:source_status`.
 | `etc/eip/routes/commerce/shopify/product-delete.xml` | `commerce:status = deleted` |
 | `etc/eip/routes/commerce/shopify/order-paid.xml` | `commerce:status = received`, `commerce:source_status = $.financial_status` |
 | `etc/commerce/scripts/shopify/setWorkflowStatus.groovy` | `commerce:status = threshold_pending` / `review_pending` / `monitored` (products) |
-| `etc/commerce/scripts/shopify/setOrderWorkflowStatus.groovy` | `commerce:status = review_pending` / `approved` / `fulfillment_pending` / `fulfilled` (orders) |
+| `etc/commerce/scripts/shopify/setOrderWorkflowStatus.groovy` | `commerce:status = review_pending` / `approved` / `fulfillment_pending` / `fulfilled` / `cancelled` (orders) |
 | `etc/commerce/scripts/shopify/recordFulfillment.groovy` | `commerce:tracking_number` / `commerce:tracking_company` / `commerce:fulfilled_at` / `commerce:fulfillment_writeback` / `commerce:fulfillment_id` (orders) |
 | `etc/commerce/scripts/shopify/setRefundWorkflowStatus.groovy` | `commerce:status = review_pending` / `resolved` (refunds) |
 | `etc/commerce/scripts/shopify/recordRefund.groovy` | `commerce:refund_amount` / `commerce:currency` / `commerce:restocked` (refunds); `commerce:refunded_amount` / `commerce:refund_count` / `commerce:source_status` (orders) |
@@ -188,7 +180,7 @@ driven by `commerce:status`, not by `commerce:source_status`.
 | `etc/commerce/scripts/shopify/setBackorderWorkflowStatus.groovy` | `commerce:status = ready` / `released` (backorders) |
 | `etc/commerce/scripts/shopify/cancelBackorders.groovy` (via `commerce.Backorders`) | `commerce:status = cancelled` / `commerce:cancelled_at` / `commerce:cancel_reason` (backorders) |
 | `etc/commerce/scripts/shopify/recordBackorderRelease.groovy` (via `commerce.Backorders`) | `commerce:released_at` (backorders) |
-| `etc/commerce/scripts/commerce/logEvent.groovy` (via `commerce.Events`) | `commerce:status = received` + event metadata (event log) |
-| `etc/commerce/scripts/commerce/markEvent.groovy` (via `commerce.Events`) | `commerce:status = processed` / `error` (event log) |
-| `etc/commerce/scripts/commerce/normalizeEvent.groovy` (via `commerce.Events`) | `commerce:status = received` / `deleted` + entity metadata (generic entities) |
+| `etc/commerce/scripts/logEvent.groovy` (via `commerce.Events`) | `commerce:status = received` + event metadata (event log) |
+| `etc/commerce/scripts/markEvent.groovy` (via `commerce.Events`) | `commerce:status = processed` / `error` (event log) |
+| `etc/commerce/scripts/normalizeEvent.groovy` (via `commerce.Events`) | `commerce:status = received` / `deleted` + entity metadata (generic entities) |
 | all route error handlers | `commerce:status = error` |

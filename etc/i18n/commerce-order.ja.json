@@ -1,0 +1,110 @@
+{
+	"app.commerce-order.title": "コマース注文",
+
+	"app.commerce-order.toolbar.save": "Shopify に保存",
+	"app.commerce-order.toolbar.revert": "変更を破棄",
+	"app.commerce-order.toolbar.reload": "ミラーから再読み込み",
+
+	"app.commerce-order.section.overview": "概要",
+	"app.commerce-order.section.lineItems": "明細",
+	"app.commerce-order.section.note": "メモ",
+	"app.commerce-order.section.tags": "タグ",
+	"app.commerce-order.section.attributes": "カスタム属性",
+	"app.commerce-order.section.addresses": "住所",
+
+	"app.commerce-order.state.loading": "注文を読み込み中…",
+	"app.commerce-order.state.empty": "注文を開くと、その注文に関するすべてをここで確認・編集できます。",
+
+	"app.commerce-order.order.idFallback": "注文 #{id}",
+
+	"app.commerce-order.field.orderNumber": "注文番号",
+	"app.commerce-order.field.createdAt": "注文日時",
+	"app.commerce-order.field.processedAt": "処理日時",
+	"app.commerce-order.field.customer": "顧客",
+	"app.commerce-order.field.email": "メールアドレス",
+	"app.commerce-order.field.financialStatus": "支払いステータス",
+	"app.commerce-order.field.fulfillmentStatus": "フルフィルメントステータス",
+	"app.commerce-order.field.total": "合計",
+	"app.commerce-order.field.totalBase": "合計（基準通貨）",
+	"app.commerce-order.field.refunded": "返金額",
+	"app.commerce-order.field.refundCount": "{count, plural, other {返金 # 件}}",
+	"app.commerce-order.field.tracking": "追跡番号",
+	"app.commerce-order.field.cancelledAt": "キャンセル日時",
+	"app.commerce-order.field.fulfilledAt": "フルフィル日時",
+
+	"app.commerce-order.overview.groupTitle": "注文概要",
+	"app.commerce-order.overview.hint": "Shopify 上の注文の読み取り専用ミラーです。編集は「メモ」「タグ」「カスタム属性」で行います。変更は Shopify に書き込まれ、ミラーは Webhook 経由で追従します。",
+
+	"app.commerce-order.financial.pending": "保留中",
+	"app.commerce-order.financial.authorized": "オーソリ済み",
+	"app.commerce-order.financial.partially_paid": "一部支払い済み",
+	"app.commerce-order.financial.paid": "支払い済み",
+	"app.commerce-order.financial.partially_refunded": "一部返金済み",
+	"app.commerce-order.financial.refunded": "返金済み",
+	"app.commerce-order.financial.voided": "無効",
+
+	"app.commerce-order.fulfillment.fulfilled": "フルフィル済み",
+	"app.commerce-order.fulfillment.partial": "一部フルフィル済み",
+	"app.commerce-order.fulfillment.unfulfilled": "未フルフィル",
+	"app.commerce-order.fulfillment.restocked": "在庫戻し済み",
+
+	"app.commerce-order.lineItems.groupTitle": "明細",
+	"app.commerce-order.lineItems.hint": "この注文の明細（読み取り専用）です。",
+	"app.commerce-order.lineItems.editGuard": "数量変更・商品追加（Shopify の注文編集）は次期フェーズの機能です。現時点では明細は読み取り専用です。",
+	"app.commerce-order.lineItems.lockedCancelled": "この注文はキャンセル済みのため、Shopify で編集できません。",
+	"app.commerce-order.lineItems.lockedFulfilled": "この注文はフルフィル済みです。フルフィル済みの商品は Shopify で数量を変更できません。",
+	"app.commerce-order.lineItems.empty": "この注文に明細はありません。",
+	"app.commerce-order.lineItems.col.title": "商品",
+	"app.commerce-order.lineItems.col.sku": "SKU",
+	"app.commerce-order.lineItems.col.qty": "数量",
+	"app.commerce-order.lineItems.col.price": "単価",
+	"app.commerce-order.lineItems.col.total": "小計",
+
+	"app.commerce-order.note.groupTitle": "メモ",
+	"app.commerce-order.note.hint": "Shopify の注文に保存されるメモです。",
+	"app.commerce-order.note.placeholder": "この注文に関する内部メモ…",
+
+	"app.commerce-order.tags.groupTitle": "タグ",
+	"app.commerce-order.tags.hint": "注文の Shopify タグです。保存でタグを Shopify に書き込みます。",
+	"app.commerce-order.tags.placeholder": "タグを追加（カンマ区切り可）して Enter…",
+	"app.commerce-order.tags.add": "追加",
+	"app.commerce-order.tags.remove": "タグを削除",
+	"app.commerce-order.tags.empty": "タグはまだありません。",
+
+	"app.commerce-order.attributes.groupTitle": "カスタム属性",
+	"app.commerce-order.attributes.hint": "注文のカスタム属性（キー / 値）です。保存で Shopify に書き込みます。",
+	"app.commerce-order.attributes.key": "キー",
+	"app.commerce-order.attributes.value": "値",
+	"app.commerce-order.attributes.keyPlaceholder": "例: delivery_note",
+	"app.commerce-order.attributes.valuePlaceholder": "値",
+	"app.commerce-order.attributes.add": "属性を追加",
+	"app.commerce-order.attributes.remove": "属性を削除",
+	"app.commerce-order.attributes.empty": "カスタム属性はまだありません。",
+
+	"app.commerce-order.addresses.groupTitle": "住所",
+	"app.commerce-order.addresses.hint": "注文の配送先・請求先住所（読み取り専用）です。",
+	"app.commerce-order.addresses.empty": "この注文に住所はありません。",
+	"app.commerce-order.addresses.shipping": "配送先",
+	"app.commerce-order.addresses.billing": "請求先",
+
+	"app.commerce-order.hint.adminApiOff": "Shopify Admin API が無効です（コマース設定を確認）。注文の編集は書き込めません。",
+
+	"app.commerce-order.confirm.saveTitle": "変更を Shopify に保存",
+	"app.commerce-order.confirm.saveMsg": "「{name}」への変更を Shopify に書き込みますか？",
+	"app.commerce-order.confirm.apply": "Shopify に保存",
+	"app.commerce-order.confirm.note": "変更は Admin API 経由で Shopify に書き込まれ、CMS ミラーは Webhook により非同期で再取り込みされます。",
+
+	"app.commerce-order.statusbar.saving": "Shopify に保存中…",
+	"app.commerce-order.statusbar.unsaved": "未保存の変更があります",
+	"app.commerce-order.statusbar.ready": "保存済み",
+
+	"app.commerce-order.status.saved": "Shopify に保存しました。ミラーは Webhook 経由で追従します。",
+
+	"app.commerce-order.dialog.title": "未保存の変更",
+	"app.commerce-order.dialog.body1": "この注文に未保存の変更があります。",
+	"app.commerce-order.dialog.body2": "先に Shopify に保存しますか？",
+	"app.commerce-order.dialog.discard": "保存しない",
+
+	"app.commerce-order.err.loadFailed": "注文を読み込めませんでした。",
+	"app.commerce-order.err.saveFailed": "Shopify への書き込みに失敗しました。"
+}

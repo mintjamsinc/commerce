@@ -6,9 +6,13 @@
 //   {"id":"gid://shopify/InventoryItem/111"}                                 // item (no __parentId)
 //   {"location":{"id":"..."},"quantities":[...],"__parentId":".../InventoryItem/111"}  // level
 // We accumulate one item's levels, then on the next item line flush+compare it against the
-// mirror (① O(1) path lookup), re-mirroring only changed items and committing in batches (②).
-// Defensive: a failure marks the job FAILED (releasing the lane); the compare is idempotent
+// mirror (step 1: O(1) path lookup), re-mirroring only changed items and committing in batches (step 2).
+// Defensive: a failure marks the job FAILED (releasing its domains); the compare is idempotent
 // so a partial run is simply re-reconciled next cycle.
+//
+// PRECONDITION: the CMS consumer lane (runBulkCmsLane) has ALREADY marked this job PROCESSING
+// before dispatching here (that is how it claims a domain-safe ingest slot). This script only
+// downloads + reconciles and sets the terminal state; it must NOT re-mark PROCESSING.
 
 import java.net.URI
 import java.net.http.HttpClient
@@ -40,6 +44,31 @@ if (!gid) {
     return
 }
 
+// A TRANSIENT failure (a completed bulk whose result URL is momentarily null, or a network /
+// stream / 5xx blip mid-download) must not cost a whole ~24h schedule cycle. Bump the persisted
+// reconcile attempt counter and, while under the cap, put the job back to READY so runBulkCmsLane
+// re-dispatches it on the next 30s tick — READY keeps the domain blocked in the Shopify producer
+// lane, so no duplicate bulk is started. Once attempts are exhausted, fail it (terminal). The
+// reconcile compare is idempotent, so a retry re-runs safely.
+final int MAX_RECONCILE_ATTEMPTS = 3
+def retryOrFail = { String reason ->
+    try {
+        int attempts = (BulkJobs.incrementReconcileAttempts(repositorySession, log, jobId) ?: 0) as int
+        if (attempts < MAX_RECONCILE_ATTEMPTS) {
+            log.warn("reconcileBulkResult: job ${jobId} transient (${reason}) - attempt ${attempts}/${MAX_RECONCILE_ATTEMPTS}, marking READY to retry")
+            // The CMS lane already marked this job PROCESSING before dispatch, so use markReadyForRetry
+            // (RUNNING|PROCESSING -> READY); a plain markReady (RUNNING-only) would be a no-op and
+            // freeze the job PROCESSING until the watchdog fails it.
+            BulkJobs.markReadyForRetry(repositorySession, log, jobId)
+        } else {
+            log.warn("reconcileBulkResult: job ${jobId} transient (${reason}) - ${attempts} attempts exhausted, failing")
+            BulkJobs.markFailed(repositorySession, log, jobId, "reconcile retries exhausted: ${reason}")
+        }
+    } catch (Exception ex) {
+        log.warn("reconcileBulkResult: retryOrFail for job ${jobId}: ${ex.message}")
+    }
+}
+
 try {
     def shopCfg = readYaml("/etc/commerce/config/shopify.yml")
     def adminApi = shopCfg?.adminApi ?: shopCfg
@@ -48,15 +77,34 @@ try {
     def httpClient = HttpClient.newHttpClient()
 
     def bulk = ShopifyAdmin.bulkByGid(httpClient, endpoint, token, gid)
+    def bulkStatus = bulk?.status
     def url = bulk?.url
-    if (bulk?.status != "COMPLETED" || !url) {
-        log.warn("reconcileBulkResult: bulk ${gid} not downloadable (status=${bulk?.status})")
-        BulkJobs.markFailed(repositorySession, log, jobId, "no result url (status ${bulk?.status})")
+    if (bulkStatus == "FAILED" || bulkStatus == "CANCELED" || bulkStatus == "EXPIRED") {
+        // Shopify says this bulk is TERMINALLY un-downloadable - fail the job (terminal, as before).
+        log.warn("reconcileBulkResult: bulk ${gid} terminal status=${bulkStatus} - failing job ${jobId}")
+        BulkJobs.markFailed(repositorySession, log, jobId, "bulk terminal status ${bulkStatus}")
+        return
+    }
+    if (bulkStatus != "COMPLETED" || !url) {
+        // COMPLETED-but-url-not-yet-populated, or a momentary status/read blip: TRANSIENT - retry.
+        retryOrFail("not yet downloadable (status=${bulkStatus}, url=${url != null})")
         return
     }
 
-    // Claim the job for processing so the watchdog does not re-dispatch it mid-reconcile.
-    BulkJobs.markProcessing(repositorySession, log, jobId)
+    // (The CMS lane already marked this job PROCESSING before dispatch; do not re-claim here.)
+
+    // Locations FIRST: a shop's locations are almost always created BEFORE the app is installed
+    // (and rarely edited after), so the locations/* webhook never fires and the location-metadata
+    // mirror stays empty — which leaves the reorder destination picker with nothing to pick and
+    // per-location names showing raw ids. Refresh it from the Admin API on every full inventory pull
+    // (reconcile inventory-full AND the operator's inventory-backfill both land here) so the names +
+    // destinations are always populated. Best-effort: a failure here must not abort the reconcile.
+    try {
+        int locCount = Locations.backfillFromAdmin(repositorySession, log, httpClient, endpoint, token)
+        log.info("reconcileBulkResult: job ${jobId} - refreshed ${locCount} location(s) from Admin API")
+    } catch (Exception e) {
+        log.warn("reconcileBulkResult: job ${jobId} - location backfill failed (continuing): ${e.message}")
+    }
 
     // Streaming reconcile state (one item's subtree at a time = constant memory).
     def state = [items: 0, changed: 0, sinceCommit: 0, curItemId: null, curLevels: [:]]
@@ -66,7 +114,7 @@ try {
             state.items++
             def current = Locations.levels(repositorySession, state.curItemId)
             if (!Locations.sameLevels(current, state.curLevels)) {
-                // Stage writes without committing; batch-commit every BATCH changes (②).
+                // Stage writes without committing; batch-commit every BATCH changes (step 2).
                 Locations.writeLevels(repositorySession, log, state.curItemId, state.curLevels)
                 InventoryAlert.writePending(repositorySession, log, state.curItemId)
                 state.changed++
@@ -99,12 +147,22 @@ try {
     flush()
     repositorySession.commit()
 
-    BulkJobs.markCompleted(repositorySession, log, jobId)
+    // Counters ride on the terminal transition into the job doc and the inventory
+    // run-history report (Reconciliation.recordBulkAudit off the broker hook).
+    BulkJobs.markCompleted(repositorySession, log, jobId, [checked: state.items, updated: state.changed])
     log.info("reconcileBulkResult: job ${jobId} - ${state.items} item(s) checked, ${state.changed} re-mirrored")
 } catch (Exception e) {
     try { repositorySession.rollback() } catch (Exception ignore) {}
-    log.warn("reconcileBulkResult: job ${jobId}: ${e.message}")
-    try { BulkJobs.markFailed(repositorySession, log, jobId, e.message) } catch (Exception ignore) {}
+    if (isTransient(e)) {
+        // A network drop / stream reset / server 5xx mid-download is transient: retry via READY
+        // rather than burning the whole schedule cycle. The staged (uncommitted) writes were just
+        // rolled back and the compare is idempotent, so the retry re-reconciles cleanly.
+        log.warn("reconcileBulkResult: job ${jobId} transient download error: ${e.message}")
+        retryOrFail("download error: ${e.class?.simpleName}: ${e.message}")
+    } else {
+        log.warn("reconcileBulkResult: job ${jobId}: ${e.message}")
+        try { BulkJobs.markFailed(repositorySession, log, jobId, e.message) } catch (Exception ignore) {}
+    }
 }
 
 // --- Helpers -----------------------------------------------------------------
@@ -121,6 +179,12 @@ def availableFrom(quantities) {
 void eachJsonlLine(HttpClient httpClient, String url, Closure handle) {
     def req = HttpRequest.newBuilder().uri(URI.create(url)).GET().build()
     def resp = httpClient.send(req, HttpResponse.BodyHandlers.ofInputStream())
+    // A 5xx while fetching the (pre-signed) result URL is a transient server-side blip: surface it
+    // as an IOException so the caller's isTransient(...) path retries instead of failing terminally.
+    if (resp.statusCode() >= 500) {
+        try { resp.body()?.close() } catch (Exception ignore) {}
+        throw new java.io.IOException("download HTTP ${resp.statusCode()}")
+    }
     def raw = resp.body()
     // Auto-detect gzip (magic 0x1f 0x8b) so a plain or gzipped JSONL both stream.
     def pin = new java.io.PushbackInputStream(raw, 2)
@@ -151,4 +215,16 @@ def readYaml(String path) {
         log.warn("reconcileBulkResult: could not read ${path}: ${e.message}")
     }
     return null
+}
+
+// A download-time failure is TRANSIENT (worth retrying) when it is an I/O / network error
+// (connection or stream reset, read timeout) or a server 5xx surfaced by eachJsonlLine. A data
+// error (JSON parse/mapping, from jackson) is NOT transient - it falls through to a terminal
+// FAILED so a genuinely corrupt export does not loop forever.
+boolean isTransient(Throwable e) {
+    for (Throwable t = e; t != null; t = t.getCause()) {
+        if (t.getClass().getName().startsWith("com.fasterxml.jackson")) return false
+        if (t instanceof java.io.IOException) return true
+    }
+    return false
 }

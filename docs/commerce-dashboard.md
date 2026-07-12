@@ -6,25 +6,24 @@ data produced by the rest of the platform into KPI cards:
 
 | Card | Shows | Source |
 |---|---|---|
-| **Sales trend** (hero) | revenue / orders / AOV over the selected window, a daily revenue sparkline, and top products | `commerce.Reports.sales` (#25) |
-| **Sales** | orders and revenue per currency over the window, by processing status | `commerce.Dashboard.salesSummary` (order resources) |
+| **Sales trend** (hero) | revenue / orders / AOV over the selected window, a daily revenue sparkline, and the TOP5 products by base gross (net/gross + units, titled from the product mirror) | `commerce.SalesQuery.salesRange` + `topProducts` (sales facts) |
+| **Sales** | orders and revenue per currency over the window, by processing status | `commerce.Dashboard.salesSummary` (sales facts + a status facet count) |
 | **Inventory** | total products, low-stock (review_pending), by status | `commerce.Dashboard.inventorySummary` (product resources) |
-| **Forecast** | variants predicted to run out (at-risk count + soonest), per the warn window | `commerce.SalesVelocity` (#8) |
-| **Reorders** | purchase orders awaiting approval + recently ordered | replenishment workflow (#7) |
-| **Locations** | location count, tracked items, out-at-location pairs | `commerce.Locations` (#6) |
-| **Backorders** | lines awaiting stock, ready to release, units awaited | `commerce.Backorders` (#12) |
-| **Customers** | total customers, VIP, at-risk / dormant, abandoned carts | `commerce.Customers` / `commerce.Checkouts` (#13–#15) |
-| **Tasks** | open tasks, unassigned, overdue / open / unclaimed (SLA) | BPMN engine + `commerce.TaskSla` (#19) |
-| **Integration Health** | webhooks received, HMAC failures, API & processing error rates, avg latency | `commerce.Health` (#18) |
-| **Event ingestion** | total events, failed (need replay), processed / received | `commerce.Events` (#1/#4) |
-| **Reconciliation** | products with drift, field diffs, auto-healed, last run | `commerce.Reconciliation` reports (#24) |
-| **Outbound sync** | CMS → Shopify writes over the window: OK / failed / dry-run | `commerce.Reports.operations` (#2) |
+| **Reorders** | purchase orders awaiting approval + recently ordered | replenishment workflow |
+| **Locations** | location count, tracked items, out-at-location pairs | `commerce.Locations` |
+| **Backorders** | lines awaiting stock, ready to release, units awaited | `commerce.Backorders` |
+| **Customers** | total customers | `commerce.Dashboard.crmSummary` (customer store count) |
+| **Tasks** | open tasks, unassigned, overdue / open / unclaimed (SLA) | BPMN engine + `commerce.TaskSla` |
+| **Integration Health** | webhooks received, HMAC failures, API & processing error rates, avg latency | `commerce.Health` |
+| **Event ingestion** | total events, failed (need replay), processed / received | `commerce.Events` |
+| **Reconciliation** | products with drift, field diffs, auto-refreshed, last run | `commerce.Reconciliation` reports |
+| **Outbound sync** | CMS → Shopify writes over the window: OK / failed / dry-run | `commerce.Reports.operations` |
 
 ## Interactions
 
 - **Sales window selector** — a `7d / 30d / 90d` toggle in the toolbar controls the
   sales window; it refetches with `?salesDays=` (it also scopes the Outbound sync
-  card's window). Other cards use the fixed health/forecast windows.
+  card's window). Other cards use the fixed health window.
 - **Drill-down** — cards whose data has an operator screen carry a ↗ link that
   launches the **Commerce Operations** console focused on the matching view, via the
   Webtop shell's `open-app` message (`{ type: 'open-app', appId, options }`). The
@@ -54,7 +53,8 @@ Commerce Dashboard (Webtop app, iframe)
    ▼
 /bin/cms.cgi/{workspace}/content/commerce/endpoints/dashboard.groovy
    │  assembles, each section degrading independently:
-   ├─ commerce.Dashboard.salesSummary / inventorySummary   (JCR order/product resources)
+   ├─ commerce.Dashboard.salesSummary / inventorySummary   (sales facts / product resources)
+   ├─ commerce.SalesQuery.salesRange / topProducts          (index-backed facet aggregation)
    ├─ commerce.Health.snapshot                              (health metrics)
    └─ BPMN engine + commerce.TaskSla.status                 (open tasks by SLA status)
 ```

@@ -10,10 +10,11 @@
 :root {
 	--navbar-height: 2.5rem;
 	--statusbar-height: 1.75rem;
+	--success-color: var(--primary-color);
 }
 
 [v-cloak] {
-	display: none;
+	display: none !important;
 }
 
 /* The shared #app is a full-screen absolute box; make it a column flex so the
@@ -86,8 +87,8 @@
 }
 .commerce-toast.error { background: #dc2626; color: #fff; }
 
-.status-ok { color: #059669; }
-.status-err { color: #dc2626; }
+.status-ok { color: var(--success-color); }
+.status-err { color: var(--danger-color); }
 
 /* ----------------------------------------------------------------------------
  * Layout — aligned with the shared Webtop look (eip-modeler / other apps).
@@ -219,7 +220,6 @@ nav.nav-bar {
 
 /* Helper text under a control or group (e.g. the Admin API explanation). */
 .property-hint {
-	font-size: 11px;
 	line-height: 1.5;
 	color: var(--text-soft-color);
 	margin-top: -0.25rem;
@@ -227,7 +227,7 @@ nav.nav-bar {
 
 /* Required-field marker, shown only while the Admin API is enabled. */
 .required-mark {
-	color: #dc2626;
+	color: var(--danger-color);
 	margin-left: 0.15rem;
 }
 
@@ -235,11 +235,17 @@ nav.nav-bar {
  * border for secret fields lives on the .input-group wrapper, so highlight both
  * the bare input and the wrapping group. */
 .property-row input.is-invalid {
-	border-color: #dc2626;
+	border-color: var(--danger-color);
 }
 .property-row .input-group:has(input.is-invalid) {
-	border-color: #dc2626;
+	border-color: var(--danger-color);
 }
+
+/* Reconciliation schedule rows: time / scope dropdown / delete on one line.
+ * (.property-row itself has no layout; the scope select previously used w-100,
+ * which forced its own line and pushed the delete button below.) */
+.schedule-row { display: flex; align-items: center; gap: 0.5rem; }
+.schedule-row > select { flex: 1; min-width: 0; }
 
 /* A reveal toggle next to a disabled field is itself inert. */
 .input-group-btn:disabled {
@@ -289,7 +295,7 @@ nav.nav-bar {
 
 /* Drag handle on the sidebar's right edge — mirrors content-browser's
  * .sidebar-resize-handle so width adjustment feels identical across apps. */
-.settings-nav-resize-handle {
+.sidebar-resize-handle {
 	width: 4px;
 	cursor: col-resize;
 	background-color: transparent;
@@ -298,8 +304,8 @@ nav.nav-bar {
 	z-index: 2;
 	transition: background-color 0.15s;
 }
-.settings-nav-resize-handle:hover,
-.settings-nav-resize-handle:active {
+.sidebar-resize-handle:hover,
+.sidebar-resize-handle:active {
 	background-color: var(--selection-rect-border);
 }
 .settings-nav-item {
@@ -320,9 +326,6 @@ nav.nav-bar {
 .settings-nav-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .settings-nav-dot { width: 0.4rem; height: 0.4rem; border-radius: 50%; background: var(--primary-color); flex: none; }
 
-/* Small inline button (add currency / add rule). */
-.wt.wt-sm { padding: 0.25rem 0.5rem; font-size: 12px; min-width: 8rem; width: fit-content; }
-
 /* Per-currency threshold rows. */
 .rule-row { display: flex; align-items: center; gap: 0.5rem; }
 .rule-cur { width: 6rem; flex: none; }
@@ -342,3 +345,52 @@ nav.nav-bar {
 .rule-thr { display: flex; flex-direction: column; gap: 0.125rem; width: 6rem; flex: none; }
 .rule-season { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .rule-season-f { flex: 1; min-width: 7rem; }
+
+/* ----------------------------------------------------------------------------
+ * Webhooks section (action panel). Reuses the commerce-import console look:
+ * an Admin-API status banner, a result / current-state table, and status pills.
+ * Kept here (not the shared css) so the class names match that console exactly.
+ * -------------------------------------------------------------------------- */
+.imp-banner {
+	display: flex; align-items: center; gap: 0.5rem;
+	padding: 0.5rem 0.75rem; border-radius: 0.45rem; font-size: 12px;
+	border: 1px solid var(--navbar-border-color);
+}
+.imp-banner.ok { background: rgb(from var(--success-color) r g b / 0.1); color: var(--success-color); border-color: rgb(from var(--success-color) r g b / 0.3); }
+.imp-banner.warn { background: rgb(from var(--warning-color) r g b / 0.1); color: var(--warning-color); border-color: rgb(from var(--warning-color) r g b / 0.3); }
+.imp-banner.info { background: var(--window-controls-bg); color: var(--text-soft-color); }
+
+/* Inline action cluster (Register button + Refresh icon). */
+.ops-inline-actions { display: inline-flex; align-items: center; gap: 0.5rem; }
+
+/* Result / current-state tables. Header style and padding come from the shared
+ * table.wt primitive; these rules add only what it doesn't provide — row
+ * separators, top/left cell alignment, and wrapping for the long message / URL
+ * columns (table.wt truncates cells with an ellipsis by default). */
+table.wt { border-collapse: collapse; }
+table.wt thead th,
+table.wt tbody td {
+	text-align: left;
+	border-bottom: 1px solid var(--navbar-border-color); vertical-align: top;
+}
+table.wt tbody td { white-space: normal; word-break: break-word; }
+.ops-val { font-variant-numeric: tabular-nums; }
+
+/* Status pills (created / updated / skipped / error, subscribed / not set). */
+.ops-pill {
+	display: inline-block; padding: 0 0.4rem; border-radius: 9999px;
+	font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em;
+	background: var(--window-controls-bg); color: var(--text-soft-color);
+}
+.ops-pill.st-ok, .ops-pill.st-processed { background: rgb(from var(--success-color) r g b / 0.15); color: var(--success-color); }
+.ops-pill.st-failed, .ops-pill.st-error { background: rgb(from var(--danger-color) r g b / 0.15); color: var(--danger-color); }
+.ops-pill.st-dryrun, .ops-pill.st-received { background: rgb(from var(--primary-color) r g b / 0.15); color: var(--primary-color); }
+.ops-pill.st-report { background: rgb(from var(--warning-color) r g b / 0.15); color: var(--warning-color); }
+
+/* GDPR compliance topic list (informational; shared font, no monospace). */
+.webhooks-gdpr-list { margin: 0; padding-left: 1.1rem; font-size: 12px; color: var(--text-soft-color); }
+.webhooks-gdpr-list li { margin: 0.1rem 0; }
+
+/* Spinner for the in-progress Register / Refresh icons. */
+.spin { animation: commerce-spin 0.8s linear infinite; }
+@keyframes commerce-spin { to { transform: rotate(360deg); } }

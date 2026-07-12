@@ -16,19 +16,21 @@
 //   - refundPath: repository path to the refund resource
 //   - order_id  : Shopify order ID the refund belongs to (may be absent)
 //
-// Records on the refund resource:
-//   - commerce:refund_amount, commerce:currency, commerce:restocked,
-//     commerce:line_item_count, commerce:refund_note
-//   - commerce:order_updated   guard so the order summary is applied at most once
+// Records on the refund resource (TYPED: money Decimal, flags Boolean, counts Long):
+//   - commerce:refund_amount (Decimal), commerce:currency, commerce:restocked (Boolean),
+//     commerce:line_item_count (Long), commerce:refund_note
+//   - commerce:order_updated (Boolean)  guard so the order summary is applied at most once
 //
 // Updates on the order resource (when locatable):
 //   - commerce:refunded_amount (cumulative), commerce:refund_count,
 //     commerce:source_status (refunded | partially_refunded)
 
-// Shared commerce helpers (see /content/WEB-INF/classes/commerce/).
 import commerce.Money
 import commerce.Refunds
 import commerce.Orders
+import commerce.SalesReconcile
+import commerce.RefundMirror
+import commerce.Api
 
 if (!refundPath) {
     throw new IllegalArgumentException("Required variable 'refundPath' is missing")
@@ -50,6 +52,7 @@ try {
 
 // --- Derive refund facts -----------------------------------------------------
 def amount = Refunds.amount(refund)
+def amountBase = Refunds.amountBase(refund)
 def currency = Refunds.currency(refund)
 def lineItems = refund.refund_line_items ?: []
 def restocked = lineItems.any { Refunds.isRestocked(it) }
@@ -57,10 +60,42 @@ def note = refund.note?.toString()
 
 // --- 1. Persist the facts on the refund resource -----------------------------
 try {
-    if (amount != null) refundResource.setProperty("commerce:refund_amount", amount.toString())
+    if (amount != null) refundResource.setProperty("commerce:refund_amount", (BigDecimal) amount)
+    // Base-currency total for the refund-period sales view (returnsBasis=refund) — from Shopify's
+    // own shop_money on the refund line items / adjustments (no external FX). Omitted when absent.
+    if (amountBase != null) refundResource.setProperty("commerce:refund_amount_base", (BigDecimal) amountBase)
+    // Tax portion of the refund (base) so the refund-period view can split the tax-inclusive
+    // returns figure into goods + tax without re-reading bodies. Omitted when absent.
+    def taxBase = Refunds.taxBase(refund)
+    if (taxBase != null) refundResource.setProperty("commerce:refund_tax_base", (BigDecimal) taxBase)
     if (currency != null) refundResource.setProperty("commerce:currency", currency)
-    refundResource.setProperty("commerce:restocked", restocked.toString())
-    refundResource.setProperty("commerce:line_item_count", lineItems.size().toString())
+    refundResource.setProperty("commerce:restocked", (boolean) restocked)
+    refundResource.setProperty("commerce:line_item_count", (long) lineItems.size())
+
+    // A' (refund-side recon): persist the cash-anchored residual + classification so the report reads it
+    // from a facet (never re-scanning bodies), and WARN when the returned value does not match the cash
+    // refunded (a restocking fee the store kept, etc.). The value is surfaced, not asserted.
+    def recon = SalesReconcile.reconProps(refund)
+    recon.props.each { k, v ->
+        if (v instanceof Boolean) refundResource.setProperty(k.toString(), (boolean) v)
+        else if (v != null) refundResource.setProperty(k.toString(), (BigDecimal) v)
+    }
+    // Cash-out (refunds block) dimensions: the refund day (facet axis) + the parent order's ordered_at
+    // (so the report can flag a refund whose order fell outside the window — crossPeriod).
+    def refundedMs = Api.epochMs(refund.created_at)
+    if (refundedMs != null) refundResource.setProperty("commerce:refunded_day", SalesReconcile.dayOf(refundedMs))
+    def orderedAt = RefundMirror.orderedAtOf(repositorySession, refund.order_id)
+    if (orderedAt != null) refundResource.setProperty("commerce:refund_ordered_at", new java.util.Date(orderedAt))
+    def rc = recon.reconcile
+    def base = SalesReconcile.baseCurrencyOf(refund)
+    if (rc.currency != null && base != null && rc.currency != base) {
+        log.warn("recordRefund: A' cross-currency refund ${refundPath} (${rc.currency} != base ${base}) - cash anchor is native, base ladder has no anchor")
+    }
+    if (rc.rings) {
+        log.warn("recordRefund: A' refund ${refundPath} residual ${rc.delta} (returned ${rc.refundExpected} vs cash ${rc.cash})")
+    } else if (rc.classification == SalesReconcile.TRANSACTIONLESS_WITH_VALUE) {
+        log.warn("recordRefund: A' refund ${refundPath} transactionless with value ${rc.refundExpected} (no cash transaction)")
+    }
     if (note != null && !note.trim().isEmpty()) {
         def trimmed = note.length() > 2048 ? note.substring(0, 2048) : note
         refundResource.setProperty("commerce:refund_note", trimmed)
@@ -102,8 +137,8 @@ try {
         : null
     def refundCount = (previousCount ?: BigDecimal.ZERO).add(BigDecimal.ONE)
 
-    orderResource.setProperty("commerce:refunded_amount", refundedTotal.toString())
-    orderResource.setProperty("commerce:refund_count", refundCount.toBigInteger().toString())
+    orderResource.setProperty("commerce:refunded_amount", (BigDecimal) refundedTotal)
+    orderResource.setProperty("commerce:refund_count", refundCount.toBigInteger().longValue())
 
     // Reflect the order's business status based on how much has been refunded.
     def orderTotal = orderTotalOf(orderResource)
@@ -115,7 +150,7 @@ try {
     // Mark the refund as applied in the SAME transaction as the order increment,
     // so a crash can never leave the order updated without the guard set (which
     // would let a re-run double-count this refund). Both nodes commit atomically.
-    refundResource.setProperty("commerce:order_updated", "true")
+    refundResource.setProperty("commerce:order_updated", true)
     repositorySession.commit()
 
     log.info("recordRefund: order ${orderId} refunded_amount -> ${refundedTotal} (count ${refundCount.toBigInteger()})")

@@ -2,7 +2,7 @@
 //
 // First step of refund-review-flow.bpmn. Reads the refund JSON (delivered via
 // the refunds/create webhook) from the repository, evaluates it against the
-// rules in /etc/commerce/config/refund-review.yml, and decides whether the
+// configured refund-review rules, and decides whether the
 // refund needs a human review. The decision (and the human-readable reasons
 // behind it) are exposed as process variables so the gateway, the review form,
 // and the notification all read the same source of truth.
@@ -21,12 +21,11 @@
 //   - reviewReasons : JSON array string of structured reason descriptors
 //                     ({code, params}); each consumer (review form / notification)
 //                     renders them in its own locale context, so we deliberately
-//                     do NOT pre-render text here. See commerce.ReviewReasons.
+//                     do NOT pre-render text here.
 //
 // Screening is fail-open: a missing/unparseable config or refund is logged and
 // treated as "no review required" rather than blocking or flooding operators.
 
-// Shared commerce helpers (see /content/WEB-INF/classes/commerce/).
 import commerce.Money
 import commerce.Refunds
 import commerce.Orders

@@ -1,0 +1,81 @@
+{
+	"app.commerce-customer.title": "Commerce Customer",
+
+	"app.commerce-customer.toolbar.save": "Save to Shopify",
+	"app.commerce-customer.toolbar.revert": "Revert changes",
+	"app.commerce-customer.toolbar.reload": "Reload from the mirror",
+
+	"app.commerce-customer.section.overview": "Overview",
+	"app.commerce-customer.section.marketing": "Marketing & tax",
+	"app.commerce-customer.section.tags": "Tags",
+	"app.commerce-customer.section.note": "Note",
+	"app.commerce-customer.section.addresses": "Addresses",
+
+	"app.commerce-customer.state.loading": "Loading customer…",
+	"app.commerce-customer.state.empty": "Open a customer to see and edit everything about them in one place.",
+
+	"app.commerce-customer.customer.idFallback": "Customer #{id}",
+
+	"app.commerce-customer.field.email": "Email",
+	"app.commerce-customer.field.phone": "Phone",
+	"app.commerce-customer.field.ordersCount": "Orders",
+	"app.commerce-customer.field.totalSpent": "Lifetime spend",
+	"app.commerce-customer.field.state": "Account state",
+	"app.commerce-customer.field.verifiedEmail": "Verified email",
+	"app.commerce-customer.field.marketing": "Email marketing",
+	"app.commerce-customer.field.createdAt": "Customer since",
+
+	"app.commerce-customer.value.yes": "Yes",
+	"app.commerce-customer.value.no": "No",
+
+	"app.commerce-customer.overview.groupTitle": "Profile & wallet",
+	"app.commerce-customer.overview.hint": "Read-only mirror of the customer in Shopify. Editing lives in the Marketing & tax, Tags and Note sections; writes go to Shopify and the mirror follows via webhook.",
+
+	"app.commerce-customer.marketing.groupTitle": "Marketing & tax",
+	"app.commerce-customer.marketing.hint": "These two Shopify-owned fields are written to Shopify (Admin API) on Save; the mirror follows via webhook.",
+	"app.commerce-customer.marketing.consentLabel": "Subscribed to email marketing",
+	"app.commerce-customer.marketing.consentHint": "When on, the customer consents to email marketing (single opt-in). Turn off to unsubscribe.",
+	"app.commerce-customer.marketing.taxExemptLabel": "Tax exempt",
+	"app.commerce-customer.marketing.taxExemptHint": "When on, the customer is exempt from tax on their orders.",
+	"app.commerce-customer.marketing.state.subscribed": "Subscribed",
+	"app.commerce-customer.marketing.state.unsubscribed": "Unsubscribed",
+	"app.commerce-customer.marketing.state.not_subscribed": "Not subscribed",
+	"app.commerce-customer.marketing.state.pending": "Pending",
+
+	"app.commerce-customer.tags.groupTitle": "Tags",
+	"app.commerce-customer.tags.hint": "The customer's Shopify tags. VIP is just a tag — add it here to flag a customer. Save writes the tags to Shopify.",
+	"app.commerce-customer.tags.placeholder": "Add a tag (comma-separated), then Enter…",
+	"app.commerce-customer.tags.add": "Add",
+	"app.commerce-customer.tags.remove": "Remove tag",
+	"app.commerce-customer.tags.empty": "No tags yet.",
+
+	"app.commerce-customer.note.groupTitle": "Note",
+	"app.commerce-customer.note.hint": "The internal note stored on the customer in Shopify.",
+	"app.commerce-customer.note.placeholder": "Internal note about this customer…",
+
+	"app.commerce-customer.addresses.groupTitle": "Addresses",
+	"app.commerce-customer.addresses.hint": "The customer's address book (read-only). The default address is flagged.",
+	"app.commerce-customer.addresses.default": "Default",
+	"app.commerce-customer.addresses.empty": "No addresses on file.",
+
+	"app.commerce-customer.hint.adminApiOff": "The Shopify Admin API is disabled (see Commerce settings) — customer edits cannot be written.",
+
+	"app.commerce-customer.confirm.saveTitle": "Save changes to Shopify",
+	"app.commerce-customer.confirm.saveMsg": "Write your changes to \"{name}\" to Shopify?",
+	"app.commerce-customer.confirm.apply": "Save to Shopify",
+	"app.commerce-customer.confirm.note": "The change is written to Shopify via the Admin API; the CMS mirror is re-ingested asynchronously by webhook.",
+
+	"app.commerce-customer.statusbar.saving": "Saving to Shopify…",
+	"app.commerce-customer.statusbar.unsaved": "Unsaved changes",
+	"app.commerce-customer.statusbar.ready": "Saved",
+
+	"app.commerce-customer.status.saved": "Saved to Shopify. The mirror follows via webhook.",
+
+	"app.commerce-customer.dialog.title": "Unsaved Changes",
+	"app.commerce-customer.dialog.body1": "You have unsaved changes to this customer.",
+	"app.commerce-customer.dialog.body2": "Do you want to save them to Shopify first?",
+	"app.commerce-customer.dialog.discard": "Don't Save",
+
+	"app.commerce-customer.err.loadFailed": "Could not load the customer.",
+	"app.commerce-customer.err.saveFailed": "Write to Shopify failed."
+}

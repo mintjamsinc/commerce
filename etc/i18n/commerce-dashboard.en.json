@@ -17,9 +17,8 @@
 	"app.commerce-dashboard.card.topProducts": "Top products",
 	"app.commerce-dashboard.card.sales": "Sales",
 	"app.commerce-dashboard.card.inventory": "Inventory",
-	"app.commerce-dashboard.card.forecast": "Forecast",
 	"app.commerce-dashboard.card.locations": "Locations",
-	"app.commerce-dashboard.card.reorders": "Reorders",
+	"app.commerce-dashboard.card.reorders": "Inventory & reorder reviews",
 	"app.commerce-dashboard.card.backorders": "Backorders",
 	"app.commerce-dashboard.card.customers": "Customers",
 	"app.commerce-dashboard.card.tasks": "Tasks",
@@ -32,14 +31,14 @@
 	"app.commerce-dashboard.kpi.orders": "Orders",
 	"app.commerce-dashboard.kpi.aov": "Avg order value",
 
+	"app.commerce-dashboard.salesTrend.grossTip": "Gross sales",
 	"app.commerce-dashboard.salesTrend.empty": "No sales in this window.",
 	"app.commerce-dashboard.salesTrend.noProducts": "No products yet",
 
 	"app.commerce-dashboard.unit.ordersDays": "orders / {days}d",
 	"app.commerce-dashboard.unit.products": "products",
-	"app.commerce-dashboard.unit.atRiskDays": "at risk / {days}d",
 	"app.commerce-dashboard.unit.locations": "locations",
-	"app.commerce-dashboard.unit.toApprove": "to approve",
+	"app.commerce-dashboard.unit.toApprove": "open reviews",
 	"app.commerce-dashboard.unit.awaitingStock": "awaiting stock",
 	"app.commerce-dashboard.unit.customers": "customers",
 	"app.commerce-dashboard.unit.open": "open",
@@ -53,13 +52,9 @@
 	"app.commerce-dashboard.row.lowStock": "Low stock",
 	"app.commerce-dashboard.row.trackedItems": "Tracked items",
 	"app.commerce-dashboard.row.outAtLocation": "Out at a location",
-	"app.commerce-dashboard.row.orderedThisMonth": "Ordered (this month)",
+	"app.commerce-dashboard.row.orderedThisMonth": "Incoming recorded (2 mo)",
 	"app.commerce-dashboard.row.readyToRelease": "Ready to release",
 	"app.commerce-dashboard.row.unitsAwaited": "Units awaited",
-	"app.commerce-dashboard.row.vip": "VIP",
-	"app.commerce-dashboard.row.atRisk": "At risk",
-	"app.commerce-dashboard.row.dormant": "Dormant",
-	"app.commerce-dashboard.row.abandonedCarts": "Abandoned carts",
 	"app.commerce-dashboard.row.unassigned": "Unassigned",
 	"app.commerce-dashboard.row.overdue": "Overdue",
 	"app.commerce-dashboard.row.openTooLong": "Open too long",
@@ -72,24 +67,20 @@
 	"app.commerce-dashboard.row.processed": "Processed",
 	"app.commerce-dashboard.row.received": "Received",
 	"app.commerce-dashboard.row.fieldDiffs": "Field diffs",
-	"app.commerce-dashboard.row.autoHealed": "Mirror refreshed",
+	"app.commerce-dashboard.row.autoRefreshed": "Mirror refreshed",
 	"app.commerce-dashboard.row.lastRun": "Last run",
 	"app.commerce-dashboard.row.ok": "OK",
 	"app.commerce-dashboard.row.failed": "Failed",
 	"app.commerce-dashboard.row.dryRun": "Dry-run",
 
-	"app.commerce-dashboard.pill.daysLeft": "{days}d left",
-
-	"app.commerce-dashboard.forecast.noStockouts": "No imminent stockouts",
-
 	"app.commerce-dashboard.events.openTitle": "Open failed events in Operations",
 	"app.commerce-dashboard.reconciliation.openTitle": "Open reconciliation in Operations",
 	"app.commerce-dashboard.outboundSync.openTitle": "Open outbound sync in Operations",
 
-	"app.commerce-dashboard.variantFallback": "Variant",
 	"app.commerce-dashboard.itemFallback": "item",
 
 	"app.commerce-dashboard.statusbar.refreshing": "Refreshing…",
 	"app.commerce-dashboard.statusbar.updated": "Updated {time}",
-	"app.commerce-dashboard.statusbar.ready": "Ready"
+	"app.commerce-dashboard.statusbar.ready": "Ready",
+	"app.commerce-dashboard.row.baseRevenue": "Total ({currency})"
 }

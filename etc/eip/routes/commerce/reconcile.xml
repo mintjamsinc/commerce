@@ -15,13 +15,13 @@
 
     <!--
       On-demand reconciliation (diff scope: status / price). The reconcile endpoint and the
-      `diff` schedule (scheduleReconcile.groovy) send here. Honors the caller-supplied runAs
+      periodic `diff` schedule send here. Honors the caller-supplied runAs
       (the operator who triggered it), falling back to the service user, and defaults the
       scope to `diff`.
 
       The hourly round-robin baseline timer was RETIRED on 2026-06-30: status/price drift is
       caught by `diff` schedules; the full inventory audit is the Bulk job broker (`inventory`
-      scope → direct:commerce-shopify-bulk-enqueue). Settings live in reconcile.yml.
+      scope → direct:commerce-shopify-bulk-enqueue).
     -->
     <route id="commerce-reconcile-run" routeConfigurationId="commerce-reconcile-error-handler">
         <from uri="direct:commerce-reconcile"/>
@@ -44,7 +44,7 @@
             </when>
         </choice>
 
-        <toD uri="cms:/etc/commerce/scripts/commerce/reconcile.groovy?inputs=scope"/>
+        <toD uri="cms:/etc/commerce/scripts/reconcile.groovy?inputs=scope"/>
     </route>
 
 </camel>

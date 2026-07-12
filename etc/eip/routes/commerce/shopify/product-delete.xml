@@ -106,10 +106,13 @@
                 </setHeader>
 
                 <!-- The product was deleted in Shopify: "deleted" is the terminal
-                     processing status. See docs/commerce-status.md. -->
+                     processing status. -->
                 <setHeader name="commerce:status">
                     <constant>deleted</constant>
                 </setHeader>
+
+                <!-- Normalize property types (timestamps are Date). -->
+                <toD uri="transform:toDate?targets=commerce:deletedAt"/>
 
                 <toD uri="cms:setProperties?path=${header.productPath}&amp;includes=commerce:*"/>
 

@@ -14,13 +14,14 @@
     </routeConfiguration>
 
     <!--
-      Wall-clock scheduler for reconciliation. The
-      CMS has no cron primitive, so a 1-minute heartbeat runs scheduleReconcile.groovy, which
-      reads reconcile.yml `schedules` ({ at: "HH:mm", scope: all|diff }) and at each due minute
-      fires direct:commerce-reconcile once (cluster-wide) with the schedule's scope.
+      Wall-clock scheduler for reconciliation. The CMS has no cron primitive, so a 1-minute
+      heartbeat runs the schedule dispatcher, which reads the reconcile configuration's `schedules`
+      ({ at: "HH:mm" in UTC, scope: diff|inventory }) and at each due minute fires that pass once
+      cluster-wide: `diff` -> direct:commerce-reconcile, `inventory` -> a full audit via the
+      Bulk job broker.
 
-      The hourly commerce-reconcile timer remains the baseline "all" coverage; these schedules
-      are additive (typically frequent "diff" passes). Runs as the service user.
+      The hourly round-robin baseline was retired on 2026-06-30, so these schedules are now the
+      only periodic reconciliation trigger (not additive to any baseline). Runs as the service user.
     -->
     <route id="commerce-reconcile-scheduler" routeConfigurationId="commerce-reconcile-scheduler-error-handler">
         <from uri="timer:commerce-reconcile-scheduler?period=60000&amp;delay=120000"/>
@@ -29,7 +30,7 @@
             <constant>commerce-service-user</constant>
         </setHeader>
 
-        <toD uri="cms:/etc/commerce/scripts/commerce/scheduleReconcile.groovy"/>
+        <toD uri="cms:/etc/commerce/scripts/scheduleReconcile.groovy"/>
     </route>
 
 </camel>

@@ -1,9 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <camel>
 
-    <!-- Shopify Bulk job broker.
-         A single serialized lane runs one Shopify Bulk Operation at a time; completion is
-         event-driven (bulk_operations/finish webhook) with a watchdog safety net. -->
+    <!-- Shopify Bulk job broker (two lanes, serialized by data DOMAIN).
+         Jobs carry the data domains they touch (targetDomains); serialization is per-domain.
+           1) Shopify PRODUCER lane (commerce-shopify-bulk-lane): a SINGLETON - Shopify allows
+              only ONE bulk query RUNNING per app, and it will not start a new bulk for a domain
+              that is still awaiting/undergoing CMS ingest. On bulk completion the job moves to
+              READY (event-driven via the bulk_operations/finish webhook, watchdog as safety net).
+           2) CMS CONSUMER lane (commerce-shopify-bulk-cms-lane): a SEPARATE lock that dispatches
+              the heavy download+reconcile for READY jobs, IN PARALLEL for DISJOINT domains and
+              serially when domains overlap; it marks a job PROCESSING before dispatch.
+         State machine: QUEUED -> RUNNING -> READY -> PROCESSING -> COMPLETED|FAILED|CANCELED|
+         TIMED_OUT. Today's single "inventory" domain behaves as a safe serial lane; future
+         disjoint-domain backfills auto-pipeline in parallel. -->
     <routeConfiguration id="commerce-shopify-bulk-error-handler">
         <onException>
             <exception>java.lang.Exception</exception>
@@ -16,7 +25,8 @@
     </routeConfiguration>
 
     <!-- Enqueue a bulk job (idempotent per type). Producers send a `bulkJobType`
-         header here instead of calling Shopify directly. -->
+         header here instead of calling Shopify directly. Parameterized types (the orders
+         backfill) also carry optional bulkFrom/bulkTo (yyyy-MM-dd) date bounds. -->
     <route id="commerce-shopify-bulk-enqueue" routeConfigurationId="commerce-shopify-bulk-error-handler">
         <from uri="direct:commerce-shopify-bulk-enqueue"/>
         <choice>
@@ -25,18 +35,27 @@
                 <setHeader name="runAs"><constant>commerce-service-user</constant></setHeader>
             </when>
         </choice>
-        <toD uri="cms:/etc/commerce/scripts/shopify/enqueueBulkJob.groovy?inputs=bulkJobType"/>
+        <toD uri="cms:/etc/commerce/scripts/shopify/enqueueBulkJob.groovy?inputs=bulkJobType,bulkFrom,bulkTo"/>
     </route>
 
-    <!-- Single lane: start at most one Shopify bulk at a time (cluster-guarded in-script). -->
+    <!-- Shopify producer lane: start at most one Shopify bulk at a time, and only for a domain
+         that is not already awaiting/undergoing CMS ingest (cluster-guarded in-script). -->
     <route id="commerce-shopify-bulk-lane" routeConfigurationId="commerce-shopify-bulk-error-handler">
         <from uri="timer:commerce-shopify-bulk-lane?period=30000&amp;delay=120000"/>
         <setHeader name="runAs"><constant>commerce-service-user</constant></setHeader>
         <toD uri="cms:/etc/commerce/scripts/shopify/runBulkLane.groovy"/>
     </route>
 
+    <!-- CMS consumer lane: dispatch the download+reconcile for READY jobs, in parallel for
+         disjoint domains and serially when they overlap (separate cluster lock in-script). -->
+    <route id="commerce-shopify-bulk-cms-lane" routeConfigurationId="commerce-shopify-bulk-error-handler">
+        <from uri="timer:commerce-shopify-bulk-cms-lane?period=30000&amp;delay=130000"/>
+        <setHeader name="runAs"><constant>commerce-service-user</constant></setHeader>
+        <toD uri="cms:/etc/commerce/scripts/shopify/runBulkCmsLane.groovy"/>
+    </route>
+
     <!-- bulk_operations/finish webhook (dispatched from ingest.xml by topic). Correlates the
-         finished bulk to its job and hands the heavy reconcile off to the result route. -->
+         finished bulk to its job and marks it READY; the CMS consumer lane runs the reconcile. -->
     <route id="commerce-shopify-bulk-finish" routeConfigurationId="commerce-shopify-bulk-error-handler">
         <from uri="direct:commerce-shopify-bulk-finish"/>
         <choice>
@@ -48,8 +67,18 @@
         <toD uri="cms:/etc/commerce/scripts/shopify/onBulkFinish.groovy?inputs=bulkPayload=@body"/>
     </route>
 
-    <!-- Heavy result download + streaming reconcile (async; the lane stays RUNNING until this
-         marks the job COMPLETED). -->
+    <!-- Heavy result download + streaming ingest (async; dispatched by the CMS consumer lane,
+         which already marked the job PROCESSING; this marks it COMPLETED/FAILED). The processor is
+         chosen by the job's data shape (bulkJobType header, set by the consumer lane): an
+         inventory-full snapshot reconciles the inventory mirror (reconcileBulkResult); a
+         customers-backfill normalizes GraphQL->REST into the customer mirror
+         (importCustomerBulkResult); a products-backfill normalizes GraphQL->REST (product +
+         variants + media children) into the product mirror (importProductBulkResult); every other
+         backfill (orders, ...) normalizes GraphQL->REST and imports into its mirror
+         (importBulkResult). The orders processor also resolves refunds: the export flags
+         refund-bearing orders (refunds { id }), their detail is fetched per order via the
+         foreground Admin API and mirrored, and on COMPLETED the sales-fact seed is chained
+         (direct:commerce-sales-backfill-seed). -->
     <route id="commerce-shopify-bulk-result" routeConfigurationId="commerce-shopify-bulk-error-handler">
         <from uri="direct:commerce-shopify-bulk-result"/>
         <choice>
@@ -58,7 +87,27 @@
                 <setHeader name="runAs"><constant>commerce-service-user</constant></setHeader>
             </when>
         </choice>
-        <toD uri="cms:/etc/commerce/scripts/shopify/reconcileBulkResult.groovy?inputs=bulkJobId"/>
+        <choice>
+            <when>
+                <!-- Full inventory snapshot: the scheduled reconcile (inventory-full) and the
+                     operator's full import (inventory-backfill) share the same JSONL shape and the
+                     same mirror reconcile, so both land in reconcileBulkResult (which also refreshes
+                     the location-metadata mirror first). -->
+                <simple>${header.bulkJobType} == 'inventory-full' || ${header.bulkJobType} == 'inventory-backfill'</simple>
+                <toD uri="cms:/etc/commerce/scripts/shopify/reconcileBulkResult.groovy?inputs=bulkJobId"/>
+            </when>
+            <when>
+                <simple>${header.bulkJobType} == 'customers-backfill'</simple>
+                <toD uri="cms:/etc/commerce/scripts/shopify/importCustomerBulkResult.groovy?inputs=bulkJobId"/>
+            </when>
+            <when>
+                <simple>${header.bulkJobType} == 'products-backfill'</simple>
+                <toD uri="cms:/etc/commerce/scripts/shopify/importProductBulkResult.groovy?inputs=bulkJobId"/>
+            </when>
+            <otherwise>
+                <toD uri="cms:/etc/commerce/scripts/shopify/importBulkResult.groovy?inputs=bulkJobId"/>
+            </otherwise>
+        </choice>
     </route>
 
     <!-- Liveness watchdog: recover a lost finish webhook / release a stuck lane. -->

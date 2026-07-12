@@ -17,8 +17,6 @@
 //   *        -> monitored          (workflow finished: thresholds in place,
 //                                   stock OK or review completed)
 //
-// See docs/commerce-status.md for the authoritative status list.
-//
 // Wiring
 // ------
 // This one script is attached at three points via org.mintjams.script.bpm.CmsDelegate

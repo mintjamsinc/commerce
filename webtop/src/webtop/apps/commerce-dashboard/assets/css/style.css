@@ -11,7 +11,7 @@
 }
 
 [v-cloak] {
-	display: none;
+	display: none !important;
 }
 
 #app {
@@ -49,7 +49,6 @@
 .dash-body {
 	flex: 1;
 	min-height: 0;
-	overflow: auto;
 }
 
 .dash-grid {
@@ -74,7 +73,6 @@
 	align-items: center;
 	gap: 0.5rem;
 	color: var(--text-soft-color);
-	font-size: 13px;
 	font-weight: 600;
 	letter-spacing: 0;
 	text-transform: uppercase;
@@ -94,30 +92,6 @@
 .dash-card-head .bi {
 	font-size: 15px;
 }
-
-/* Subtle drill-down affordance opening the backing endpoint. */
-.dash-card-link {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	width: 1.4rem;
-	height: 1.4rem;
-	border: none;
-	background: transparent;
-	color: var(--text-soft-color);
-	border-radius: 0.35rem;
-	cursor: pointer;
-	opacity: 0.6;
-	transition: opacity 0.15s, background-color 0.15s, color 0.15s;
-}
-
-.dash-card-link:hover {
-	opacity: 1;
-	color: var(--primary-color);
-	background: color-mix(in srgb, var(--primary-color) 14%, transparent);
-}
-
-.dash-card-link .bi { font-size: 13px; }
 
 /* Full-width "hero" card (sales trend). */
 .dash-card-wide {
@@ -229,7 +203,6 @@
 }
 
 .dash-metric-unit {
-	font-size: 13px;
 	color: var(--text-soft-color);
 }
 
@@ -245,7 +218,6 @@
 	justify-content: space-between;
 	align-items: center;
 	gap: 0.75rem;
-	font-size: 13px;
 }
 
 .dash-row-label {
@@ -330,3 +302,6 @@
 	from { transform: rotate(0deg); }
 	to   { transform: rotate(360deg); }
 }
+
+/* Base-currency rollup row (C1): the one cross-currency total, emphasized. */
+.dash-row-base .dash-row-label, .dash-row-base .dash-row-value { font-weight: 700; }

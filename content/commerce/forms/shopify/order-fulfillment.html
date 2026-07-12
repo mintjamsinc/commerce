@@ -1009,6 +1009,10 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.75/
 						at: new Date().toISOString(),
 					};
 					await sdk.setNodeProperty(this.orderPath, 'fulfillment', JSON.stringify(fulfillment));
+					// Record WHO fulfilled. The recordFulfillment BPMN service task
+					// performs the outbound write but cannot see the completing
+					// operator, so capture it here for the audit's actor.
+					await sdk.setNodeProperty(this.orderPath, 'commerce:fulfilled_by', this.currentUserID || '');
 					await sdk.completeTask([]);
 					this.task = Object.assign({}, this.task, { completed: true });
 				} catch (err) {

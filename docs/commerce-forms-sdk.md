@@ -116,7 +116,8 @@ call it.
 | `getProcessVariables()` / `setProcessVariables(variables)` | Read/write process instance variables. |
 | `claimTask()` / `unclaimTask()` / `setAssignee(assignee)` | Assignment. |
 | `completeTask(variables?)` | Complete the selected task. |
-| `getNode(path)` / `listChildren(path, { first?, after? })` | Read CMS nodes (server-side JCR ACLs apply). |
+| `getNode(path)` | Read one CMS node (server-side JCR ACLs apply) → the serialized node `{ path, name, …, properties }`. |
+| `listChildren(path, { first?, after? })` | List a node's children (JCR ACLs apply). The host's GraphQL-style connection is **normalized** to `{ nodes, pageInfo, totalCount }` — `nodes` is a plain array of serialized nodes; page with `pageInfo.endCursor` + `hasNextPage` via `opts.after`. |
 | `setNodeProperty(path, name, value)` | Write one scalar property. |
 | `readNodeText(path)` | Read a node's content as text (host performs the credentialed fetch). |
 
@@ -135,10 +136,11 @@ call it.
 
 These read data the SDK itself already returns, so forms never re-derive how to
 interpret it. `getProp` / `getStringProp` are the **read-side complement** to
-`setNodeProperty`: the SDK owns the node serialization contract (`getNode()` /
-`listChildren()` return `{ properties: [{ name, propertyValue }] }`, where
-`propertyValue` carries a scalar `value` or a multi-valued `values`), so a form
-pulls a property straight off `sdk` instead of re-walking that shape.
+`setNodeProperty`: the SDK owns the node serialization contract (a serialized node —
+from `getNode()`, or an element of `listChildren().nodes` — carries
+`{ properties: [{ name, propertyValue }] }`, where `propertyValue` carries a scalar
+`value` or a multi-valued `values`), so a form pulls a property straight off `sdk`
+instead of re-walking that shape.
 
 | Method | Purpose |
 |---|---|

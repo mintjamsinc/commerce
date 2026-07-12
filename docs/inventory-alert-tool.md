@@ -32,8 +32,9 @@ separate paths.
 4. A short-period sweep (about every 15 seconds) evaluates the pending items.
    - It sums stock across all locations (the mirror total) and compares it with
      the per-variant threshold.
-   - **Edge trigger**: a "Manual Inventory Check" task is filed only at the moment
-     stock crosses below the threshold (ok → low). While it stays below
+   - **Edge trigger**: an "Inventory & Reorder Review" task is filed only at the
+     moment stock crosses below the threshold — the **fixed reorder point** —
+     (ok → low). While it stays below
      (low → low), it does not re-file. After recovery (low → ok), it can fire again.
 5. When the task is created, a notification is sent to every enabled channel.
 6. The person in charge opens the task in Webtop's **Tasks** app to review and respond.
@@ -113,14 +114,16 @@ Webhook URL / token / SMTP, etc.) — at least one. A single task-created event 
 delivered to every enabled channel.
 
 ### 2-4. Threshold Policy (optional)
-- `etc/commerce/config/inventory-rules.yml`: rules that resolve the per-variant
-  **effective threshold**. Precedence: **manual override → rule → default → none
-  (unmonitored)**. Ships with `default: 5` and sample rules (so a threshold is
-  resolved from the start).
+- The threshold is a **fixed per-variant reorder point** — a stock count the
+  operator registers, never derived by the system — resolved by the planning layer
+  ([planning.md](planning.md)): **per-variant planning value → `planning.yml`
+  `defaults.threshold` → none (unmonitored)**. Ships
+  with the default unset, so operators configure each product before monitoring
+  starts (set `defaults.threshold` in `planning.yml` for a blanket baseline).
 - `etc/commerce/config/inventory-alert.yml`:
   - `unconfiguredPolicy` — how to treat an item with no resolvable threshold.
-    `prompt` (default: raise the "Set Inventory Threshold" task) / `default`
-    (monitor using `defaultThreshold`) / `silent` (do not monitor).
+    `prompt` (default: raise the "Set Inventory Threshold" task) / `silent` (do not
+    monitor).
   - `sweepDebounceSeconds` — debounce window for the sweep in seconds (default 0 =
     every ~15s heartbeat).
 
@@ -156,12 +159,17 @@ The form automatically follows the light/dark theme. Operate on a task after
   task will be raised on subsequent evaluations.
 - Save and complete the task with "Save thresholds & complete".
 
-### 4-2. Manual Inventory Check
+### 4-2. Inventory & Reorder Review
 - Shown for products whose inventory has fallen below the threshold.
-- You can check the inventory count (**summed across all locations**), effective
-  threshold, and alert status for each variant.
-- Leave notes as needed, and use "View on Shopify" to go to the admin screen.
-- Once handled, complete the task with "Mark as reviewed".
+- For each variant you can see the current stock (**summed across all
+  locations**), the fixed threshold, and the **previous order** (date + quantity)
+  for reference.
+- Enter the reorder quantity for each variant. The field defaults to blank —
+  there is **no system-suggested quantity**; the operator decides. Use "View on
+  Shopify" to open the admin screen.
+- On completion the entered quantity is recorded as **incoming stock** in Shopify
+  (Admin API required); a quantity of 0 writes nothing. Received stock later flows
+  back in via the `inventory_levels/update` webhook.
 
 ---
 
@@ -189,7 +197,7 @@ The form automatically follows the light/dark theme. Operate on a task after
 |---|---|
 | Nothing happens at all | Are the Shop webhook secret and the 4 Admin API fields set / Are `inventory_levels/update` and `products/*` subscribed on the Shopify side |
 | No notification arrives | Is the target channel "Enable" ON in Notifications / Is the destination (URL, etc.) correct / Any `notifyTaskCreated` warnings in the server log |
-| Review task is not raised | Does the product resolve a threshold (`inventory-rules.yml` default / rule / manual) / Is inventory (summed across locations) below the threshold / Was it already judged low recently (edge trigger) |
+| Review task is not raised | Does the product resolve a threshold (per-variant planning value / `planning.yml` default) / Is inventory (summed across locations) below the threshold / Was it already judged low recently (edge trigger) |
 | Many tasks pile up for the same product | Is the re-entry guard working (look for "already running ... not starting another" in the log) |
 | Form says "Please open from the Tasks app" | The form is meant to be opened via the Tasks app (it does not work from a standalone URL) |
 | Cannot save in the Commerce app | Is the content service available / Any save (multipart upload) errors in the server log / Are all four Admin API connection fields filled in (a partial configuration cannot be saved) |

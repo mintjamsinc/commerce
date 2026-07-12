@@ -3,8 +3,8 @@
 
     <!--
       Privileged webhook-verification entry point. The public webhook endpoint
-      (content/public/commerce/endpoints/shopify/webhook.groovy) runs unauthenticated,
-      so it cannot read the webhook shared secret itself (/etc/commerce/config/shopify.yml
+      runs unauthenticated,
+      so it cannot read the webhook shared secret itself (the Shopify config
       is jcr:all = deny for anonymous). It sends the raw body + signature here
       synchronously (IntegrationAPI .send(), InOut); this route runs the HMAC check as
       the service user and replies with a verdict the endpoint uses to gate its HTTP

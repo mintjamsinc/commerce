@@ -1,4 +1,4 @@
-// Record a backorder release at the end of backorder-release-flow.bpmn (feature #12).
+// Record a backorder release at the end of backorder-release-flow.bpmn.
 //
 // The operator has confirmed the "Release Backorder" task, meaning the awaited
 // stock is now allocated to this order line and it can proceed to fulfilment. This

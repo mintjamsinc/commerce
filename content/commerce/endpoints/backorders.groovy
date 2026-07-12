@@ -1,4 +1,4 @@
-// Backorder snapshot endpoint (admin). Feature #12.
+// Backorder snapshot endpoint (admin).
 //
 // A read-only JSON view of the backorder book for operators / the Commerce
 // dashboard: counts by status, total units still awaited, and the most recent open
@@ -9,6 +9,7 @@
 //
 //   GET /bin/cms.cgi/{workspace}/content/commerce/endpoints/backorders.groovy?limit=50
 
+import commerce.Api
 import commerce.Backorders
 import com.fasterxml.jackson.databind.ObjectMapper
 
@@ -20,7 +21,7 @@ if (request.getMethod() != "GET") {
 int limit = paramInt("limit", 50, 1, 500)
 
 try {
-    def out = [generatedAt: java.time.Instant.now().toString()]
+    def out = [generatedAt: Api.now()]
     out.summary = Backorders.summary(repositorySession)
     out.open = Backorders.list(repositorySession, Backorders.OPEN_STATUSES, limit)
 

@@ -7,22 +7,20 @@
 //
 // The message summarizes the refund (amount, the order it belongs to, the
 // customer when the order can be located) and lists WHY it was flagged - the
-// reasons produced by screenRefund.groovy and carried on the process variable
+// reasons produced by the refund-screening step and carried on the process variable
 // `reviewReasons`. Refund details are read straight from the refund resource.
 //
-// Notification destinations are shared with the rest of the commerce tooling:
-//   /etc/commerce/config/notifications.yml
+// Notification destinations are shared with the rest of the commerce tooling.
 //
 // Delivery goes to every enabled channel in the shared registry - Slack,
-// Discord, Teams, LINE, generic webhook and email - via commerce.Notifications
-// (see Notifications.registry()). Each channel renders the same message in its
+// Discord, Teams, LINE, generic webhook and email - via commerce.Notifications.
+// Each channel renders the same message in its
 // own format using the JDK built-in java.net.http.HttpClient / SMTP client (no
 // extra JAR required).
 //
 // IMPORTANT: a notification failure must never break the business process, so
 // every external call is wrapped defensively and only logged on error.
 
-// Shared commerce helpers (see /content/WEB-INF/classes/commerce/).
 import commerce.Money
 import commerce.Refunds
 import commerce.Orders
@@ -39,7 +37,7 @@ def refundID = Notifications.taskVar(task, "refund_id")
 def orderID = Notifications.taskVar(task, "order_id")
 
 // Reasons are a JSON array string of structured descriptors set by
-// screenRefund.groovy. Rendered to operational English here (notifications have
+// the refund-screening step. Rendered to operational English here (notifications have
 // no per-user locale); the review form renders the same descriptors localized.
 def reasons = []
 try {
@@ -126,8 +124,7 @@ try {
 }
 
 // --- Build the notification message ------------------------------------------
-// One channel-agnostic message; each enabled channel renders it in its own
-// format (see commerce.NotificationMessage / commerce.Notifications).
+// One channel-agnostic message; each enabled channel renders it in its own format.
 def itemsText = null
 if (lineItemCount != null && lineItemCount > 0) {
     itemsText = "${lineItemCount}" + (restockedText ? " (restocked: ${restockedText})" : "")

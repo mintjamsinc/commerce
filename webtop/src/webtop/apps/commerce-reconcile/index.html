@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no">
+	<title>Commerce Reconcile</title>
+
+	<!-- Bootstrap Icons (bundled with webtop) -->
+	<link rel="stylesheet" href="../../assets/vendor/bootstrap-icons/bootstrap-icons.min.css?v=__BUILD_VERSION__">
+
+	<!-- App CSS + shared Webtop design system -->
+	<link href="./assets/css/style.css?v=__BUILD_VERSION__" rel="stylesheet" />
+	<link href="../../assets/css/webtop-app.css?v=__BUILD_VERSION__" rel="stylesheet" />
+</head>
+
+<body>
+	<div id="app" v-cloak class="d-flex flex-column" @mounted="onMounted" @unmount="onUnmount">
+
+		<!-- Top toolbar -->
+		<nav class="nav-bar window-drag-region">
+			<div class="toolbar-group">
+				<button class="btn-icon" @click="refresh" :disabled="busy" :title="t('app.commerce-reconcile.toolbar.refresh')">
+					<i class="bi bi-arrow-clockwise" :class="{ spin: busy }"></i>
+				</button>
+			</div>
+
+			<!-- History window selector (eip-console range design; drives the list) -->
+			<div class="recon-range" :title="t('app.commerce-reconcile.toolbar.timeRange', undefined, 'Time range')">
+				<button v-for="opt in rangeOptions" :key="opt.key"
+					:class="{ active: rangeKey === opt.key }"
+					@click="rangeKey = opt.key">{{ opt.key }}</button>
+			</div>
+
+			<span class="nav-spacer"></span>
+
+			<div class="pane-toggles">
+				<button class="btn-icon pane-toggle-btn" :class="{ active: sidebarVisible }" @click="toggleSidebar" :title="t('app.commerce-reconcile.toolbar.toggleSidebar', undefined, 'Toggle sidebar')">
+					<i class="bi bi-layout-sidebar-inset"></i>
+				</button>
+			</div>
+
+			<!-- Window controls -->
+			<div class="window-controls">
+				<button class="btn-icon" @click="onMinimizeWindow" :title="t('common.minimize')"><i class="bi bi-dash-lg"></i></button>
+				<button class="btn-icon" @click="onToggleMaximizeWindow" :title="t('common.maximize')"><i class="bi bi-square"></i></button>
+				<button class="btn-icon window-control-close" @click="onCloseWindow" :title="t('common.close')"><i class="bi bi-x-lg"></i></button>
+			</div>
+		</nav>
+
+		<!-- Content: two-pane (left run trigger, right run history). -->
+		<div class="content-body">
+
+			<!-- Left: the reconcile run trigger, gated on the Admin API -->
+			<aside v-if="sidebarVisible" class="ops-sidebar island" :style="{ width: sidebarWidth + 'px' }">
+
+				<!-- Admin API banner: the reconcile pass fetches from Shopify, so warn
+				     (only) while the Admin API is not configured. -->
+				<div v-if="!sync.enabled" class="imp-banner warn">
+					<i class="bi bi-exclamation-triangle"></i>
+					<span>{{ t('app.commerce-reconcile.adminApi.disabled') }}</span>
+				</div>
+
+				<!-- ============ RECONCILE (Shopify → CMS drift) trigger ============ -->
+				<section class="property-group">
+					<div class="ops-filter">
+						<!-- Run target: inventory = full bulk audit, products = diff pass -->
+						<div class="ops-field">
+							<label class="property-label">{{ t('app.commerce-reconcile.reconcile.target') }}</label>
+							<div class="wt-select">
+								<button type="button" class="wt-select-trigger" @click.stop="openTargetMenu($event)">
+									<span class="wt-select-value">{{ targetLabel(target) }}</span>
+									<i class="bi bi-chevron-down wt-select-chevron"></i>
+								</button>
+							</div>
+						</div>
+						<div class="mt-1">
+							<button class="wt wt-primary" :disabled="busy || !sync.enabled" @click="runReconcile"
+								:title="!sync.enabled ? t('app.commerce-reconcile.adminApi.required') : ''">
+								<i class="bi bi-play-fill"></i> {{ t('app.commerce-reconcile.reconcile.runNow') }}
+							</button>
+						</div>
+					</div>
+				</section>
+
+			</aside>
+			<div v-if="sidebarVisible" class="sidebar-resize-handle" @mousedown="onSidebarResizeStart"></div>
+
+			<!-- Right: run history (selected window; both scopes) — header bar (CSV) + rows -->
+			<main class="content-main island p-0">
+				<div class="ops-list-head">
+					<button class="wt wt-primary wt-slim" :disabled="!canDownload" @click="downloadCsv">
+						<i class="bi bi-download"></i> {{ t('app.commerce-reconcile.download') }}
+					</button>
+				</div>
+				<div class="content-list">
+					<table class="wt">
+						<thead>
+							<tr>
+								<th class="text-start">{{ t('app.commerce-reconcile.history.type') }}</th>
+								<th class="text-start">{{ t('app.commerce-reconcile.history.startedAt') }}</th>
+								<th class="text-start">{{ t('app.commerce-reconcile.history.finishedAt') }}</th>
+								<th class="text-center">{{ t('app.commerce-reconcile.history.updated') }}</th>
+								<th class="text-center">{{ t('app.commerce-reconcile.history.result') }}</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr v-if="history.length === 0" class="item-empty">
+								<td colspan="5">{{ t('app.commerce-reconcile.history.empty') }}</td>
+							</tr>
+							<tr v-for="(h, i) in history" :key="i" class="item">
+								<td class="text-start">{{ typeText(h.scope) }}</td>
+								<td class="text-start">{{ fmtTime(h.startedAt) }}</td>
+								<td class="text-start">{{ fmtTime(h.finishedAt) }}</td>
+								<td class="text-center">{{ h.updated ?? 0 }}</td>
+								<td class="text-center">
+									<span class="ops-pill" :class="h.result === 'error' ? 'st-error' : 'st-ok'">{{ resultText(h.result) }}</span>
+								</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			</main>
+		</div>
+
+		<!-- Status bar -->
+		<div class="status-bar window-drag-region">
+			<span class="nav-spacer"></span>
+			<div class="status-group">
+				<span v-if="busy" class="status-item"><i class="bi bi-arrow-repeat me-1"></i>{{ t('app.commerce-reconcile.statusbar.working') }}</span>
+				<span v-else-if="statusKind === 'ok'" class="status-item status-ok"><i class="bi bi-check-lg me-1"></i>{{ status }}</span>
+				<span v-else-if="statusKind === 'err'" class="status-item status-err">{{ status }}</span>
+				<span v-else class="status-item">{{ t('app.commerce-reconcile.statusbar.ready') }}</span>
+			</div>
+		</div>
+
+		<!-- Toast -->
+		<div v-if="toast" class="commerce-toast" :class="{ error: toastError }" role="alert">{{ toast }}</div>
+
+		<!-- Confirm dialog -->
+		<div v-if="confirmDialog.visible" class="dialog-overlay">
+			<div class="dialog-frame" style="max-width: 32rem;">
+				<div class="island p-2">
+					<div class="dialog-header"><h3><i class="bi bi-exclamation-triangle-fill me-2"></i>{{ confirmDialog.title }}</h3></div>
+					<div class="dialog-body"><p class="mt-0">{{ confirmDialog.message }}</p></div>
+					<div class="dialog-footer flex-wrap">
+						<button class="wt" @click="onConfirm(false)">{{ t('common.cancel') }}</button>
+						<button class="wt wt-primary" @click="onConfirm(true)">{{ confirmDialog.ok }}</button>
+					</div>
+				</div>
+			</div>
+		</div>
+
+	</div>
+
+	<script type="module" src="./app.js?v=__BUILD_VERSION__"></script>
+</body>
+
+</html>

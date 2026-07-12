@@ -10,19 +10,18 @@
 // glance. Order details are read straight from the order resource - the same
 // source of truth used elsewhere in the flow.
 //
-// Notification destinations are shared with the rest of the commerce tooling:
-//   /etc/commerce/config/notifications.yml
+// Notification destinations are shared with the rest of the commerce tooling.
 //
 // Delivery goes to every enabled channel in the shared registry - Slack,
-// Discord, Teams, LINE, generic webhook and email - via commerce.Notifications
-// (see Notifications.registry()). Each channel renders the same message in its
+// Discord, Teams, LINE, generic webhook and email - via commerce.Notifications.
+// Each channel renders the same message in its
 // own format using the JDK built-in java.net.http.HttpClient / SMTP client (no
 // extra JAR required).
 //
 // IMPORTANT: a notification failure must never break the business process, so
 // every external call is wrapped defensively and only logged on error.
 
-// Delivery is shared and pluggable (see /content/WEB-INF/classes/commerce/Notifications.groovy).
+// Delivery is shared and pluggable across channels.
 import commerce.Notifications
 import commerce.NotificationMessage
 
@@ -85,8 +84,7 @@ try {
 }
 
 // --- Build the notification message ------------------------------------------
-// One channel-agnostic message; each enabled channel renders it in its own
-// format (see commerce.NotificationMessage / commerce.Notifications).
+// One channel-agnostic message; each enabled channel renders it in its own format.
 def message = NotificationMessage.create()
     .title("📦", "Order fulfillment")
     .status("🚚", "Order ready to fulfill")

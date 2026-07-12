@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Receive Confirmation</title>
+<style>
+/* Theme tokens are resolved via the CSS `light-dark()` function, which
+ * picks a value based on the *used* `color-scheme`. By default we honour
+ * the OS preference (`color-scheme: light dark`); when the host app
+ * tells us its current theme via postMessage, we set `data-theme` on
+ * <html> and force `color-scheme` accordingly. (Shared with the review form.) */
+:root {
+	color-scheme: light dark;
+	--bg:            light-dark(#f7f8fa, #0f172a);
+	--surface:       light-dark(#ffffff, #1e293b);
+	--surface-soft:  light-dark(#f3f4f6, #233044);
+	--border:        light-dark(#e5e7eb, #334155);
+	--border-strong: light-dark(#d1d5db, #475569);
+	--text:          light-dark(#1f2937, #f1f5f9);
+	--text-soft:     light-dark(#4b5563, #cbd5e1);
+	--text-muted:    light-dark(#6b7280, #94a3b8);
+	--primary:       light-dark(#2563eb, #3b82f6);
+	--primary-hover: light-dark(#1d4ed8, #60a5fa);
+	--primary-fg:    #ffffff;
+	--success:       light-dark(#059669, #34d399);
+	--success-soft:  light-dark(rgba(5, 150, 105, 0.1), rgba(52, 211, 153, 0.12));
+	--warning:       light-dark(#d97706, #fbbf24);
+	--danger:        light-dark(#dc2626, #f87171);
+	--danger-soft:   light-dark(rgba(220, 38, 38, 0.08), rgba(248, 113, 113, 0.14));
+	--row-hover:     light-dark(#f9fafb, #233044);
+	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+	--radius: 0.5rem;
+	--radius-sm: 0.375rem;
+}
+
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"]  { color-scheme: dark; }
+
+* {
+	scrollbar-width: thin;
+	color: inherit;
+	font-family: inherit;
+	font-size: inherit;
+	font-weight: inherit;
+	letter-spacing: inherit;
+	box-sizing: border-box;
+}
+
+html {
+	font-family: ui-sans-serif, -apple-system, system-ui, Segoe UI, Helvetica, Apple Color Emoji, Arial, sans-serif, Segoe UI Emoji, Segoe UI Symbol;
+	font-size: 14px;
+	position: absolute;
+	inset: 0;
+}
+
+body {
+	margin: 0;
+	padding: 0;
+	height: 100%;
+	background: var(--bg);
+	color: var(--text);
+	font-size: 14px;
+	line-height: 1.5;
+}
+
+#app {
+	min-height: 100%;
+	display: flex;
+	flex-direction: column;
+}
+
+[v-cloak] { display: none !important; }
+
+/* ----------------------------------------------------------------
+ * Centered state panes (loading / error / standalone)
+ * ---------------------------------------------------------------- */
+.state-pane {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 0.75rem;
+	color: var(--text-muted);
+	padding: 2rem;
+	text-align: center;
+}
+
+.state-pane .state-icon {
+	width: 2.5rem;
+	height: 2.5rem;
+	opacity: 0.45;
+}
+
+.state-pane.error-pane { color: var(--danger); }
+.state-pane.error-pane .state-icon { opacity: 1; }
+
+.spinner {
+	width: 1.5rem;
+	height: 1.5rem;
+	border: 2px solid var(--border-strong);
+	border-top-color: var(--primary);
+	border-radius: 50%;
+	animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ----------------------------------------------------------------
+ * Product layout
+ * ---------------------------------------------------------------- */
+.product {
+	flex: 1;
+	padding: 1.5rem;
+	max-width: 64rem;
+	width: 100%;
+	margin: 0 auto;
+}
+
+.product-header {
+	display: grid;
+	grid-template-columns: minmax(140px, 200px) 1fr;
+	gap: 1.5rem;
+	align-items: start;
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 1.25rem;
+	box-shadow: var(--shadow-sm);
+}
+
+@media (max-width: 640px) {
+	.product-header { grid-template-columns: 1fr; }
+}
+
+.product-image {
+	aspect-ratio: 1 / 1;
+	background: var(--surface-soft);
+	border-radius: var(--radius-sm);
+	overflow: hidden;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border: 1px solid var(--border);
+}
+
+.product-image img {
+	width: 100%;
+	height: 100%;
+	object-fit: contain;
+	display: block;
+}
+
+.image-fallback {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 0.5rem;
+	color: var(--text-muted);
+	font-size: 12px;
+}
+
+.image-fallback svg {
+	width: 2.5rem;
+	height: 2.5rem;
+	opacity: 0.4;
+}
+
+.product-meta { min-width: 0; }
+
+.product-meta h1 {
+	margin: 0 0 0.25rem;
+	font-size: 1.375rem;
+	font-weight: 700;
+	line-height: 1.25;
+	color: var(--text);
+	word-wrap: break-word;
+}
+
+.product-tagline {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	color: var(--text-muted);
+	font-size: 13px;
+	gap: 0.5rem;
+}
+
+.product-tagline > span:not(:last-child)::after {
+	content: "·";
+	margin-left: 0.5rem;
+	color: var(--text-muted);
+}
+
+/* ----------------------------------------------------------------
+ * Sections / table
+ * ---------------------------------------------------------------- */
+.section {
+	margin-top: 1.5rem;
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	box-shadow: var(--shadow-sm);
+	overflow: hidden;
+}
+
+.section-title {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	margin: 0;
+	padding: 1rem 1.25rem;
+	font-size: 1rem;
+	font-weight: 700;
+	border-bottom: 1px solid var(--border);
+}
+
+.table-wrap { overflow-x: auto; }
+
+.data-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 13px;
+}
+
+.data-table th,
+.data-table td {
+	padding: 0.625rem 1.25rem;
+	text-align: left;
+	vertical-align: middle;
+	border-bottom: 1px solid var(--border);
+}
+
+.data-table th {
+	font-weight: 600;
+	color: var(--text-muted);
+	background: var(--surface-soft);
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.data-table tbody tr:last-child td { border-bottom: none; }
+
+.data-table .align-right {
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+}
+
+.variant-title {
+	font-weight: 600;
+	color: var(--text);
+}
+
+/* Receiving input grid */
+.receive-body {
+	padding: 1rem 1.25rem 1.25rem;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 1rem;
+}
+
+.field {
+	display: flex;
+	flex-direction: column;
+	gap: 0.375rem;
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--text-muted);
+	font-weight: 600;
+}
+
+.field input[type="number"],
+.field input[type="text"],
+.field input[type="date"] {
+	padding: 0.5rem 0.75rem;
+	border: 1px solid var(--border-strong);
+	border-radius: var(--radius-sm);
+	background: var(--surface);
+	color: var(--text);
+	font-size: 13px;
+}
+
+.field input[type="number"],
+.field input[type="date"] { width: 10rem; }
+.field.grow { flex: 1; min-width: 16rem; }
+.field.grow input { width: 100%; }
+
+.field input:focus-visible {
+	outline: 2px solid var(--primary);
+	outline-offset: 1px;
+	border-color: var(--primary);
+}
+
+.partial-hint {
+	flex-basis: 100%;
+	margin: 0;
+	font-size: 12px;
+	color: var(--warning);
+	font-weight: 600;
+}
+
+/* ----------------------------------------------------------------
+ * Footer actions
+ * ---------------------------------------------------------------- */
+.actions {
+	position: sticky;
+	bottom: 0;
+	z-index: 5;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+	padding: 0.875rem 1.5rem;
+	background: var(--surface);
+	border-top: 1px solid var(--border);
+	box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.action-area {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.btn {
+	appearance: none;
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.5rem 1rem;
+	border-radius: var(--radius-sm);
+	font-size: 13px;
+	font-weight: 600;
+	line-height: 1.25;
+	cursor: pointer;
+	transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+	border: 1px solid transparent;
+	background: transparent;
+	color: var(--text);
+	text-decoration: none;
+	user-select: none;
+	font-family: inherit;
+}
+
+.btn:disabled { cursor: not-allowed; opacity: 0.55; }
+
+.btn:focus-visible {
+	outline: 2px solid var(--primary);
+	outline-offset: 2px;
+}
+
+.btn svg { width: 1rem; height: 1rem; flex-shrink: 0; }
+
+.btn-primary {
+	background: var(--primary);
+	color: var(--primary-fg);
+	border-color: var(--primary);
+}
+
+.btn-primary:not(:disabled):hover {
+	background: var(--primary-hover);
+	border-color: var(--primary-hover);
+}
+
+.btn-secondary {
+	background: var(--surface);
+	color: var(--text);
+	border-color: var(--border-strong);
+}
+
+.btn-secondary:not(:disabled):hover { background: var(--surface-soft); }
+
+.action-notice {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	color: var(--text-soft);
+	font-size: 13px;
+	padding: 0.375rem 0.75rem;
+	border-radius: var(--radius-sm);
+}
+
+.action-notice svg { width: 1rem; height: 1rem; flex-shrink: 0; }
+
+.action-notice.completed {
+	color: var(--success);
+	font-weight: 600;
+	background: var(--success-soft);
+}
+
+.toast {
+	position: fixed;
+	bottom: 5rem;
+	left: 50%;
+	transform: translateX(-50%);
+	background: var(--danger);
+	color: #ffffff;
+	padding: 0.625rem 1rem;
+	border-radius: var(--radius-sm);
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+	font-size: 13px;
+	z-index: 100;
+	max-width: 80%;
+	text-align: center;
+}
+</style>
+</head>
+<body>
+<main id="app" v-cloak @mounted="onMounted" @unmount="onUnmount">
+
+	<!-- Loading state -->
+	<div v-if="view === 'loading'" class="state-pane">
+		<div class="spinner"></div>
+		<p>{{ t('form.commerce.shopify.inventoryReceived.loading', undefined, 'Loading…') }}</p>
+	</div>
+
+	<!-- Error state -->
+	<div v-else-if="view === 'error'" class="state-pane error-pane">
+		<svg class="state-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1.5a.75.75 0 0 1 .67.418l6.5 13a.75.75 0 0 1-.67 1.082h-13a.75.75 0 0 1-.67-1.082l6.5-13A.75.75 0 0 1 8 1.5zm0 4.75a.75.75 0 0 0-.75.75v3a.75.75 0 0 0 1.5 0v-3A.75.75 0 0 0 8 6.25zm0 6.25a.875.875 0 1 0 0-1.75.875.875 0 0 0 0 1.75z"/></svg>
+		<p>{{ errorMessage }}</p>
+	</div>
+
+	<!-- Standalone notice (form opened outside Tasks app) -->
+	<div v-else-if="view === 'standalone'" class="state-pane">
+		<svg class="state-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM7.25 5a.75.75 0 0 1 1.5 0v3.5a.75.75 0 0 1-1.5 0V5zM8 11.25a.875.875 0 1 1 0-1.75.875.875 0 0 1 0 1.75z"/></svg>
+		<p>{{ t('form.commerce.shopify.inventoryReceived.standaloneNotice', undefined, 'This form must be opened from the Tasks application.') }}</p>
+	</div>
+
+	<!-- Main content -->
+	<template v-else>
+		<article class="product">
+			<header class="product-header">
+				<div class="product-image">
+					<img v-if="imageSrc && !imageFailed"
+						:src="imageSrc"
+						:alt="productTitle"
+						@error="imageFailed = true">
+					<div v-else class="image-fallback">
+						<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M2.5 2A1.5 1.5 0 0 0 1 3.5v9A1.5 1.5 0 0 0 2.5 14h11a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 13.5 2h-11zM5 5a1.25 1.25 0 1 1 0 2.5A1.25 1.25 0 0 1 5 5zM2.5 12.5l3-3 1.75 1.75L10 8.25l3.5 4.25h-11z"/></svg>
+						<span>{{ t('form.commerce.shopify.inventoryReceived.noImage', undefined, 'No image') }}</span>
+					</div>
+				</div>
+				<div class="product-meta">
+					<h1>{{ productTitle }}</h1>
+					<div class="product-tagline">
+						<span v-if="vendor">{{ vendor }}</span>
+						<span v-if="productType">{{ productType }}</span>
+					</div>
+				</div>
+			</header>
+
+			<!-- What was ordered: the incoming reorder recorded by the review task.
+			     Read from the product node's commerce:reorder_last_orders[itemId] entry. -->
+			<section class="section">
+				<h2 class="section-title">{{ t('form.commerce.shopify.inventoryReceived.orderSummary', undefined, 'Order to receive') }}</h2>
+				<div class="table-wrap">
+					<table class="data-table">
+						<thead>
+							<tr>
+								<th>{{ t('form.commerce.shopify.inventoryReceived.colVariant', undefined, 'Variant') }}</th>
+								<th class="align-right">{{ t('form.commerce.shopify.inventoryReceived.colOrderedAt', undefined, 'Ordered') }}</th>
+								<th class="align-right">{{ t('form.commerce.shopify.inventoryReceived.colOrderedQty', undefined, 'Order qty') }}</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><span class="variant-title">{{ variantLabel }}</span></td>
+								<td class="align-right">{{ orderedAt ? formatDateOnly(orderedAt) : '—' }}</td>
+								<td class="align-right">{{ orderedQty == null ? '—' : formatNumber(orderedQty) }}</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			</section>
+
+			<!-- Confirm the physical receipt: received date (default today) + received quantity
+			     (default = ordered). Handed to the receipt-confirmation service via the flow's
+			     process variables on completion. Partial-delivery / delay notes go in the shared memo below. -->
+			<section class="section">
+				<h2 class="section-title">{{ t('form.commerce.shopify.inventoryReceived.receiptTitle', undefined, 'Receipt') }}</h2>
+				<div v-if="canReceive" class="receive-body">
+					<label class="field">
+						{{ t('form.commerce.shopify.inventoryReceived.receivedDate', undefined, 'Received date') }}
+						<input type="date" v-model="receivedDate" :disabled="actionPending">
+					</label>
+					<label class="field">
+						{{ t('form.commerce.shopify.inventoryReceived.receivedQty', undefined, 'Received quantity') }}
+						<input type="number" min="0" step="1" v-model.number="receivedQty" :disabled="actionPending">
+					</label>
+					<p v-if="isPartial" class="partial-hint">
+						{{ partialHintText }}
+					</p>
+				</div>
+				<div v-else class="receive-body">
+					<p style="margin:0; font-size:13px; color:var(--text-muted);">
+						{{ t('form.commerce.shopify.inventoryReceived.claimToReceive', undefined, 'Claim this task to record the receipt.') }}
+					</p>
+				</div>
+			</section>
+
+			<!-- Shared product memo — the SAME internal_memo the reorder review edits, so
+			     notes about this product (partial delivery, delay, damage) live in one place. -->
+			<section class="section">
+				<h2 class="section-title">{{ t('form.commerce.shopify.inventoryReceived.memo', undefined, 'Memo') }}</h2>
+				<div class="receive-body" style="flex-direction:column; align-items:stretch; gap:0.75rem;">
+					<div v-if="memo" class="memo-card" style="border:1px solid var(--border); border-radius:var(--radius-sm); padding:0.75rem 1rem;">
+						<div class="memo-header" style="display:flex; justify-content:space-between; gap:1rem; font-size:12px; color:var(--text-muted); margin-bottom:0.375rem;">
+							<span>{{ memo.name || memo.id || t('form.commerce.shopify.common.unknown', undefined, 'Unknown') }}</span>
+							<span v-if="memoTimestampText">{{ memoTimestampText }}</span>
+						</div>
+						<div style="font-size:13px; white-space:pre-wrap;">{{ memo.content }}</div>
+					</div>
+					<div v-else style="font-size:13px; color:var(--text-muted);">{{ t('form.commerce.shopify.inventoryReceived.noMemo', undefined, 'No memo yet.') }}</div>
+
+					<div v-if="canEditMemo && memoMode === 'view'">
+						<button class="btn btn-secondary" type="button" @click="enterMemoEdit">
+							<span>{{ memo ? t('form.commerce.shopify.inventoryReceived.editMemo', undefined, 'Edit memo') : t('form.commerce.shopify.inventoryReceived.addMemo', undefined, 'Add memo') }}</span>
+						</button>
+					</div>
+					<div v-else-if="canEditMemo && memoMode === 'edit'" style="display:flex; flex-direction:column; gap:0.5rem;">
+						<textarea v-model="memoDraft" rows="4" :disabled="memoSaving"
+							:placeholder="t('form.commerce.shopify.inventoryReceived.memoPlaceholder', undefined, 'Write a memo for the next reviewer...')"
+							style="width:100%; padding:0.5rem 0.75rem; border:1px solid var(--border-strong); border-radius:var(--radius-sm); background:var(--surface); color:var(--text); font-size:13px; resize:vertical;"></textarea>
+						<div style="display:flex; gap:0.5rem;">
+							<button class="btn btn-secondary" type="button" :disabled="memoSaving" @click="cancelMemoEdit">{{ t('form.commerce.shopify.common.cancel', undefined, 'Cancel') }}</button>
+							<button class="btn btn-primary" type="button" :disabled="memoSaving || !memoDraftHasContent" @click="saveMemo">{{ t('form.commerce.shopify.common.update', undefined, 'Update') }}</button>
+						</div>
+					</div>
+				</div>
+			</section>
+		</article>
+
+		<footer class="actions">
+			<div class="action-area">
+				<button v-if="isAssignedToMe || taskCompleted"
+					class="btn btn-secondary" type="button"
+					:disabled="!shopifyURL"
+					:title="shopifyURL || t('form.commerce.shopify.inventoryReceived.shopifyUnavailable', undefined, 'Shop domain or product ID is unavailable.')"
+					@click="openShopify">
+					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M9.5 2a.5.5 0 0 0 0 1h2.793L7.146 8.146a.5.5 0 1 0 .708.708L13 3.707V6.5a.5.5 0 0 0 1 0V2.5a.5.5 0 0 0-.5-.5h-4z"/><path d="M3.5 4A1.5 1.5 0 0 0 2 5.5v7A1.5 1.5 0 0 0 3.5 14h7a1.5 1.5 0 0 0 1.5-1.5v-3a.5.5 0 0 0-1 0v3a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1-.5-.5v-7a.5.5 0 0 1 .5-.5h3a.5.5 0 0 0 0-1h-3z"/></svg>
+					{{ t('form.commerce.shopify.inventoryReceived.viewOnShopify', undefined, 'View on Shopify') }}
+				</button>
+			</div>
+			<div class="action-area">
+				<!-- Already completed -->
+				<span v-if="taskCompleted" class="action-notice completed">
+					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7 7a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.25 10.69l6.47-6.47a.75.75 0 0 1 1.06 0z"/></svg>
+					<span>{{ t('form.commerce.shopify.inventoryReceived.completedNotice', undefined, 'This receipt has been confirmed.') }}</span>
+				</span>
+				<!-- Unassigned: prompt the user to use the host Tasks app's Claim button -->
+				<span v-else-if="!taskAssignee" class="action-notice">
+					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 14.5a5 5 0 0 1 10 0 .5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5z"/></svg>
+					<span>{{ t('form.commerce.shopify.inventoryReceived.claimPrompt', undefined, 'Claim this task to confirm the receipt.') }}</span>
+				</span>
+				<!-- Assigned to someone else -->
+				<span v-else-if="!isAssignedToMe" class="action-notice">
+					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 14.5a5 5 0 0 1 10 0 .5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5z"/></svg>
+					<span>{{ assignedNoticeText }}</span>
+				</span>
+				<!-- Assigned to me: confirm receipt -->
+				<button v-else
+					class="btn btn-primary" type="button"
+					:disabled="actionPending || !(receivedQty >= 0)"
+					@click="onConfirmReceipt">
+					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7 7a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.25 10.69l6.47-6.47a.75.75 0 0 1 1.06 0z"/></svg>
+					<span>{{ t('form.commerce.shopify.inventoryReceived.confirmReceipt', undefined, 'Confirm receipt') }}</span>
+				</button>
+			</div>
+		</footer>
+
+		<div v-if="toastMessage" class="toast" role="alert" aria-live="polite">{{ toastMessage }}</div>
+	</template>
+</main>
+
+<!-- Tasks Form SDK -->
+<script src="./forms-sdk.js"></script>
+<script type="module">
+import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.75/dist/ichigo.esm.min.js';
+
+	const I18N_PREFIX = 'form.commerce.shopify.';
+	const sdk = window.createTasksForm();
+
+	const App = {
+		data() {
+			return {
+				view: 'loading',                // 'loading' | 'error' | 'standalone' | 'content'
+				errorMessage: '',
+				toastMessage: '',
+				imageFailed: false,
+				actionPending: false,
+
+				localization: { locale: '', timeZone: '', numberFormat: '', currency: '' },
+				i18n: { messages: {}, revision: 0 },
+
+				currentUserID: '',
+				currentUserDisplay: '',
+				task: null,
+				assigneeDisplay: '',
+
+				productLoaded: false,
+				product: null,
+				node: null,
+				productPath: '',
+				shopifyURL: '',
+
+				// The order being received (from commerce:reorder_last_orders[itemId]).
+				itemId: '',
+				variantTitle: '',
+				orderedAt: '',
+				orderedQty: null,
+
+				// Receiving inputs (received qty defaults to the ordered qty; received date
+				// defaults to today in the viewer's zone). The receipt is handed to the
+				// receipt-confirmation service via the product node's commerce:reorder_receipt
+				// PER-ITEM map (a NODE property, not a process variable — a form's
+				// setProcessVariables has REPLACE semantics), so sibling-variant receive
+				// tasks of the same product don't collide.
+				receivedQty: null,
+				receivedDate: '',              // received date (YYYY-MM-DD, viewer's zone)
+
+				// Shared internal memo (same commerce product memo as the reorder form —
+				// one place to manage product notes; partial-delivery / delay notes go here).
+				memo: null,                     // { id, name, at, content } or null
+				memoMode: 'view',               // 'view' | 'edit'
+				memoDraft: '',
+				memoSaving: false,
+
+				_toastTimer: null,
+				_assigneeDisplayCache: {},
+			};
+		},
+
+		computed: {
+			productTitle() {
+				return (this.product && this.product.title)
+					|| sdk.getStringProp(this.node, 'title')
+					|| this.t('form.commerce.shopify.common.untitledItem', undefined, '(item)');
+			},
+			vendor() {
+				return (this.product && this.product.vendor) || sdk.getStringProp(this.node, 'vendor');
+			},
+			productType() {
+				return (this.product && this.product.product_type) || sdk.getStringProp(this.node, 'product_type');
+			},
+			imageSrc() {
+				const p = this.product;
+				if (!p) return '';
+				if (p.image && p.image.src) return p.image.src;
+				if (Array.isArray(p.images) && p.images.length > 0 && p.images[0] && p.images[0].src) {
+					return p.images[0].src;
+				}
+				return '';
+			},
+			variantLabel() {
+				const t = this.variantTitle;
+				return (t && t !== 'Default Title') ? t
+					: this.t('form.commerce.shopify.inventoryReceived.variantDefault', undefined, '(default)');
+			},
+			taskAssignee() {
+				return (this.task && this.task.assignee) || '';
+			},
+			taskCompleted() {
+				return !!(this.task && this.task.completed);
+			},
+			isAssignedToMe() {
+				return !!this.taskAssignee && this.taskAssignee === this.currentUserID;
+			},
+			canReceive() {
+				return this.isAssignedToMe && !this.taskCompleted;
+			},
+			// The operator is recording fewer units than were ordered → partial delivery.
+			// Shown as a hint so the note gets used; never blocks completion.
+			isPartial() {
+				return this.orderedQty != null
+					&& this.receivedQty != null
+					&& Number(this.receivedQty) >= 0
+					&& Number(this.receivedQty) < Number(this.orderedQty);
+			},
+			partialHintText() {
+				return this.t('form.commerce.shopify.inventoryReceived.partialHint',
+					{ received: Number(this.receivedQty) || 0, ordered: Number(this.orderedQty) || 0 },
+					'Recording {received} of {ordered} ordered — add a note for the shortfall.');
+			},
+			assignedNoticeText() {
+				const name = this.assigneeDisplay || this.taskAssignee;
+				return this.t('form.commerce.shopify.inventoryReceived.assignedToOther',
+					{ name }, 'This task is currently assigned to {name}. View only.');
+			},
+			// Shared memo — same ownership rule as the receipt.
+			canEditMemo() {
+				return this.isAssignedToMe && !this.taskCompleted;
+			},
+			memoTimestampText() {
+				if (!this.memo || !this.memo.at) return '';
+				return this.formatDate(this.memo.at) || this.memo.at;
+			},
+			memoDraftHasContent() {
+				return !!(this.memoDraft && this.memoDraft.trim());
+			},
+		},
+
+		methods: {
+			// ----------------------------------------------------------
+			// i18n & locale-aware formatting
+			// ----------------------------------------------------------
+			t(id, params, fallback) {
+				void this.i18n.revision;
+				return sdk.translate(this.i18n.messages, this.localization.locale, id, params, fallback);
+			},
+
+			formatNumber(n) {
+				if (n == null || n === '') return '—';
+				const num = Number(n);
+				if (!Number.isFinite(num)) return String(n);
+				const locale = this.localization.numberFormat || this.localization.locale || undefined;
+				return num.toLocaleString(locale);
+			},
+
+			formatDate(value) {
+				if (!value) return '';
+				const d = new Date(value);
+				if (Number.isNaN(d.getTime())) return '';
+				const locale = this.localization.locale || undefined;
+				const opts = {
+					year: 'numeric', month: 'numeric', day: 'numeric',
+					hour: 'numeric', minute: '2-digit',
+				};
+				if (this.localization.timeZone) opts.timeZone = this.localization.timeZone;
+				try {
+					return d.toLocaleString(locale, opts);
+				} catch (_) {
+					return d.toLocaleString(locale);
+				}
+			},
+
+			// Date ONLY (no time) in the viewer's zone — for order date / received date.
+			formatDateOnly(value) {
+				return sdk.formatDateOnly(value, this.localization);
+			},
+
+			// ----------------------------------------------------------
+			// Shared internal memo (JSON on the product node's `internal_memo`
+			// string property — the SAME memo the reorder form shows/edits).
+			// ----------------------------------------------------------
+			loadMemoFromNode() {
+				const raw = sdk.getStringProp(this.node, 'internal_memo');
+				if (!raw) { this.memo = null; return; }
+				try {
+					const obj = JSON.parse(raw);
+					if (obj && typeof obj === 'object') {
+						this.memo = { id: obj.id || '', name: obj.name || '', at: obj.at || '', content: obj.content || '' };
+						return;
+					}
+				} catch (_) { /* treat unparseable as no memo */ }
+				this.memo = null;
+			},
+			enterMemoEdit() {
+				if (!this.canEditMemo) return;
+				this.memoDraft = (this.memo && this.memo.content) || '';
+				this.memoMode = 'edit';
+			},
+			cancelMemoEdit() {
+				if (this.memoSaving) return;
+				this.memoMode = 'view';
+				this.memoDraft = '';
+			},
+			async saveMemo() {
+				if (this.memoSaving || !this.canEditMemo) return;
+				const content = (this.memoDraft || '').trim();
+				if (!content) return;
+				if (!this.productPath) {
+					this.showToast(this.t('form.commerce.shopify.inventoryReceived.memoNoPath', undefined, 'Cannot save memo: product path is unknown.'));
+					return;
+				}
+				this.memoSaving = true;
+				try {
+					const payload = {
+						id: this.currentUserID || '',
+						name: this.currentUserDisplay || this.currentUserID || '',
+						at: new Date().toISOString(),
+						content: content,
+					};
+					await sdk.setNodeProperty(this.productPath, 'internal_memo', JSON.stringify(payload));
+					const refreshed = await sdk.getNode(this.productPath);
+					if (refreshed) this.node = refreshed;
+					this.loadMemoFromNode();
+					this.memoMode = 'view';
+					this.memoDraft = '';
+				} catch (err) {
+					this.showToast(err && err.message ? err.message : String(err));
+				} finally {
+					this.memoSaving = false;
+				}
+			},
+
+			applyLocalization(loc) {
+				if (!loc || typeof loc !== 'object') return;
+				this.localization.locale = loc.locale || '';
+				this.localization.timeZone = loc.timeZone || '';
+				this.localization.numberFormat = loc.numberFormat || '';
+				this.localization.currency = loc.currency || '';
+				if (this.localization.locale) {
+					document.documentElement.setAttribute('lang', this.localization.locale);
+				}
+				this.loadMessages();
+				this.updateDocumentTitle();
+			},
+
+			async loadMessages() {
+				try {
+					const res = await sdk.getI18nMessages(I18N_PREFIX);
+					const messages = (res && res.messages && typeof res.messages === 'object') ? res.messages : {};
+					if (res && res.locale) this.localization.locale = res.locale;
+					this.i18n.messages = messages;
+					this.i18n.revision++;
+				} catch (_) {
+					// Leave existing messages in place; fall back to literals.
+				}
+			},
+
+			updateDocumentTitle() {
+				const title = this.t('form.commerce.shopify.inventoryReceived.title', undefined, 'Receive Confirmation');
+				document.title = (this.product && this.product.title) ? (title + ' — ' + this.productTitle) : title;
+			},
+
+			// ----------------------------------------------------------
+			// Lifecycle
+			// ----------------------------------------------------------
+			onMounted() {
+				sdk
+					.on('context', (payload) => this.handleContext(payload))
+					.on('localization', (loc) => this.applyLocalization(loc))
+					.on('standalone', () => { if (this.view === 'loading') this.view = 'standalone'; })
+					.on('ready', () => { this.i18n.revision++; })
+					.start();
+			},
+			onUnmount() {
+				sdk.stop();
+				if (this._toastTimer) clearTimeout(this._toastTimer);
+			},
+
+			showToast(message) {
+				this.toastMessage = message || '';
+				if (this._toastTimer) clearTimeout(this._toastTimer);
+				this._toastTimer = setTimeout(() => { this.toastMessage = ''; }, 4000);
+			},
+
+			showError(message) {
+				this.errorMessage = message || this.t('form.commerce.shopify.common.unexpectedError', undefined, 'An unexpected error occurred.');
+				this.view = 'error';
+			},
+
+			// ----------------------------------------------------------
+			// Context handling
+			// ----------------------------------------------------------
+			async handleContext(ctx) {
+				if (!ctx || ctx.mode !== 'task' || !ctx.task) {
+					if (!this.productLoaded) {
+						this.showError(this.t('form.commerce.shopify.inventoryReceived.mustOpenFromTask', undefined, 'This form must be opened from a Task.'));
+					}
+					return;
+				}
+
+				this.task = Object.assign({}, ctx.task);
+				this.currentUserID = (ctx.currentUser && ctx.currentUser.id) || '';
+				this.currentUserDisplay = (ctx.currentUser && ctx.currentUser.displayName) || this.currentUserID;
+				this.refreshAssigneeDisplay();
+
+				if (this.productLoaded) return;
+				this.productLoaded = true;
+				try {
+					await this.loadProduct();
+					this.view = 'content';
+				} catch (err) {
+					this.productLoaded = false;
+					this.showError(err && err.message ? err.message : String(err));
+				}
+			},
+
+			async loadProduct() {
+				const taskInfo = await sdk.getTaskWithVariables();
+				const variables = (taskInfo && Array.isArray(taskInfo.variables)) ? taskInfo.variables : [];
+				const variableMap = {};
+				for (const v of variables) {
+					if (v && v.name) variableMap[v.name] = v.value;
+				}
+
+				const productPath = String(variableMap.productPath || '');
+				const productID = String(variableMap.productID || '');
+
+				if (!productPath) {
+					throw new Error(this.t('form.commerce.shopify.inventoryReceived.noProductPath', undefined, 'Process variable "productPath" is not set on this task.'));
+				}
+
+				const [node, productJSONText, configText] = await Promise.all([
+					sdk.getNode(productPath),
+					sdk.readNodeText(productPath),
+					sdk.readNodeText('/etc/commerce/config/shopify.yml').catch(() => ''),
+				]);
+
+				if (!node) throw new Error(this.t('form.commerce.shopify.inventoryReceived.productNotFound', { path: productPath }, 'Product not found: {path}'));
+
+				let product;
+				try {
+					product = JSON.parse(productJSONText);
+				} catch (err) {
+					throw new Error(this.t('form.commerce.shopify.inventoryReceived.productParseFailed', { detail: (err && err.message ? err.message : String(err)) }, 'Failed to parse product JSON: {detail}'));
+				}
+
+				this.node = node;
+				this.product = product;
+				this.productPath = productPath;
+				this.itemId = String(variableMap.inventoryItemId || '');
+				this.variantTitle = String(variableMap.variantTitle || '');
+				this.imageFailed = false;
+
+				// The order to receive: read the last_orders entry the review task wrote.
+				const lastOrder = this.readLastOrder(node, this.itemId);
+				this.orderedAt = lastOrder.at;
+				this.orderedQty = lastOrder.qty;
+				// Default the received quantity to what was ordered (the common case:
+				// full delivery). The operator lowers it for a partial receipt.
+				this.receivedQty = (lastOrder.qty != null) ? lastOrder.qty : 0;
+				// Received date defaults to today in the viewer's zone.
+				this.receivedDate = sdk.todayLocalDate(this.localization);
+				// Shared product memo (same internal_memo the reorder form manages).
+				this.loadMemoFromNode();
+
+				const shopDomain = sdk.readYamlScalar(configText, 'shopDomain');
+				const idForURL = productID || (product && product.id != null ? String(product.id) : '');
+				this.shopifyURL = (shopDomain && idForURL)
+					? 'https://' + shopDomain + '/admin/products/' + encodeURIComponent(idForURL)
+					: '';
+
+				this.updateDocumentTitle();
+			},
+
+			// Read the durable "last order" reference for an inventory item from the
+			// product node's commerce:reorder_last_orders JSON map ({ "<itemId>": { at, qty } }).
+			readLastOrder(node, itemId) {
+				const raw = sdk.getStringProp(node, 'commerce:reorder_last_orders');
+				if (!raw || !itemId) return { at: '', qty: null };
+				try {
+					const map = JSON.parse(raw);
+					const entry = map && map[itemId];
+					if (entry && typeof entry === 'object') {
+						return {
+							at: entry.at || '',
+							qty: (entry.qty != null && entry.qty !== '') ? Number(entry.qty) : null,
+						};
+					}
+				} catch (_) {
+					// Unparseable → treat as no history.
+				}
+				return { at: '', qty: null };
+			},
+
+			// ----------------------------------------------------------
+			// User actions
+			// ----------------------------------------------------------
+			openShopify() {
+				if (!this.shopifyURL) return;
+				window.open(this.shopifyURL, '_blank', 'noopener,noreferrer');
+			},
+
+			async refreshAssigneeDisplay() {
+				const assignee = this.taskAssignee;
+				if (!assignee || assignee === this.currentUserID) {
+					this.assigneeDisplay = '';
+					return;
+				}
+				const cached = this._assigneeDisplayCache[assignee];
+				if (cached) {
+					this.assigneeDisplay = cached;
+					return;
+				}
+				try {
+					const user = await sdk.getUser(assignee);
+					const display = (user && user.displayName) || assignee;
+					this._assigneeDisplayCache[assignee] = display;
+					if (this.taskAssignee === assignee) {
+						this.assigneeDisplay = display;
+					}
+				} catch (_) {
+					if (this.taskAssignee === assignee) {
+						this.assigneeDisplay = assignee;
+					}
+				}
+			},
+
+			// Confirm the receipt: write the received quantity + received date + operator to
+			// the product node's commerce:reorder_receipt map (a PER-ITEM map; a NODE property,
+			// not a process variable — a form's setProcessVariables has REPLACE semantics and
+			// would drop the sweep's variables), then complete. The receipt-confirmation service
+			// reads THIS item's entry, merges it into commerce:reorder_last_orders[itemId], and
+			// clears it. (Notes are kept in the shared internal_memo, not on the receipt.)
+			async onConfirmReceipt() {
+				if (this.actionPending) return;
+				const qty = Math.round(Number(this.receivedQty) || 0);
+				if (qty < 0) return;
+				if (!this.productPath || !this.itemId) return;
+				// Received date: the operator's local date → the ms-precision UTC instant of
+				// that day's start; fall back to now if blank.
+				const receivedAt = sdk.localDateToInstant(this.receivedDate, this.localization) || new Date().toISOString();
+				this.actionPending = true;
+				try {
+					let map = {};
+					try { map = JSON.parse(sdk.getStringProp(this.node, 'commerce:reorder_receipt') || '{}') || {}; } catch (e) {}
+					map[this.itemId] = { qty, at: receivedAt, by: this.currentUserID || '' };
+					await sdk.setNodeProperty(this.productPath, 'commerce:reorder_receipt', JSON.stringify(map));
+					await sdk.completeTask([]);
+					this.task = Object.assign({}, this.task, { completed: true });
+				} catch (err) {
+					this.showToast(err && err.message ? err.message : String(err));
+				} finally {
+					this.actionPending = false;
+				}
+			},
+		},
+	};
+
+VDOM.createApp(App).mount('#app');
+</script>
+</body>
+</html>

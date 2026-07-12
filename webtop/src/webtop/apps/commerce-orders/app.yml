@@ -1,0 +1,20 @@
+identifier: e5a3c6f8-7b1d-4e2a-9c04-1f6b8d3e5a7c
+title: Commerce Orders
+icon: assets/icons/icon.svg
+isAdminOnly: true
+# The order facet browser: a read-only search / drill-down over the mirrored
+# Shopify orders (/content/commerce/orders/raw, backend orders.groovy?view=browse).
+# Full-text search plus facets built from the auto-indexed order properties
+# (integration status / Shopify financial status / currency); the list is sorted
+# server-side by order number, descending. Read-only: opening a row hands the
+# order node to the Commerce Order editor through the shell's MIME association
+# (application/vnd.mintjams.commerce.order+json), the same path a double-click in
+# the Content Browser takes, so the editor stays the single write hub.
+actions:
+  open:
+    icon: open
+    label: Open
+minimumWidth: 760
+minimumHeight: 520
+customWindowControls: true
+singleton: true

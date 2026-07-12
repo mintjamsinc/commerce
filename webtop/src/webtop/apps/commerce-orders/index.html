@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no">
+	<title>Commerce Orders</title>
+
+	<!-- Bootstrap Icons (bundled with webtop) -->
+	<link rel="stylesheet" href="../../assets/vendor/bootstrap-icons/bootstrap-icons.min.css?v=__BUILD_VERSION__">
+
+	<!-- App CSS + shared Webtop design system -->
+	<link href="./assets/css/style.css?v=__BUILD_VERSION__" rel="stylesheet" />
+	<link href="../../assets/css/webtop-app.css?v=__BUILD_VERSION__" rel="stylesheet" />
+</head>
+
+<body>
+	<div id="app" v-cloak class="d-flex flex-column" @mounted="onMounted" @unmount="onUnmount">
+
+		<!-- Top toolbar -->
+		<nav class="nav-bar window-drag-region">
+			<div class="toolbar-group">
+				<button class="btn-icon" @click="load" :disabled="loading" :title="t('app.commerce-orders.toolbar.refresh')">
+					<i class="bi bi-arrow-clockwise" :class="{ spin: loading }"></i>
+				</button>
+				<button class="btn-icon" @click="clearFilters" :disabled="loading || (activeFilterCount === 0 && !filters.q)"
+					:title="t('app.commerce-orders.toolbar.clearFilters')">
+					<i class="bi bi-funnel"></i>
+				</button>
+			</div>
+
+			<div class="pb-searchbar">
+				<div class="input-group">
+					<input type="search" v-model="filters.q" :placeholder="t('app.commerce-orders.search.placeholder')"
+						@keyup.enter="search" />
+					<div class="input-group-actions">
+						<button class="input-group-btn" @click="search" :disabled="loading" :title="t('common.search')">
+							<i class="bi bi-search"></i>
+						</button>
+					</div>
+				</div>
+			</div>
+
+			<span class="nav-spacer"></span>
+
+			<div class="pane-toggles">
+				<button class="btn-icon pane-toggle-btn" :class="{ active: sidebarVisible }" @click="toggleSidebar" :title="t('app.commerce-orders.toolbar.toggleSidebar', undefined, 'Toggle filters')">
+					<i class="bi bi-layout-sidebar-inset"></i>
+				</button>
+			</div>
+
+			<!-- Window controls -->
+			<div class="window-controls">
+				<button class="btn-icon" @click="onMinimizeWindow" :title="t('common.minimize')"><i class="bi bi-dash-lg"></i></button>
+				<button class="btn-icon" @click="onToggleMaximizeWindow" :title="t('common.maximize')"><i class="bi bi-square"></i></button>
+				<button class="btn-icon window-control-close" @click="onCloseWindow" :title="t('common.close')"><i class="bi bi-x-lg"></i></button>
+			</div>
+		</nav>
+
+		<!-- Content -->
+		<div class="content-body">
+
+			<!-- Left: facets -->
+			<aside v-if="sidebarVisible" class="pb-facets island" :style="{ width: sidebarWidth + 'px' }">
+				<!-- Sales-fact filters: customer / product / ordered-at range -->
+				<div class="pb-facet-group">
+					<div class="pb-facet-title">{{ t('app.commerce-orders.filter.title') }}</div>
+
+					<div class="pb-sublabel">{{ t('app.commerce-orders.filter.customerId') }}</div>
+					<input class="wt w-100" type="text" v-model="filters.customerId"
+						:placeholder="t('app.commerce-orders.filter.customerIdPlaceholder')" @keyup.enter="search" />
+
+					<div class="pb-sublabel">{{ t('app.commerce-orders.filter.productId') }}</div>
+					<input class="wt w-100" type="text" v-model="filters.productId"
+						:placeholder="t('app.commerce-orders.filter.productIdPlaceholder')" @keyup.enter="search" />
+
+					<div class="pb-sublabel">{{ t('app.commerce-orders.filter.from') }}</div>
+					<input class="wt w-100" type="date" v-model="filters.from" />
+
+					<div class="pb-sublabel">{{ t('app.commerce-orders.filter.to') }}</div>
+					<input class="wt w-100" type="date" v-model="filters.to" />
+
+					<button class="wt wt-primary wt-slim pb-filter-apply" :disabled="loading" @click="search">
+						<i class="bi bi-search"></i> {{ t('common.search') }}
+					</button>
+				</div>
+
+				<div class="pb-facet-group">
+					<div class="pb-facet-title">{{ t('app.commerce-orders.facet.status') }}</div>
+					<button v-for="f in facetStatus" :key="'s-' + f.value" class="pb-facet"
+						:class="{ active: filters.status === f.value }" @click="toggleFacet('status', f.value)">
+						<span class="pb-facet-label">{{ f.value }}</span>
+						<span class="pb-facet-count">{{ f.count }}</span>
+					</button>
+					<div v-if="facetStatus.length === 0" class="pb-facet-empty">—</div>
+				</div>
+
+				<div class="pb-facet-group">
+					<div class="pb-facet-title">{{ t('app.commerce-orders.facet.financial') }}</div>
+					<button v-for="f in facetFinancial" :key="'fs-' + f.value" class="pb-facet"
+						:class="{ active: filters.financial === f.value }" @click="toggleFacet('financial', f.value)">
+						<span class="pb-facet-label">{{ f.value }}</span>
+						<span class="pb-facet-count">{{ f.count }}</span>
+					</button>
+					<div v-if="facetFinancial.length === 0" class="pb-facet-empty">—</div>
+				</div>
+
+				<div class="pb-facet-group">
+					<div class="pb-facet-title">{{ t('app.commerce-orders.facet.currency') }}</div>
+					<button v-for="f in facetCurrency" :key="'c-' + f.value" class="pb-facet"
+						:class="{ active: filters.currency === f.value }" @click="toggleFacet('currency', f.value)">
+						<span class="pb-facet-label">{{ f.value }}</span>
+						<span class="pb-facet-count">{{ f.count }}</span>
+					</button>
+					<div v-if="facetCurrency.length === 0" class="pb-facet-empty">—</div>
+				</div>
+			</aside>
+			<div v-if="sidebarVisible" class="sidebar-resize-handle" @mousedown="onSidebarResizeStart"></div>
+
+			<!-- Right: result list -->
+			<main class="content-main island">
+				<div v-if="loading && !loaded" class="pb-state"><div class="spinner"></div><span>{{ t('app.commerce-orders.state.loading') }}</span></div>
+
+				<template v-else>
+					<div class="pb-listhead">
+						<span class="pb-count">{{ t('app.commerce-orders.list.count', { start: pageStart, end: pageEnd, total: total }) }}</span>
+						<span v-if="capped" class="pb-capped" :title="t('app.commerce-orders.list.cappedTitle')">
+							<i class="bi bi-exclamation-triangle me-1"></i>{{ t('app.commerce-orders.list.capped') }}
+						</span>
+						<span class="nav-spacer"></span>
+						<button class="btn-icon" @click="prevPage" :disabled="!hasPrev || loading" :title="t('app.commerce-orders.list.prev')">
+							<i class="bi bi-chevron-left"></i>
+						</button>
+						<button class="btn-icon" @click="nextPage" :disabled="!hasNext || loading" :title="t('app.commerce-orders.list.next')">
+							<i class="bi bi-chevron-right"></i>
+						</button>
+					</div>
+
+					<div v-if="results.length === 0" class="pb-state">
+						<i class="bi bi-receipt"></i>
+						<span>{{ t('app.commerce-orders.state.empty') }}</span>
+					</div>
+
+					<div v-else class="pb-table-scroll">
+						<table class="wt w-100">
+							<thead>
+								<tr>
+									<th>{{ t('app.commerce-orders.col.orderNumber') }}</th>
+									<th>{{ t('app.commerce-orders.col.orderedAt') }}</th>
+									<th>{{ t('app.commerce-orders.col.email') }}</th>
+									<th class="pb-num">{{ t('app.commerce-orders.col.total') }}</th>
+									<th>{{ t('app.commerce-orders.col.status') }}</th>
+									<th>{{ t('app.commerce-orders.col.financial') }}</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr v-for="r in results" :key="r.path" class="pb-row" @dblclick="openOrder(r)">
+									<td>
+										<button class="pb-open" @click="openOrder(r)" :title="t('app.commerce-orders.action.open')">
+											{{ r.orderNumber ? ('#' + r.orderNumber) : '—' }}
+										</button>
+									</td>
+									<td class="pb-date" :class="{ 'text-muted': !(r.orderedAt) }">{{ r.orderedAt ? fmtDateTime(r.orderedAt) : '—' }}</td>
+									<td class="pb-email" :class="{ 'text-muted': !(r.customerEmail) }">{{ r.customerEmail || '—' }}</td>
+									<td class="pb-num">
+										<span class="pb-money">{{ fmtMoney(r.totalPrice) }}</span>
+										<span v-if="r.refundCount > 0" class="pb-refund"
+											:title="t('app.commerce-orders.total.refundedTitle', { count: r.refundCount })">
+											<i class="bi bi-arrow-counterclockwise me-1"></i>{{ fmtMoney(r.refundedAmount) }}
+										</span>
+									</td>
+									<td><span class="pb-status" :class="'st-' + (r.status || 'unknown')"><span :class="{ 'text-muted': !(r.status) }">{{ r.status || '—' }}</span></span></td>
+									<td><span class="pb-status" :class="'fs-' + (r.sourceStatus || 'unknown')"><span :class="{ 'text-muted': !(r.sourceStatus) }">{{ r.sourceStatus || '—' }}</span></span></td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+				</template>
+			</main>
+		</div>
+
+		<!-- Status bar -->
+		<div class="status-bar window-drag-region">
+			<div class="status-group">
+				<span v-if="total" class="status-item">{{ t('app.commerce-orders.statusbar.count', { total: total }) }}</span>
+			</div>
+			<span class="nav-spacer"></span>
+			<div class="status-group">
+				<span v-if="loading" class="status-item"><i class="bi bi-arrow-repeat me-1"></i>{{ t('app.commerce-orders.statusbar.loading') }}</span>
+				<span v-else class="status-item">{{ t('app.commerce-orders.statusbar.ready') }}</span>
+			</div>
+		</div>
+
+		<!-- Toast -->
+		<div v-if="toast" class="commerce-toast" :class="{ error: toastError }" role="alert">{{ toast }}</div>
+
+	</div>
+
+	<script type="module" src="./app.js?v=__BUILD_VERSION__"></script>
+</body>
+
+</html>

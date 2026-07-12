@@ -478,6 +478,43 @@ body {
 	border-color: var(--border-strong);
 }
 
+.btn-danger {
+	background: transparent;
+	color: var(--danger);
+	border-color: var(--border-strong);
+}
+
+.btn-danger:not(:disabled):hover {
+	background: var(--danger-soft);
+}
+
+.reject-panel {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	flex: 1;
+	max-width: 32rem;
+}
+
+.reject-panel textarea {
+	width: 100%;
+	min-height: 3.5rem;
+	padding: 0.5rem 0.75rem;
+	border: 1px solid var(--border-strong);
+	border-radius: var(--radius-sm);
+	background: var(--surface);
+	color: var(--text);
+	font-size: 13px;
+	resize: vertical;
+	box-sizing: border-box;
+}
+
+.reject-panel .reject-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.5rem;
+}
+
 .btn-secondary:not(:disabled):hover {
 	background: var(--surface-soft);
 }
@@ -692,14 +729,38 @@ body {
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 14.5a5 5 0 0 1 10 0 .5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5z"/></svg>
 					<span>{{ assignedNoticeText }}</span>
 				</span>
-				<!-- Assigned to me: Approve order -->
-				<button v-else
-					class="btn btn-primary" type="button"
-					:disabled="actionPending"
-					@click="onComplete">
-					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7 7a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.25 10.69l6.47-6.47a.75.75 0 0 1 1.06 0z"/></svg>
-					<span>{{ t('form.commerce.shopify.orderReview.approve', undefined, 'Approve order') }}</span>
-				</button>
+				<!-- Assigned to me: rejecting → reason (required) + confirm -->
+				<div v-else-if="rejectMode" class="reject-panel">
+					<textarea v-model="rejectReason"
+						:disabled="actionPending"
+						:placeholder="t('form.commerce.shopify.orderReview.rejectReasonPlaceholder', undefined, 'Reason for rejection (required) — sent to Shopify with the cancellation…')"></textarea>
+					<div class="reject-actions">
+						<button class="btn btn-secondary" type="button" :disabled="actionPending" @click="rejectMode = false">
+							<span>{{ t('form.commerce.shopify.common.cancel', undefined, 'Cancel') }}</span>
+						</button>
+						<button class="btn btn-danger" type="button"
+							:disabled="actionPending || !rejectReason.trim()"
+							@click="onReject">
+							<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.22 4.22a.75.75 0 0 1 1.06 0L8 6.94l2.72-2.72a.75.75 0 1 1 1.06 1.06L9.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L8 9.06l-2.72 2.72a.75.75 0 0 1-1.06-1.06L6.94 8 4.22 5.28a.75.75 0 0 1 0-1.06z"/></svg>
+							<span>{{ t('form.commerce.shopify.orderReview.rejectConfirm', undefined, 'Reject & cancel order') }}</span>
+						</button>
+					</div>
+				</div>
+				<!-- Assigned to me: Approve / Reject -->
+				<template v-else>
+					<button class="btn btn-danger" type="button"
+						:disabled="actionPending"
+						@click="rejectMode = true">
+						<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.22 4.22a.75.75 0 0 1 1.06 0L8 6.94l2.72-2.72a.75.75 0 1 1 1.06 1.06L9.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L8 9.06l-2.72 2.72a.75.75 0 0 1-1.06-1.06L6.94 8 4.22 5.28a.75.75 0 0 1 0-1.06z"/></svg>
+						<span>{{ t('form.commerce.shopify.orderReview.reject', undefined, 'Reject') }}</span>
+					</button>
+					<button class="btn btn-primary" type="button"
+						:disabled="actionPending"
+						@click="onComplete">
+						<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7 7a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.25 10.69l6.47-6.47a.75.75 0 0 1 1.06 0z"/></svg>
+						<span>{{ t('form.commerce.shopify.orderReview.approve', undefined, 'Approve order') }}</span>
+					</button>
+				</template>
 			</div>
 		</footer>
 
@@ -758,6 +819,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.75/
 				errorMessage: '',
 				toastMessage: '',
 				actionPending: false,
+				rejectMode: false, rejectReason: '',
 
 				// Effective localization pushed by the host (inside the context
 				// payload and on every 'localization-changed' event). Read by t()
@@ -973,8 +1035,8 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.75/
 			},
 
 			// Render a screening reason descriptor ({ code, params }) to localized
-			// text. screenOrder.groovy emits raw values (numbers, currency code,
-			// status) rather than pre-built text, so money/numbers follow the
+			// text. The order-screening service emits raw values (numbers, currency
+			// code, status) rather than pre-built text, so money/numbers follow the
 			// reviewer's locale and the wording comes from the i18n bundle. A bare
 			// string is a legacy reason from an in-flight task — passed through.
 			reasonText(reason) {
@@ -1124,7 +1186,7 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.75/
 					throw new Error(this.t('form.commerce.shopify.orderReview.noOrderPath', undefined, 'Process variable "orderPath" is not set on this task.'));
 				}
 
-				// Reason descriptors produced by screenOrder.groovy, carried on the
+				// Reason descriptors produced by the order-screening service, carried on the
 				// process variable. Kept as { code, params } objects (or, for
 				// in-flight tasks predating the descriptor format, plain strings);
 				// rendered to localized text by reasonText().
@@ -1281,9 +1343,39 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.75/
 				if (this.actionPending) return;
 				this.actionPending = true;
 				try {
+					// Explicit decision so the flow's gateway routes to the approve
+					// branch (the absent-decision default is also "approved").
+					await sdk.setNodeProperty(this.orderPath, 'commerce:review_decision', 'approved');
+					// Record WHO reviewed. The BPMN service task that acts on the
+					// decision cannot see the completing operator, so capture it here
+					// for the outbound audit's actor.
+					await sdk.setNodeProperty(this.orderPath, 'commerce:reviewed_by', this.currentUserID || '');
 					await sdk.completeTask([]);
 					// The parent typically clears the form after completion. If we
 					// remain visible, fall back to the completed notice.
+					this.task = Object.assign({}, this.task, { completed: true });
+				} catch (err) {
+					this.showToast(err && err.message ? err.message : String(err));
+				} finally {
+					this.actionPending = false;
+				}
+			},
+
+			// Reject: the reason is REQUIRED and rides to Shopify as the staff note
+			// of the order cancellation (the flow's cancel service task).
+			async onReject() {
+				if (this.actionPending) return;
+				const reason = (this.rejectReason || '').trim();
+				if (!reason) return;
+				this.actionPending = true;
+				try {
+					await sdk.setNodeProperty(this.orderPath, 'commerce:review_decision', 'rejected');
+					await sdk.setNodeProperty(this.orderPath, 'commerce:cancel_reason', reason);
+					// Record WHO reviewed. The cancelOrder BPMN service task cannot see
+					// the completing operator, so capture it here for the outbound
+					// audit's actor.
+					await sdk.setNodeProperty(this.orderPath, 'commerce:reviewed_by', this.currentUserID || '');
+					await sdk.completeTask([]);
 					this.task = Object.assign({}, this.task, { completed: true });
 				} catch (err) {
 					this.showToast(err && err.message ? err.message : String(err));

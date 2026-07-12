@@ -1,0 +1,149 @@
+/* Commerce Reconcile app — app-specific styles.
+ *
+ * Toolbar, status bar, inputs, buttons, dialogs and theme tokens come from the
+ * shared webtop-app.css. These rules add the reconciliation console pieces
+ * (run trigger sidebar, run-history list, status pills, toast), reusing
+ * design-system tokens so the app stays consistent across themes. */
+
+:root {
+	--navbar-height: 2.5rem;
+	--statusbar-height: 1.75rem;
+	--success-color: var(--primary-color);
+}
+
+[v-cloak] { display: none !important; }
+#app { height: 100%; }
+
+/* ---- Admin API banner (shown only while the Admin API is not configured) --- */
+.imp-banner {
+	display: flex; align-items: center; gap: 0.5rem;
+	margin-bottom: 0.75rem;
+	padding: 0.5rem 0.75rem; border-radius: 0.45rem; font-size: 12px;
+	border: 1px solid var(--navbar-border-color);
+}
+.imp-banner.warn { background: rgb(from var(--warning-color) r g b / 0.1); color: var(--warning-color); border-color: rgb(from var(--warning-color) r g b / 0.3); }
+
+/* ---- Toolbar / status bar (aligned with the Commerce app) ----------------- */
+nav.nav-bar {
+	display: flex; align-items: center; gap: 0.5rem;
+	margin: -1rem -1rem 0; padding: 1rem 1.5rem 0.75rem;
+	color: var(--navbar-color) !important; white-space: nowrap; user-select: none;
+	position: relative; z-index: 10;
+}
+.nav-spacer { flex: 1; min-width: 1rem; }
+.toolbar-group {
+	display: inline-flex; align-items: center; gap: 0.5rem;
+	padding: 0.25rem 0.5rem;
+	background-color: var(--window-controls-bg);
+	border: 1px solid var(--window-controls-border-color);
+	border-radius: 9999px;
+}
+
+/* History window selector — the eip-console toolbar range design (24h/7d/30d). */
+.recon-range {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.15rem;
+	margin-left: 0.5rem;
+}
+.recon-range button {
+	border: none;
+	background: transparent;
+	color: var(--text-soft-color);
+	font-size: 12px;
+	font-weight: 600;
+	padding: 0.15rem 0.5rem;
+	border-radius: 0.35rem;
+	cursor: pointer;
+}
+.recon-range button.active {
+	background: color-mix(in srgb, var(--primary-color) 18%, transparent);
+	color: var(--primary-color);
+}
+
+.status-bar {
+	display: flex; align-items: center; gap: 0.5rem; height: var(--statusbar-height);
+	margin: 0 -1rem -1rem; padding: 0 1rem; color: var(--navbar-color);
+	font-size: 11px; white-space: nowrap; user-select: none;
+}
+.status-group { display: inline-flex; align-items: center; gap: 0.25rem; }
+.status-item { padding: 0 0.5rem; }
+.status-ok { color: var(--success-color); }
+.status-err { color: var(--danger-color); }
+
+/* ---- Body ----------------------------------------------------------------- */
+.content-body { display: flex; flex: 1; min-height: 0; position: relative; gap: 0.25rem; }
+.content-main {
+	display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0;
+	overflow: hidden;
+}
+
+/* ---- Two-pane left rail: run triggers. Resizable via the drag handle;
+ *      width is persisted per user. ------------------------------------------ */
+.ops-sidebar {
+	flex: none; min-width: 0;
+	display: flex; flex-direction: column; gap: 1rem;
+	overflow-y: auto; min-height: 0;
+}
+.sidebar-resize-handle {
+	width: 4px;
+	cursor: col-resize;
+	background-color: transparent;
+	flex-shrink: 0;
+	position: relative;
+	z-index: 2;
+	transition: background-color 0.15s;
+}
+.sidebar-resize-handle:hover,
+.sidebar-resize-handle:active { background-color: var(--selection-rect-border); }
+.ops-sidebar .imp-banner { margin-bottom: 0; }
+
+.property-group { display: flex; flex-direction: column; gap: 0.75rem; }
+.property-group-title {
+	font-weight: 700; text-transform: uppercase; color: var(--text-soft-color);
+	padding-bottom: 0.25rem; border-bottom: 1px solid var(--navbar-border-color);
+}
+.property-hint { line-height: 1.6; color: var(--text-soft-color); }
+.property-label { display: block; font-size: 12px; color: var(--text-soft-color); margin-bottom: 0.125rem; padding-left: 0.125rem; }
+
+/* Run-trigger fields (commerce-import sidebar layout): the target select stacks
+ * above the run button. */
+.ops-filter { display: flex; flex-direction: column; align-items: stretch; gap: 0.5rem; }
+.ops-field { min-width: 0; }
+
+/* ---- Run-history list (commerce-events list styling; read-only rows) ------- */
+/* List header bar above the rows (commerce-oplog design): hosts the CSV export. */
+.ops-list-head {
+	display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem;
+	flex-shrink: 0; height: var(--navbar-height); padding: 0 0.75rem;
+	border-bottom: 1px solid var(--navbar-border-color);
+}
+.content-list { flex: 1; min-width: 0; min-height: 0; overflow: auto; }
+.content-list table { border-collapse: collapse; width: 100%; user-select: none; }
+.content-list table thead th { position: sticky; top: 0; z-index: 1; }
+.content-list th.text-start, .content-list td.text-start { text-align: left; }
+.content-list th.text-center, .content-list td.text-center { text-align: center; }
+.content-list .item:nth-child(even) { background-color: var(--item-even-bg); }
+.content-list .item-empty td { padding: 1rem 0.5rem; text-align: center; color: var(--text-muted-color); }
+table.wt tbody td { border-bottom: 1px solid var(--navbar-border-color); }
+
+/* ---- Status pills ---------------------------------------------------------- */
+.ops-pill {
+	display: inline-block; padding: 0 0.4rem; border-radius: 9999px;
+	font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em;
+	background: var(--window-controls-bg); color: var(--text-soft-color);
+}
+.ops-pill.st-ok { background: rgb(from var(--success-color) r g b / 0.15); color: var(--success-color); }
+.ops-pill.st-error { background: rgb(from var(--danger-color) r g b / 0.15); color: var(--danger-color); }
+
+/* Spinner / spin. */
+.spin { animation: ops-spin 0.8s linear infinite; }
+@keyframes ops-spin { to { transform: rotate(360deg); } }
+
+/* Transient toast. */
+.commerce-toast {
+	position: fixed; bottom: 2.75rem; left: 50%; transform: translateX(-50%);
+	padding: 0.55rem 1rem; border-radius: 0.5rem; background: #1f2937; color: #f8fafc;
+	font-size: 0.8125rem; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25); z-index: 1000; max-width: 80%;
+}
+.commerce-toast.error { background: #dc2626; color: #fff; }

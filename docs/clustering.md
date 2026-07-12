@@ -25,8 +25,10 @@ try {
 }
 ```
 
-- In a **standalone** deployment the lease is granted immediately
-  (no-op), so behaviour is unchanged.
+- In a **standalone** deployment the lease is held in an in-JVM lock
+  table, so overlapping executions on the single node (a timer tick
+  racing an async kick of the same task) exclude each other exactly as
+  cluster nodes do.
 - In a **cluster**, exactly one node runs the task per tick; the other
   nodes log the skip at INFO. The lease is released on completion; the
   TTL only bounds how long a crashed node can hold the lock, and is
@@ -42,17 +44,40 @@ try {
 |-----------|--------|-------|-----|
 | `commerce-reconcile` | `commerce/reconcile.groovy` | 1 h | 30 min |
 | `commerce-replay` | `commerce/replayEvents.groovy` | 5 min | 10 min |
-| `commerce-crm-segment` | `commerce/segmentCustomers.groovy` | 24 h | 60 min |
-| `commerce-crm-abandoned` | `commerce/abandonedCheckouts.groovy` | 30 min | 30 min |
 | `commerce-catalog-publish` | `commerce/publishCatalog.groovy` | 5 min | 10 min |
-| `commerce-pages-publish` | `commerce/publishPages.groovy` | 5 min | 10 min |
-| `commerce-velocity` | `shopify/computeVelocity.groovy` | 6 h | 30 min |
-| `commerce-reorder` | `shopify/proposeReorders.groovy` | 24 h | 30 min |
 | `commerce-task-sla` | `shopify/scanTaskSla.groovy` | 15 min | 15 min |
+| `commerce-inventory-alert-sweep` | `shopify/sweepInventoryAlerts.groovy` | 15 s (+ async kick) | 2 min |
+| `commerce-sales-materialize` | `commerce/sweepSalesFacts.groovy` | 30 s (+ async kick) | 5 min |
+| `commerce-sales-backfill` | `commerce/seedSalesFactBackfill.groovy` | chained kick (orders backfill completion) | 30 min |
+| `commerce-reconcile-scheduler` | `commerce/scheduleReconcile.groovy` | 1 min | 2 min |
+| `commerce-shopify-bulk-lane` | `shopify/runBulkLane.groovy` | 30 s | 1 min |
+| `commerce-shopify-bulk-cms-lane` | `shopify/runBulkCmsLane.groovy` | 30 s | 1 min |
+| `commerce-shopify-bulk-watchdog` | `shopify/watchdogBulkJobs.groovy` | 5 min | 1 min |
+| `commerce-migrations` | `commerce/runMigrations.groovy` | once per boot | 30 min |
 
 Webhook/event-driven routes (`commerce-ingest`, the `shopify-*` routes,
 `health`, etc.) are deliberately **not** guarded: they must run on the
 node that received the request.
+
+The three `commerce-shopify-bulk-*` locks are the **Shopify Bulk job
+broker**, which serializes bulk work by data *domain* across two
+independently-locked lanes plus a watchdog:
+
+- `commerce-shopify-bulk-lane` — the **Shopify producer** lane. A
+  *singleton*: Shopify permits only one bulk query RUNNING per app, so
+  this lane starts at most one bulk at a time and never re-fetches a
+  domain that is still awaiting/undergoing CMS ingest.
+- `commerce-shopify-bulk-cms-lane` — the **CMS consumer** lane, on its
+  own lock. It drains completed (READY) jobs, running the heavy
+  download+reconcile **in parallel for disjoint domains** and serially
+  only when domains overlap.
+- `commerce-shopify-bulk-watchdog` — recovers a lost
+  `bulk_operations/finish` webhook and enforces the absolute RUNNING
+  hard cap.
+
+Splitting the producer and consumer onto separate locks is what lets a
+new bulk export and an unrelated-domain ingest proceed at the same time.
+See [reconciliation.md](reconciliation.md).
 
 Two cluster notes:
 

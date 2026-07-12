@@ -1,0 +1,20 @@
+identifier: 9e43ab8f-64c4-48f4-b8b5-521c40699e6d
+title: Commerce Customers
+icon: assets/icons/icon.svg
+isAdminOnly: true
+# The customer facet browser: a read-only search / drill-down over the mirrored
+# Shopify customers (/content/commerce/customers, backend crm.groovy?view=browse).
+# Full-text search plus facets built from the auto-indexed customer properties
+# (tags / marketing consent / Shopify source status). Read-only: opening a row
+# hands the customer node to the Commerce Customer editor through the shell's
+# MIME association (application/vnd.mintjams.commerce.customer+json), the same
+# path a double-click in the Content Browser takes, so the editor stays the
+# single write hub.
+actions:
+  open:
+    icon: open
+    label: Open
+minimumWidth: 760
+minimumHeight: 520
+customWindowControls: true
+singleton: true

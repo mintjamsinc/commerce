@@ -1,0 +1,53 @@
+{
+	"app.commerce-products.title": "Commerce Products",
+
+	"app.commerce-products.toolbar.refresh": "Refresh",
+	"app.commerce-products.toolbar.clearFilters": "Clear search & filters",
+	"app.commerce-products.toolbar.toggleSidebar": "Toggle filters",
+
+	"app.commerce-products.search.placeholder": "Search products…",
+
+	"app.commerce-products.sort.title": "Sort",
+	"app.commerce-products.sort.updated": "Last updated",
+	"app.commerce-products.sort.sales": "Top gross sales",
+	"app.commerce-products.sort.quantity": "Best selling",
+	"app.commerce-products.sort.windowTitle": "Sales window",
+	"app.commerce-products.sort.window.all": "All time",
+	"app.commerce-products.sort.window.d30": "Last 30 days",
+	"app.commerce-products.sort.window.d90": "Last 90 days",
+	"app.commerce-products.sort.window.d365": "Last 365 days",
+
+	"app.commerce-products.facet.sourceStatus": "Shopify status",
+	"app.commerce-products.facet.vendor": "Vendor",
+	"app.commerce-products.facet.productType": "Product type",
+	"app.commerce-products.facet.tags": "Tags",
+	"app.commerce-products.facet.status": "Processing status",
+
+	"app.commerce-products.state.loading": "Loading products…",
+	"app.commerce-products.state.empty": "No products match the current search / filters.",
+
+	"app.commerce-products.list.count": "{start}–{end} of {total}",
+	"app.commerce-products.list.capped": "Large catalog — counts are approximate",
+	"app.commerce-products.list.cappedTitle": "The scan stopped at the safety cap; narrow the filters for exact counts.",
+	"app.commerce-products.list.prev": "Previous page",
+	"app.commerce-products.list.next": "Next page",
+
+	"app.commerce-products.col.title": "Product",
+	"app.commerce-products.col.status": "Status",
+	"app.commerce-products.col.vendor": "Vendor",
+	"app.commerce-products.col.productType": "Type",
+	"app.commerce-products.col.tags": "Tags",
+	"app.commerce-products.col.qtySold": "Qty sold",
+	"app.commerce-products.col.netSales": "Net sales",
+	"app.commerce-products.col.grossSales": "Gross sales",
+	"app.commerce-products.col.updatedAt": "Updated",
+
+	"app.commerce-products.action.open": "Open in the product editor",
+
+	"app.commerce-products.statusbar.loading": "Loading…",
+	"app.commerce-products.statusbar.count": "{total} products",
+	"app.commerce-products.statusbar.ready": "Ready",
+
+	"app.commerce-products.err.loadFailed": "Could not load products.",
+	"app.commerce-products.err.noEditor": "The Commerce Product editor is not installed."
+}

@@ -1,0 +1,66 @@
+{
+	"app.commerce-oplog.title": "Commerce Operation Log",
+
+	"app.commerce-oplog.toolbar.refresh": "Refresh",
+	"app.commerce-oplog.toolbar.toggleSidebar": "Toggle filters",
+	"app.commerce-oplog.toolbar.toggleDetail": "Toggle detail",
+
+	"app.commerce-oplog.download": "Download CSV",
+
+	"app.commerce-oplog.filter.actor": "User",
+	"app.commerce-oplog.filter.actorPlaceholder": "Search users…",
+	"app.commerce-oplog.filter.actorClear": "Clear selection",
+	"app.commerce-oplog.filter.from": "Period (from)",
+	"app.commerce-oplog.filter.to": "Period (to)",
+
+	"app.commerce-oplog.noOperations": "No operations match the filter.",
+
+	"app.commerce-oplog.col.when": "When",
+	"app.commerce-oplog.col.actor": "Actor",
+	"app.commerce-oplog.col.target": "Target",
+	"app.commerce-oplog.col.identifier": "Identifier",
+	"app.commerce-oplog.col.action": "Action",
+	"app.commerce-oplog.col.status": "Result",
+	"app.commerce-oplog.col.error": "Error",
+
+	"app.commerce-oplog.entity.product": "Product",
+	"app.commerce-oplog.entity.customer": "Customer",
+	"app.commerce-oplog.entity.order": "Order",
+	"app.commerce-oplog.entity.inventory_item": "Inventory item",
+	"app.commerce-oplog.entity.webhook": "Webhook",
+
+	"app.commerce-oplog.action.inventory": "Update inventory quantity",
+	"app.commerce-oplog.action.price": "Update product price",
+	"app.commerce-oplog.action.publish": "Publish product",
+	"app.commerce-oplog.action.product_publish": "Publish product",
+	"app.commerce-oplog.action.product_unpublish": "Unpublish product",
+	"app.commerce-oplog.action.product_update": "Update product",
+	"app.commerce-oplog.action.customer_update": "Update customer",
+	"app.commerce-oplog.action.order_update": "Update order",
+	"app.commerce-oplog.action.media_add": "Add product media",
+	"app.commerce-oplog.action.media_delete": "Delete product media",
+	"app.commerce-oplog.action.media_reorder": "Reorder product media",
+	"app.commerce-oplog.action.media_updateAlt": "Update product media alt",
+	"app.commerce-oplog.action.media_op": "Update product media",
+	"app.commerce-oplog.action.metafields": "Update metafields",
+	"app.commerce-oplog.action.order_cancel": "Cancel order",
+	"app.commerce-oplog.action.incoming_transfer": "Create incoming transfer",
+	"app.commerce-oplog.action.receive_transfer": "Receive inventory",
+	"app.commerce-oplog.action.fulfillment": "Record fulfillment",
+	"app.commerce-oplog.action.webhook_sync": "Register webhooks",
+
+	"app.commerce-oplog.status.ok": "Success",
+	"app.commerce-oplog.status.failed": "Failed",
+	"app.commerce-oplog.status.dryrun": "Dry run",
+	"app.commerce-oplog.status.skipped": "Skipped",
+
+	"app.commerce-oplog.detail.title": "Detail",
+	"app.commerce-oplog.detail.empty": "Select a row to see its details.",
+	"app.commerce-oplog.detail.operation": "Operation",
+
+	"app.commerce-oplog.statusbar.working": "Working…",
+	"app.commerce-oplog.statusbar.count": "{count} operations",
+	"app.commerce-oplog.statusbar.ready": "Ready",
+
+	"app.commerce-oplog.loadFailed": "Could not load the operation log."
+}

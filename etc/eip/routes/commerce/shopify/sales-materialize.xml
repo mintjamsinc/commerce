@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<camel>
+
+    <!-- Swallow drain failures: the sales-fact drainer must never surface errors. -->
+    <routeConfiguration id="commerce-sales-materialize-error-handler">
+        <onException>
+            <exception>java.lang.Exception</exception>
+            <handled>
+                <constant>true</constant>
+            </handled>
+            <log message="commerce-sales-materialize error: ${exception.message}"
+                 loggingLevel="WARN"/>
+        </onException>
+    </routeConfiguration>
+
+    <!--
+      Sales-fact drain heartbeat. Fires on a short period (after a warm-up) and runs
+      the sales-fact sweep task as the service user: it recomputes both sales-fact grains
+      (/content/commerce/sales/{orders,lines}/index) for the orders marked pending.
+
+      A fact is a PURE function of the order BODY + its refund BODIES (SalesFacts.recompute →
+      Sales.compute), so ONLY the paths that change a body enqueue: the order-paid route (new order body),
+      the order-updated route (edit/cancel/financial_status → body refresh), the refund-created route (new refund
+      body, enqueues the parent order), the bulk-result importer (bulk body), and the one-time backfill
+      seed. recordRefund/cancelOrder/recordFulfillment only set typed PROPS the computer does
+      not read, and any real change fires orders/updated which already enqueues — so they intentionally
+      do NOT enqueue (avoids redundant recompute). Single-writer, serialized cluster-wide by a
+      cluster.tryLock lease inside the drainer. This timer is the backstop; the direct kick is the fast path.
+    -->
+    <route id="commerce-sales-materialize" routeConfigurationId="commerce-sales-materialize-error-handler">
+        <from uri="timer:commerce-sales-materialize?period=30000&amp;delay=60000"/>
+
+        <setHeader name="runAs">
+            <constant>commerce-service-user</constant>
+        </setHeader>
+
+        <toD uri="cms:/etc/commerce/scripts/sweepSalesFacts.groovy"/>
+    </route>
+
+    <!--
+      Immediate drain: the body/refund source paths kick this asynchronously (from order-paid / order-updated / refund-created via
+      IntegrationAPI.sendAsync) right after enqueueing an order, so the fact recompute runs within
+      milliseconds instead of waiting for the next timer heartbeat. (recordRefund / cancelOrder /
+      recordFulfillment do NOT kick — see the timer-route note above.) The drainer's cluster lease
+      coalesces a burst of kicks into a single drain; the timer above stays as a backstop.
+    -->
+    <route id="commerce-sales-materialize-kick" routeConfigurationId="commerce-sales-materialize-error-handler">
+        <from uri="direct:commerce-sales-materialize"/>
+
+        <choice>
+            <when>
+                <simple>${header.runAs} == null || ${header.runAs} == ''</simple>
+                <setHeader name="runAs">
+                    <constant>commerce-service-user</constant>
+                </setHeader>
+            </when>
+        </choice>
+
+        <toD uri="cms:/etc/commerce/scripts/sweepSalesFacts.groovy"/>
+    </route>
+
+</camel>

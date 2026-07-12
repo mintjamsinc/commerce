@@ -74,7 +74,7 @@
 			</aside>
 
 			<!-- Sidebar resize handle (drag to adjust the nav width) -->
-			<div v-if="view === 'ready' && sidebarVisible" class="settings-nav-resize-handle"
+			<div v-if="view === 'ready' && sidebarVisible" class="sidebar-resize-handle"
 				@mousedown="onSidebarResizeStart"></div>
 
 			<div class="content-main island">
@@ -101,29 +101,9 @@
 							<div class="commerce-lede">{{ t('app.commerce.shop.lede') }}</div>
 						</div>
 
-						<!-- Webhook: always required, independent of the Admin API. -->
+						<!-- Admin API connection. REQUIRED — active once all four fields are filled.
+						     No inner header: the tab itself is "Admin API". -->
 						<div class="property-group">
-							<div class="property-group-title">{{ t('app.commerce.shop.webhook.groupTitle') }}</div>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.shop.webhookSecret.label') }}</label>
-								<div class="input-group">
-									<input :type="reveal.webhookSecret ? 'text' : 'password'"
-										autocomplete="off" v-model="shop.webhookSecret">
-									<div class="input-group-actions">
-										<button class="input-group-btn" @click="reveal.webhookSecret = !reveal.webhookSecret"
-											:title="reveal.webhookSecret ? t('app.commerce.field.hide') : t('app.commerce.field.show')">
-											<i class="bi" :class="reveal.webhookSecret ? 'bi-eye' : 'bi-eye-slash'"></i>
-										</button>
-									</div>
-								</div>
-							</div>
-						</div>
-
-						<!-- Admin API: REQUIRED. Active once all four connection fields are filled. -->
-						<div class="property-group">
-							<div class="property-group-title">{{ t('app.commerce.shop.adminApi.groupTitle') }}</div>
-							<div class="property-hint">{{ t('app.commerce.shop.adminApi.hint') }}</div>
-
 							<div class="property-row">
 								<label class="property-label">{{ t('app.commerce.shop.shopDomain.label') }}<span
 										class="required-mark" :title="t('app.commerce.field.required')">*</span></label>
@@ -164,6 +144,25 @@
 										<button class="input-group-btn" @click="reveal.clientSecret = !reveal.clientSecret"
 											:title="reveal.clientSecret ? t('app.commerce.field.hide') : t('app.commerce.field.show')">
 											<i class="bi" :class="reveal.clientSecret ? 'bi-eye' : 'bi-eye-slash'"></i>
+										</button>
+									</div>
+								</div>
+							</div>
+						</div>
+						<!-- Webhook shared secret: OPTIONAL — only for webhooks created by hand in
+						     the Shopify admin. App-registered webhooks verify with the client secret. -->
+						<div class="property-group">
+							<div class="property-group-title">{{ t('app.commerce.shop.webhook.groupTitle') }}</div>
+							<div class="property-hint">{{ t('app.commerce.shop.webhookSecret.hint') }}</div>
+							<div class="property-row">
+								<label class="property-label">{{ t('app.commerce.shop.webhookSecret.label') }}</label>
+								<div class="input-group">
+									<input :type="reveal.webhookSecret ? 'text' : 'password'"
+										autocomplete="off" v-model="shop.webhookSecret">
+									<div class="input-group-actions">
+										<button class="input-group-btn" @click="reveal.webhookSecret = !reveal.webhookSecret"
+											:title="reveal.webhookSecret ? t('app.commerce.field.hide') : t('app.commerce.field.show')">
+											<i class="bi" :class="reveal.webhookSecret ? 'bi-eye' : 'bi-eye-slash'"></i>
 										</button>
 									</div>
 								</div>
@@ -227,7 +226,6 @@
 									:class="{ 'is-invalid': notif.teams.enabled && !notif.teams.webhookUrl }"
 									placeholder="https://...webhook.office.com/...">
 							</div>
-							<div class="property-hint">{{ t('app.commerce.notifications.teams.hint') }}</div>
 						</div>
 
 						<!-- LINE -->
@@ -261,7 +259,6 @@
 									:class="{ 'is-invalid': notif.line.enabled && !notif.line.to }"
 									placeholder="user / group / room ID">
 							</div>
-							<div class="property-hint">{{ t('app.commerce.notifications.line.hint') }}</div>
 						</div>
 
 						<!-- Generic webhook -->
@@ -284,7 +281,6 @@
 								<input type="text" class="wt w-100" v-model="notif.webhook.textField"
 									:disabled="!notif.webhook.enabled" placeholder="text">
 							</div>
-							<div class="property-hint">{{ t('app.commerce.notifications.webhook.hint', { code: 'text' }) }}</div>
 						</div>
 
 						<!-- Email (SMTP) -->
@@ -309,12 +305,12 @@
 							</div>
 							<div class="property-row">
 								<label class="property-label">{{ t('app.commerce.notifications.email.security.label') }}</label>
-								<select class="wt w-100" v-model="notif.email.security"
-									:disabled="!notif.email.enabled">
-									<option value="starttls">{{ t('app.commerce.notifications.email.security.starttls') }}</option>
-									<option value="ssl">{{ t('app.commerce.notifications.email.security.ssl') }}</option>
-									<option value="none">{{ t('app.commerce.notifications.email.security.none') }}</option>
-								</select>
+								<div class="wt-select" :class="{ disabled: !notif.email.enabled }">
+									<button type="button" class="wt-select-trigger" :disabled="!notif.email.enabled" @click.stop="openEmailSecurityMenu($event)">
+										<span class="wt-select-value">{{ emailSecurityLabel(notif.email.security) }}</span>
+										<i class="bi bi-chevron-down wt-select-chevron"></i>
+									</button>
+								</div>
 							</div>
 							<div class="property-row">
 								<label class="property-label">{{ t('app.commerce.notifications.email.username.label') }}</label>
@@ -357,7 +353,6 @@
 								<input type="text" class="wt w-100" v-model="notif.email.subjectPrefix"
 									:disabled="!notif.email.enabled" placeholder="[Commerce] ">
 							</div>
-							<div class="property-hint">{{ t('app.commerce.notifications.email.hint') }}</div>
 						</div>
 					</template>
 
@@ -374,13 +369,11 @@
 								<input type="checkbox" class="wt" v-model="health.enabled">
 								{{ t('app.commerce.health.alerting.enableLabel') }}
 							</label>
-							<div class="property-hint">{{ t('app.commerce.health.alerting.hint') }}</div>
 							<div class="property-row">
 								<label class="property-label">{{ t('app.commerce.health.cooldown.label') }}</label>
 								<input type="number" class="wt w-100" v-model.number="health.cooldownMinutes"
 									:disabled="!health.enabled" placeholder="30">
 							</div>
-							<div class="property-hint">{{ t('app.commerce.health.cooldown.hint') }}</div>
 						</div>
 
 						<div class="property-group">
@@ -415,7 +408,6 @@
 									v-model.number="health.apiErrorRate.threshold"
 									:disabled="!health.enabled || !health.apiErrorRate.enabled" placeholder="0.2">
 							</div>
-							<div class="property-hint">{{ t('app.commerce.health.apiErrorRate.hint') }}</div>
 						</div>
 
 						<div class="property-group">
@@ -450,7 +442,6 @@
 								<input type="number" class="wt w-100" v-model.number="health.processingLatency.maxMs"
 									:disabled="!health.enabled || !health.processingLatency.enabled" placeholder="30000">
 							</div>
-							<div class="property-hint">{{ t('app.commerce.health.processingLatency.hint') }}</div>
 						</div>
 					</template>
 
@@ -467,13 +458,11 @@
 								<input type="checkbox" class="wt" v-model="sla.enabled">
 								{{ t('app.commerce.tasks.escalation.enableLabel') }}
 							</label>
-							<div class="property-hint">{{ t('app.commerce.tasks.escalation.hint') }}</div>
 							<div class="property-row">
 								<label class="property-label">{{ t('app.commerce.tasks.cooldown.label') }}</label>
 								<input type="number" class="wt w-100" v-model.number="sla.cooldownMinutes"
 									:disabled="!sla.enabled" placeholder="120">
 							</div>
-							<div class="property-hint">{{ t('app.commerce.tasks.cooldown.hint') }}</div>
 						</div>
 
 						<div class="property-group">
@@ -516,7 +505,6 @@
 								<input type="number" class="wt w-100" v-model.number="sla.overdue.graceMinutes"
 									:disabled="!sla.enabled || !sla.overdue.enabled" placeholder="0">
 							</div>
-							<div class="property-hint">{{ t('app.commerce.tasks.overdue.hint') }}</div>
 						</div>
 
 						<div class="property-group">
@@ -536,106 +524,24 @@
 								<input type="text" class="wt w-100" v-model="sla.escalation.candidateGroup"
 									:disabled="!sla.enabled" :placeholder="t('app.commerce.tasks.escalationAction.candidateGroup.placeholder')">
 							</div>
-							<div class="property-hint">{{ t('app.commerce.tasks.escalationAction.hint') }}</div>
 						</div>
 					</template>
 
-					<!-- ========== Forecast (sales velocity / stockout) ========== -->
-					<template v-if="section === 'forecast'">
+					<!-- ========== Planning (defaults + analysis batches) ========== -->
+					<template v-if="section === 'planning'">
 						<div>
-							<h2 class="commerce-h2 mb-2">{{ t('app.commerce.forecast.title') }}</h2>
-							<div class="commerce-lede">{{ t('app.commerce.forecast.lede') }}</div>
+							<h2 class="commerce-h2 mb-2">{{ t('app.commerce.planning.title') }}</h2>
+							<div class="commerce-lede">{{ t('app.commerce.planning.lede') }}</div>
 						</div>
 
 						<div class="property-group">
-							<div class="property-group-title">{{ t('app.commerce.forecast.velocity.groupTitle') }}</div>
-							<label class="wt-checkbox-label">
-								<input type="checkbox" class="wt" v-model="velocity.enabled">
-								{{ t('app.commerce.forecast.velocity.enableLabel') }}
-							</label>
-							<div class="property-hint">{{ t('app.commerce.forecast.velocity.hint') }}</div>
+							<div class="property-group-title">{{ t('app.commerce.planning.defaults.groupTitle') }}</div>
+							<div class="property-hint">{{ t('app.commerce.planning.defaults.hint') }}</div>
 							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.forecast.velocity.window.label') }}</label>
-								<input type="number" class="wt w-100" v-model.number="velocity.windowDays"
-									:disabled="!velocity.enabled" placeholder="30">
+								<label class="property-label">{{ t('app.commerce.planning.defaults.threshold.label') }}</label>
+								<input type="number" class="wt w-100" v-model.number="planning.defaults.threshold"
+									:placeholder="t('app.commerce.planning.defaults.threshold.placeholder')">
 							</div>
-							<div class="property-hint">{{ t('app.commerce.forecast.velocity.window.hint') }}</div>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.forecast.velocity.cooldown.label') }}</label>
-								<input type="number" class="wt w-100" v-model.number="velocity.cooldownMinutes"
-									:disabled="!velocity.enabled" placeholder="720">
-							</div>
-							<div class="property-hint">{{ t('app.commerce.forecast.velocity.cooldown.hint') }}</div>
-						</div>
-
-						<div class="property-group">
-							<div class="property-group-title">{{ t('app.commerce.forecast.stockout.groupTitle') }}</div>
-							<label class="wt-checkbox-label">
-								<input type="checkbox" class="wt" v-model="velocity.stockout.enabled"
-									:disabled="!velocity.enabled">
-								{{ t('app.commerce.forecast.stockout.enableLabel') }}
-							</label>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.forecast.stockout.warnDays.label') }}</label>
-								<input type="number" class="wt w-100" v-model.number="velocity.stockout.warnDays"
-									:disabled="!velocity.enabled || !velocity.stockout.enabled" placeholder="7">
-							</div>
-							<div class="property-hint">{{ t('app.commerce.forecast.stockout.warnDays.hint') }}</div>
-						</div>
-					</template>
-
-					<!-- ========== Replenishment (auto-reorder) ========== -->
-					<template v-if="section === 'replenishment'">
-						<div>
-							<h2 class="commerce-h2 mb-2">{{ t('app.commerce.replenishment.title') }}</h2>
-							<div class="commerce-lede">{{ t('app.commerce.replenishment.lede') }}</div>
-						</div>
-
-						<div class="property-group">
-							<div class="property-group-title">{{ t('app.commerce.replenishment.groupTitle') }}</div>
-							<label class="wt-checkbox-label">
-								<input type="checkbox" class="wt" v-model="reorder.enabled">
-								{{ t('app.commerce.replenishment.enableLabel') }}
-							</label>
-							<div class="property-hint">{{ t('app.commerce.replenishment.hint') }}</div>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.replenishment.leadTime.label') }}</label>
-								<input type="number" class="wt w-100" v-model.number="reorder.leadTimeDays" :disabled="!reorder.enabled" placeholder="7">
-							</div>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.replenishment.targetCover.label') }}</label>
-								<input type="number" class="wt w-100" v-model.number="reorder.targetCoverDays" :disabled="!reorder.enabled" placeholder="14">
-							</div>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.replenishment.minOrderQty.label') }}</label>
-								<input type="number" class="wt w-100" v-model.number="reorder.minOrderQty" :disabled="!reorder.enabled" placeholder="1">
-							</div>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.replenishment.roundTo.label') }}</label>
-								<input type="number" class="wt w-100" v-model.number="reorder.roundTo" :disabled="!reorder.enabled" placeholder="1">
-							</div>
-							<div class="property-hint">{{ t('app.commerce.replenishment.qtyFormula.hint') }}</div>
-						</div>
-
-						<div class="property-group">
-							<div class="property-group-title">{{ t('app.commerce.replenishment.supplier.groupTitle') }}</div>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.replenishment.supplier.delivery.label') }}</label>
-								<select class="wt w-100" v-model="reorder.supplier.delivery" :disabled="!reorder.enabled">
-									<option value="none">{{ t('app.commerce.replenishment.supplier.delivery.none') }}</option>
-									<option value="email">{{ t('app.commerce.replenishment.supplier.delivery.email') }}</option>
-									<option value="webhook">{{ t('app.commerce.replenishment.supplier.delivery.webhook') }}</option>
-								</select>
-							</div>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.replenishment.supplier.email.label') }}</label>
-								<input type="text" class="wt w-100" v-model="reorder.supplier.email" :disabled="!reorder.enabled || reorder.supplier.delivery !== 'email'" placeholder="supplier@example.com">
-							</div>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.replenishment.supplier.webhookUrl.label') }}</label>
-								<input type="text" class="wt w-100" v-model="reorder.supplier.webhookUrl" :disabled="!reorder.enabled || reorder.supplier.delivery !== 'webhook'" placeholder="https://supplier.example.com/po">
-							</div>
-							<div class="property-hint">{{ t('app.commerce.replenishment.supplier.hint') }}</div>
 						</div>
 					</template>
 
@@ -650,113 +556,21 @@
 							<div class="property-group-title">{{ t('app.commerce.locations.allocation.groupTitle') }}</div>
 							<div class="property-row">
 								<label class="property-label">{{ t('app.commerce.locations.strategy.label') }}</label>
-								<select class="wt w-100" v-model="locations.strategy">
-									<option value="most_stock">{{ t('app.commerce.locations.strategy.mostStock') }}</option>
-									<option value="priority">{{ t('app.commerce.locations.strategy.priority') }}</option>
-								</select>
+								<div class="wt-select">
+									<button type="button" class="wt-select-trigger" @click.stop="openStrategyMenu($event)">
+										<span class="wt-select-value">{{ strategyLabel(locations.strategy) }}</span>
+										<i class="bi bi-chevron-down wt-select-chevron"></i>
+									</button>
+								</div>
 							</div>
 							<div class="property-row">
 								<label class="property-label">{{ t('app.commerce.locations.priorityOrder.label') }}</label>
 								<input type="text" class="wt w-100" v-model="locations.priorityOrder" :disabled="locations.strategy !== 'priority'" placeholder="comma-separated location IDs, e.g. 123,456">
 							</div>
-							<div class="property-hint">{{ t('app.commerce.locations.priorityOrder.hint') }}</div>
 							<div class="property-row">
 								<label class="property-label">{{ t('app.commerce.locations.safetyStock.label') }}</label>
 								<input type="number" class="wt w-100" v-model.number="locations.defaultSafetyStock" placeholder="0">
 							</div>
-							<div class="property-hint">{{ t('app.commerce.locations.safetyStock.hint') }}</div>
-						</div>
-					</template>
-
-					<!-- ========== Storefront ========== -->
-					<template v-if="section === 'storefront'">
-						<div>
-							<h2 class="commerce-h2 mb-2">{{ t('app.commerce.storefront.title') }}</h2>
-							<div class="commerce-lede">{{ t('app.commerce.storefront.lede') }}</div>
-						</div>
-						<div class="property-group">
-							<label class="wt-checkbox-label">
-								<input type="checkbox" class="wt" v-model="storefront.enabled"> {{ t('app.commerce.storefront.enableLabel') }}
-							</label>
-							<div class="property-hint">{{ t('app.commerce.storefront.enable.hint') }}</div>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.storefront.storeName.label') }}</label>
-								<input type="text" class="wt w-100" v-model="storefront.storeName">
-							</div>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.storefront.currency.label') }}</label>
-								<input type="text" class="wt w-100" v-model="storefront.currency" placeholder="JPY">
-							</div>
-							<div class="property-hint">{{ t('app.commerce.storefront.currency.hint') }}</div>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.storefront.lowStock.label') }}</label>
-								<input type="number" class="wt w-100" v-model.number="storefront.lowStock" placeholder="5">
-							</div>
-							<div class="property-hint">{{ t('app.commerce.storefront.lowStock.hint') }}</div>
-						</div>
-					</template>
-
-					<!-- ========== Customers (CRM) ========== -->
-					<template v-if="section === 'crm'">
-						<div>
-							<h2 class="commerce-h2 mb-2">{{ t('app.commerce.crm.title') }}</h2>
-							<div class="commerce-lede">{{ t('app.commerce.crm.lede') }}</div>
-						</div>
-						<div class="property-group">
-							<label class="wt-checkbox-label">
-								<input type="checkbox" class="wt" v-model="crm.enabled"> {{ t('app.commerce.crm.enableLabel') }}
-							</label>
-						</div>
-						<div class="property-group">
-							<div class="property-group-title">{{ t('app.commerce.crm.segments.groupTitle') }}</div>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.crm.segments.vipMinSpend.label') }}</label>
-								<input type="number" class="wt w-100" v-model.number="crm.segments.vipMinSpend" :disabled="!crm.enabled">
-							</div>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.crm.segments.vipMinOrders.label') }}</label>
-								<input type="number" class="wt w-100" v-model.number="crm.segments.vipMinOrders" :disabled="!crm.enabled">
-							</div>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.crm.segments.newMaxOrders.label') }}</label>
-								<input type="number" class="wt w-100" v-model.number="crm.segments.newMaxOrders" :disabled="!crm.enabled">
-							</div>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.crm.segments.atRiskDays.label') }}</label>
-								<input type="number" class="wt w-100" v-model.number="crm.segments.atRiskDays" :disabled="!crm.enabled">
-							</div>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.crm.segments.dormantDays.label') }}</label>
-								<input type="number" class="wt w-100" v-model.number="crm.segments.dormantDays" :disabled="!crm.enabled">
-							</div>
-						</div>
-						<div class="property-group">
-							<div class="property-group-title">{{ t('app.commerce.crm.alerts.groupTitle') }}</div>
-							<label class="wt-checkbox-label">
-								<input type="checkbox" class="wt" v-model="crm.alert.enabled" :disabled="!crm.enabled"> {{ t('app.commerce.crm.alerts.enableLabel') }}
-							</label>
-						</div>
-						<div class="property-group">
-							<div class="property-group-title">{{ t('app.commerce.crm.abandonedCart.groupTitle') }}</div>
-							<label class="wt-checkbox-label">
-								<input type="checkbox" class="wt" v-model="crm.abandonedCart.enabled" :disabled="!crm.enabled"> {{ t('app.commerce.crm.abandonedCart.enableLabel') }}
-							</label>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.crm.abandonedCart.abandonedAfter.label') }}</label>
-								<input type="number" class="wt w-100" v-model.number="crm.abandonedCart.abandonedAfterMinutes" :disabled="!crm.enabled || !crm.abandonedCart.enabled">
-							</div>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.crm.abandonedCart.reminderInterval.label') }}</label>
-								<input type="number" class="wt w-100" v-model.number="crm.abandonedCart.reminderIntervalMinutes" :disabled="!crm.enabled || !crm.abandonedCart.enabled">
-							</div>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.crm.abandonedCart.maxReminders.label') }}</label>
-								<input type="number" class="wt w-100" v-model.number="crm.abandonedCart.maxReminders" :disabled="!crm.enabled || !crm.abandonedCart.enabled">
-							</div>
-							<label class="wt-checkbox-label">
-								<input type="checkbox" class="wt" v-model="crm.abandonedCart.sendToCustomer" :disabled="!crm.enabled || !crm.abandonedCart.enabled"> {{ t('app.commerce.crm.abandonedCart.sendToCustomer.label') }}
-							</label>
-							<div class="property-hint">{{ t('app.commerce.crm.abandonedCart.hint') }}</div>
 						</div>
 					</template>
 
@@ -792,26 +606,20 @@
 								</div>
 						</div>
 						<div class="property-group">
-							<label class="wt-checkbox-label">
-								<input type="checkbox" class="wt" v-model="reconcile.alert" :disabled="!reconcile.enabled"> {{ t('app.commerce.reconciliation.alert.label') }}
-							</label>
-							<label class="wt-checkbox-label">
-								<input type="checkbox" class="wt" v-model="reconcile.refreshInventoryMirror" :disabled="!reconcile.enabled"> {{ t('app.commerce.reconciliation.refreshMirror.label') }}
-							</label>
-						</div>
-						<div class="property-group">
 							<div class="property-group-title">{{ t('app.commerce.reconciliation.schedules.groupTitle') }}</div>
 							<div v-if="reconcile.schedules.length === 0" class="property-hint">{{ t('app.commerce.reconciliation.schedules.empty') }}</div>
-							<div v-for="(s, i) in reconcile.schedules" :key="i" class="property-row">
-								<input type="time" class="wt" v-model="s.at" :disabled="!reconcile.enabled">
-								<select class="wt w-100" v-model="s.scope" :disabled="!reconcile.enabled">
+							<div v-for="(s, i) in reconcile.schedules" :key="i" class="property-row schedule-row">
+								<input type="time" class="wt" :value="scheduleDisplayTime(s.at)" @change="onScheduleTimeChange(s, $event.target.value)" :disabled="!reconcile.enabled">
+								<div class="wt-select" :class="{ disabled: !reconcile.enabled }">
 									<!-- 'all' (round-robin) scope retired 2026-06-30 -->
-									<option value="diff">{{ t('app.commerce.reconciliation.schedules.scope.diff') }}</option>
-									<option value="inventory">{{ t('app.commerce.reconciliation.schedules.scope.inventory') }}</option>
-								</select>
+									<button type="button" class="wt-select-trigger" :disabled="!reconcile.enabled" @click.stop="openScopeMenu($event, s)">
+										<span class="wt-select-value">{{ scopeLabel(s.scope) }}</span>
+										<i class="bi bi-chevron-down wt-select-chevron"></i>
+									</button>
+								</div>
 								<button class="btn-icon" @click="removeSchedule(i)" :title="t('app.commerce.reconciliation.schedules.removeTitle')"><i class="bi bi-trash"></i></button>
 							</div>
-							<button class="wt wt-sm" @click="addSchedule" :disabled="!reconcile.enabled"><i class="bi bi-plus-lg me-1"></i>{{ t('app.commerce.reconciliation.schedules.add') }}</button>
+							<button class="wt wt-slim" @click="addSchedule" :disabled="!reconcile.enabled"><i class="bi bi-plus-lg me-1"></i>{{ t('app.commerce.reconciliation.schedules.add') }}</button>
 						</div>
 					</template>
 
@@ -843,7 +651,6 @@
 								<label class="property-label">{{ t('app.commerce.ingestion.replay.retention.label') }}</label>
 								<input type="number" class="wt w-100" v-model.number="ingest.replay.retentionDays" :disabled="!ingest.enabled">
 							</div>
-							<div class="property-hint">{{ t('app.commerce.ingestion.replay.retention.hint') }}</div>
 						</div>
 					</template>
 
@@ -861,7 +668,6 @@
 								<label class="property-label">{{ t('app.commerce.backorders.preorderTags.label') }}</label>
 								<input type="text" class="wt w-100" v-model="backorder.preorderTags" :disabled="!backorder.enabled" placeholder="preorder, pre-order">
 							</div>
-							<div class="property-hint">{{ t('app.commerce.backorders.preorderTags.hint') }}</div>
 						</div>
 						<div class="property-group">
 							<div class="property-group-title">{{ t('app.commerce.backorders.notifications.groupTitle') }}</div>
@@ -884,7 +690,6 @@
 							<label class="wt-checkbox-label">
 								<input type="checkbox" class="wt" v-model="orderReview.enabled"> {{ t('app.commerce.orderReview.enableLabel') }}
 							</label>
-							<div class="property-hint">{{ t('app.commerce.orderReview.enable.hint') }}</div>
 						</div>
 						<div class="property-group">
 							<div class="property-group-title">{{ t('app.commerce.orderReview.highValue.groupTitle') }}</div>
@@ -896,7 +701,7 @@
 								<input type="number" class="wt rule-val" v-model.number="thr.value" :disabled="!orderReview.enabled">
 								<button class="btn-icon" @click="removeThreshold(orderReview.highValue.thresholds, i)" :disabled="!orderReview.enabled" :title="t('app.commerce.field.remove')"><i class="bi bi-trash"></i></button>
 							</div>
-							<button class="wt wt-sm" @click="addThreshold(orderReview.highValue.thresholds)" :disabled="!orderReview.enabled"><i class="bi bi-plus-lg me-1"></i>{{ t('app.commerce.orderReview.addCurrency') }}</button>
+							<button class="wt wt-slim" @click="addThreshold(orderReview.highValue.thresholds)" :disabled="!orderReview.enabled"><i class="bi bi-plus-lg me-1"></i>{{ t('app.commerce.orderReview.addCurrency') }}</button>
 							<div class="property-row">
 								<label class="property-label">{{ t('app.commerce.orderReview.highValue.default.label') }}</label>
 								<input type="number" class="wt w-100" v-model.number="orderReview.highValue.default" :disabled="!orderReview.enabled">
@@ -911,7 +716,6 @@
 								<label class="property-label">{{ t('app.commerce.orderReview.flaggedStatus.statuses.label') }}</label>
 								<input type="text" class="wt w-100" v-model="orderReview.flaggedFinancialStatus.statuses" :disabled="!orderReview.enabled" placeholder="pending, authorized, partially_paid">
 							</div>
-							<div class="property-hint">{{ t('app.commerce.orderReview.flaggedStatus.hint') }}</div>
 						</div>
 						<div class="property-group">
 							<div class="property-group-title">{{ t('app.commerce.orderReview.largeQty.groupTitle') }}</div>
@@ -951,7 +755,6 @@
 							<label class="wt-checkbox-label">
 								<input type="checkbox" class="wt" v-model="refundReview.enabled"> {{ t('app.commerce.refundReview.enableLabel') }}
 							</label>
-							<div class="property-hint">{{ t('app.commerce.refundReview.enable.hint') }}</div>
 						</div>
 						<div class="property-group">
 							<div class="property-group-title">{{ t('app.commerce.refundReview.highValue.groupTitle') }}</div>
@@ -963,7 +766,7 @@
 								<input type="number" class="wt rule-val" v-model.number="thr.value" :disabled="!refundReview.enabled">
 								<button class="btn-icon" @click="removeThreshold(refundReview.highRefundValue.thresholds, i)" :disabled="!refundReview.enabled" :title="t('app.commerce.field.remove')"><i class="bi bi-trash"></i></button>
 							</div>
-							<button class="wt wt-sm" @click="addThreshold(refundReview.highRefundValue.thresholds)" :disabled="!refundReview.enabled"><i class="bi bi-plus-lg me-1"></i>{{ t('app.commerce.refundReview.addCurrency') }}</button>
+							<button class="wt wt-slim" @click="addThreshold(refundReview.highRefundValue.thresholds)" :disabled="!refundReview.enabled"><i class="bi bi-plus-lg me-1"></i>{{ t('app.commerce.refundReview.addCurrency') }}</button>
 							<div class="property-row">
 								<label class="property-label">{{ t('app.commerce.refundReview.highValue.default.label') }}</label>
 								<input type="number" class="wt w-100" v-model.number="refundReview.highRefundValue.default" :disabled="!refundReview.enabled">
@@ -990,74 +793,122 @@
 							<div class="commerce-lede">{{ t('app.commerce.inventoryAlert.lede') }}</div>
 						</div>
 						<div class="property-group">
+							<div class="property-group-title">{{ t('app.commerce.inventoryAlert.behavior.groupTitle') }}</div>
+							<div class="property-hint">{{ t('app.commerce.inventoryAlert.planningHint') }}</div>
 							<div class="property-row">
 								<label class="property-label">{{ t('app.commerce.inventoryAlert.unconfiguredPolicy.label') }}</label>
-								<select class="wt w-100" v-model="inventoryAlert.unconfiguredPolicy">
-									<option value="prompt">{{ t('app.commerce.inventoryAlert.unconfiguredPolicy.prompt') }}</option>
-									<option value="default">{{ t('app.commerce.inventoryAlert.unconfiguredPolicy.default') }}</option>
-									<option value="silent">{{ t('app.commerce.inventoryAlert.unconfiguredPolicy.silent') }}</option>
-								</select>
+								<div class="wt-select">
+									<button type="button" class="wt-select-trigger" @click.stop="openUnconfiguredPolicyMenu($event)">
+										<span class="wt-select-value">{{ unconfiguredPolicyLabel(inventoryAlert.unconfiguredPolicy) }}</span>
+										<i class="bi bi-chevron-down wt-select-chevron"></i>
+									</button>
+								</div>
 							</div>
-							<div class="property-hint">{{ t('app.commerce.inventoryAlert.unconfiguredPolicy.hint') }}</div>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.inventoryAlert.defaultThreshold.label') }}</label>
-								<input type="number" class="wt w-100" v-model.number="inventoryAlert.defaultThreshold" :disabled="inventoryAlert.unconfiguredPolicy !== 'default'" placeholder="0">
-							</div>
-							<div class="property-hint">{{ t('app.commerce.inventoryAlert.defaultThreshold.hint') }}</div>
-						</div>
-						<div class="property-group">
 							<div class="property-row">
 								<label class="property-label">{{ t('app.commerce.inventoryAlert.debounce.label') }}</label>
 								<input type="number" class="wt w-100" v-model.number="inventoryAlert.sweepDebounceSeconds" min="0" placeholder="0">
 							</div>
-							<div class="property-hint">{{ t('app.commerce.inventoryAlert.debounce.hint') }}</div>
 						</div>
 					</template>
 
-					<!-- ========== Inventory rules ========== -->
-					<template v-if="section === 'inventoryRules'">
-						<div>
-							<h2 class="commerce-h2 mb-2">{{ t('app.commerce.inventoryRules.title') }}</h2>
-							<div class="commerce-lede">{{ t('app.commerce.inventoryRules.lede') }}</div>
-						</div>
-						<div class="property-group">
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.inventoryRules.default.label') }}</label>
-								<input type="number" class="wt w-100" v-model.number="inventoryRules.default" :placeholder="t('app.commerce.inventoryRules.default.placeholder')">
+						<!-- ========== Webhooks (action panel — NOT saved with the config) ========== -->
+						<template v-if="section === 'webhooks'">
+							<div>
+								<h2 class="commerce-h2 mb-2">{{ t('app.commerce.webhooks.title') }}</h2>
+								<div class="commerce-lede">{{ t('app.commerce.webhooks.lede') }}</div>
 							</div>
-							<div class="property-hint">{{ t('app.commerce.inventoryRules.default.hint') }}</div>
-						</div>
-						<div class="property-group">
-							<div class="property-group-title">{{ t('app.commerce.inventoryRules.rules.groupTitle') }}</div>
-							<div v-if="inventoryRules.rules.length === 0" class="property-hint">{{ t('app.commerce.inventoryRules.rules.empty') }}</div>
-							<div v-for="(r, i) in inventoryRules.rules" :key="i" class="rule-card">
-								<div class="rule-card-head">
-									<input type="text" class="wt rule-name" v-model="r.name" :placeholder="t('app.commerce.inventoryRules.rule.name.placeholder')">
-									<div class="rule-thr"><span class="property-label" style="margin:0">{{ t('app.commerce.inventoryRules.rule.threshold.label') }}</span><input type="number" class="wt" v-model.number="r.threshold"></div>
-									<button class="btn-icon" @click="removeRule(i)" :title="t('app.commerce.inventoryRules.rule.removeTitle')"><i class="bi bi-trash"></i></button>
+
+							<!-- Admin API gate banner (registration needs the Admin API configured).
+							     Tri-state: "Checking" until the first status GET completes, then "Connected" /
+							     "Not connected" — so the initial paint never flashes a misleading "not configured". -->
+							<div class="imp-banner" :class="!webhooks.checked ? 'info' : (webhooks.enabled ? 'ok' : 'warn')">
+								<i class="bi" :class="!webhooks.checked ? 'bi-hourglass-split' : (webhooks.enabled ? 'bi-check-circle' : 'bi-exclamation-triangle')"></i>
+								<span v-if="!webhooks.checked">{{ t('app.commerce.webhooks.adminApiChecking') }}</span>
+								<span v-else-if="webhooks.enabled">{{ t('app.commerce.webhooks.adminApiOn', { domain: webhooks.shopDomain, version: webhooks.apiVersion }) }}</span>
+								<span v-else>{{ t('app.commerce.webhooks.adminApiOff') }}</span>
+							</div>
+
+							<!-- Callback URL + Register/Update action -->
+							<div class="property-group">
+								<div class="property-group-title">{{ t('app.commerce.webhooks.callback.groupTitle') }}</div>
+								<div class="property-hint">{{ t('app.commerce.webhooks.callbackUrl.hint') }}</div>
+								<div class="property-hint">{{ t('app.commerce.webhooks.secretNote') }}</div>
+								<div class="property-row">
+									<label class="property-label">{{ t('app.commerce.webhooks.callbackUrl.label') }}</label>
+									<input type="text" class="wt w-100" v-model="webhooks.callbackUrl"
+										:disabled="webhooks.running"
+										:placeholder="webhooks.suggestedCallbackUrl || t('app.commerce.webhooks.callbackUrl.placeholder')">
 								</div>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.inventoryRules.rule.productType.label') }}</label>
-								<input type="text" class="wt w-100" v-model="r.productType" placeholder="Food, Beverage">
-							</div>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.inventoryRules.rule.vendor.label') }}</label>
-								<input type="text" class="wt w-100" v-model="r.vendor">
-							</div>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.inventoryRules.rule.tags.label') }}</label>
-								<input type="text" class="wt w-100" v-model="r.tags" placeholder="seasonal, gift">
-							</div>
-								<div class="rule-season">
-									<div class="rule-season-f"><label class="property-label">{{ t('app.commerce.inventoryRules.rule.seasonFrom.label') }}</label><input type="text" class="wt w-100" v-model="r.seasonFrom" placeholder="11-15"></div>
-									<div class="rule-season-f"><label class="property-label">{{ t('app.commerce.inventoryRules.rule.seasonTo.label') }}</label><input type="text" class="wt w-100" v-model="r.seasonTo" placeholder="12-31"></div>
-									<div class="rule-season-f"><label class="property-label">{{ t('app.commerce.inventoryRules.rule.minVelocity.label') }}</label><input type="number" class="wt w-100" v-model.number="r.minVelocityPerDay"></div>
+								<div class="ops-inline-actions">
+									<button class="wt wt-primary wt-slim"
+										:disabled="webhooks.running || webhooks.loading || !webhooks.enabled"
+										@click="runWebhookRegister"
+										:title="!webhooks.enabled ? t('app.commerce.webhooks.adminApiOff') : ''">
+										<i class="bi" :class="webhooks.running ? 'bi-arrow-repeat spin' : 'bi-broadcast'"></i>
+										{{ t('app.commerce.webhooks.register') }}
+									</button>
+									<button class="btn-icon" :disabled="webhooks.running || webhooks.loading"
+										@click="loadWebhooks" :title="t('app.commerce.webhooks.refresh')">
+										<i class="bi bi-arrow-clockwise" :class="{ spin: webhooks.loading }"></i>
+									</button>
 								</div>
-								<div class="property-hint">{{ t('app.commerce.inventoryRules.rule.criteria.hint') }}</div>
 							</div>
-							<button class="wt wt-sm" @click="addRule"><i class="bi bi-plus-lg me-1"></i>{{ t('app.commerce.inventoryRules.addRule') }}</button>
-						</div>
-					</template>
+
+							<!-- Registration result (after a run) -->
+							<div class="property-group" v-if="webhooks.ran">
+								<div class="property-group-title">{{ t('app.commerce.webhooks.results.groupTitle') }}</div>
+								<table class="wt w-100" v-if="webhooks.results.length">
+									<thead>
+										<tr>
+											<th>{{ t('app.commerce.webhooks.table.topic') }}</th>
+											<th>{{ t('app.commerce.webhooks.table.action') }}</th>
+											<th>{{ t('app.commerce.webhooks.table.message') }}</th>
+										</tr>
+									</thead>
+									<tbody>
+										<tr v-for="(r, i) in webhooks.results" :key="i">
+											<td class="ops-val" :class="{ 'text-muted': (r.topic) == null }">{{ r.topic ?? '—' }}</td>
+											<td><span class="ops-pill" :class="webhookActionClass(r.action)">{{ webhookActionLabel(r.action) }}</span></td>
+											<td :class="{ 'text-muted': !(r.error) }">{{ r.error || '—' }}</td>
+										</tr>
+									</tbody>
+								</table>
+								<div v-else class="property-hint">{{ t('app.commerce.webhooks.results.empty') }}</div>
+							</div>
+
+							<!-- Current subscriptions (from GET) -->
+							<div class="property-group">
+								<div class="property-group-title">{{ t('app.commerce.webhooks.current.groupTitle') }}</div>
+								<div v-if="webhooks.loading" class="property-hint">{{ t('app.commerce.webhooks.loading') }}</div>
+								<div v-else-if="webhooks.error" class="property-hint status-err">{{ webhooks.error }}</div>
+								<table class="wt w-100" v-else-if="webhooks.current.length">
+									<thead>
+										<tr>
+											<th>{{ t('app.commerce.webhooks.table.topic') }}</th>
+											<th>{{ t('app.commerce.webhooks.table.subscribed') }}</th>
+											<th>{{ t('app.commerce.webhooks.table.callbackUrl') }}</th>
+										</tr>
+									</thead>
+									<tbody>
+										<tr v-for="(c, i) in webhooks.current" :key="i">
+											<td class="ops-val" :class="{ 'text-muted': (c.topic) == null }">{{ c.topic ?? '—' }}</td>
+											<td><span class="ops-pill" :class="c.subscribed ? 'st-ok' : 'st-report'">{{ c.subscribed ? t('app.commerce.webhooks.subscribed.yes') : t('app.commerce.webhooks.subscribed.no') }}</span></td>
+											<td :class="{ 'text-muted': !(c.callbackUrl) }">{{ c.callbackUrl || '—' }}</td>
+										</tr>
+									</tbody>
+								</table>
+								<div v-else class="property-hint">{{ t('app.commerce.webhooks.current.empty') }}</div>
+							</div>
+
+							<!-- GDPR compliance topics (informational — configured elsewhere) -->
+							<div class="property-group">
+								<div class="property-group-title">{{ t('app.commerce.webhooks.gdpr.groupTitle') }}</div>
+								<div class="property-hint">{{ t('app.commerce.webhooks.gdpr.note') }}</div>
+								<ul class="webhooks-gdpr-list">
+									<li v-for="(topic, i) in webhooks.compliance" :key="i" :class="{ 'text-muted': (topic) == null }">{{ topic ?? '—' }}</li>
+								</ul>
+							</div>
+						</template>
 
 
 				</div>

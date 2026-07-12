@@ -1,291 +1,228 @@
 package commerce
 
-import com.fasterxml.jackson.databind.ObjectMapper
+import javax.jcr.query.Query
 
 /**
- * Customer data normalization + segmentation (category D, #13 / #15).
+ * First-class customer store.
  *
- * Rolls up every customer's purchase history from the stored order resources
- * (/content/commerce/orders/raw) — the authoritative record of what was actually
- * bought — and classifies each customer into a segment. The rollup is keyed by the
- * order's customer identity (Shopify customer id when present, else the email), so
- * it does not depend on customers/* webhooks having been received (those enrich the
- * entity mirror separately).
+ * One file per customer under {@code /content/commerce/customers/}:
  *
- * Results live in a dedicated CRM store, one doc per customer:
- *   /content/commerce/crm/customers/{key}.json   ( id_{id} | email_{hash} )
- * with commerce:* properties (segment, vip, recency, orders, total_spent,
- * last_order_at, email) so the endpoint and alerts can read them cheaply.
+ *   customer_{id}.json           member (Shopify customer id known)
+ *   customer_email_{hash}.json   guest (order-derived / GDPR shell only; body {})
  *
- * {@link #segment} is pure (testable); the JCR traversal / persistence is defensive.
- * Lives under /content/WEB-INF/classes; use via {@code import commerce.Customers}.
+ * <b>Body = the raw Shopify customer JSON only</b> (same convention as the
+ * product mirror). Lifetime figures (orders_count / total_spent) are read from
+ * that mirror body, NOT recomputed here — this platform DISPLAYS Shopify's own
+ * numbers and EDITS through the Admin API (parity with product-360). No wallet,
+ * no segmentation, no VIP judgement (VIP is a manual Shopify tag). The only
+ * things promoted to TYPED JCR properties (auto-indexed → browse/facets/GDPR
+ * queries work) are the lifecycle + profile fields:
+ *
+ *   (a) lifecycle : commerce:status (received/deleted/redacted), commerce:customer_id,
+ *                   commerce:source_status, commerce:updated_at (Date), commerce:redacted_at (Date)
+ *   (b) profile   : commerce:email, commerce:name, commerce:marketing_consent,
+ *                   commerce:marketing_enabled (Boolean), commerce:tags,
+ *                   commerce:tax_exempt (Boolean), commerce:created_at (Date)
+ *
+ * Writers: customers/* webhooks upsert body+(a)(b) via {@link #upsertFromWebhook}
+ * (also stamping the dedicated customer MIME type so the node launches the
+ * customer editor); customers/delete marks the shell {@link #markDeleted}; GDPR
+ * redaction (see {@link commerce.Gdpr}) reduces a node to a redacted shell.
+ *
+ * JCR methods are defensive. Lives under /content/WEB-INF/classes; use via
+ * {@code import commerce.Customers}.
  */
 class Customers {
 
-    static final String ORDERS_DIR = "/content/commerce/orders/raw"
-    static final String CRM_DIR = "/content/commerce/crm/customers"
+    static final String STORE_DIR = "/content/commerce/customers"
+    static final String CUSTOMER_MIME = "application/vnd.mintjams.commerce.customer+json"
 
-    private static final ObjectMapper MAPPER = new ObjectMapper()
+    private static final int WRITE_RETRIES = 6
 
-    // --- Aggregation -----------------------------------------------------------
+    // --- Keys -------------------------------------------------------------------
+
+    /** Store key: customer_{id} for members, customer_email_{hash} for guests, null when neither. */
+    static String keyFor(customerId, email) {
+        def id = blank(customerId) ? null : customerId.toString().trim()
+        if (id) return "customer_${id}".toString()
+        def em = blank(email) ? null : email.toString().trim().toLowerCase()
+        if (em) return "customer_email_${sanitize(em)}".toString()
+        return null
+    }
+
+    static String pathFor(String key) { "${STORE_DIR}/${key}.json".toString() }
+
+    // --- Writer: customers/* webhooks (body + (a)(b)) -----------------------------
 
     /**
-     * Roll up purchase history per customer from all stored orders. Returns
-     * customerKey → stats:
-     *   { key, customerId, email, name, orders, totalSpent(BigDecimal), currency,
-     *     firstOrderAtMs, lastOrderAtMs, lastOrderAt }
-     * Defensive: a bad order is skipped.
+     * Upsert a customer from a customers/create|update|enable|disable webhook:
+     * body = the raw Shopify JSON, lifecycle/profile promoted to typed props and
+     * the customer MIME type stamped. Only the KEEP profile props are written —
+     * no wallet / segment data lives here. Defensive — returns the store key or null.
      */
-    static Map aggregate(session) {
-        def out = [:]
-        eachOrder(session) { order ->
-            def key = customerKey(order)
-            if (key == null) return
-
-            def stats = out[key]
-            if (stats == null) {
-                stats = [key: key, customerId: customerId(order), email: email(order),
-                         name: name(order), orders: 0L, totalSpent: BigDecimal.ZERO,
-                         currency: null, firstOrderAtMs: Long.MAX_VALUE, lastOrderAtMs: 0L,
-                         lastOrderAt: null]
-                out[key] = stats
-            }
-            stats.orders = ((stats.orders ?: 0L) as long) + 1L
-            def total = Money.toNumber(order.total_price)
-            if (total != null) stats.totalSpent = ((BigDecimal) stats.totalSpent).add(total)
-            def cur = order.currency?.toString()
-            if (cur) stats.currency = cur
-            if (!stats.email) stats.email = email(order)
-            if (!stats.name) stats.name = name(order)
-
-            long t = orderTimeMs(order)
-            if (t > 0) {
-                if (t < (stats.firstOrderAtMs as long)) stats.firstOrderAtMs = t
-                if (t > (stats.lastOrderAtMs as long)) {
-                    stats.lastOrderAtMs = t
-                    stats.lastOrderAt = order.created_at?.toString()
+    static String upsertFromWebhook(session, log, String payloadJson, Map customer) {
+        def id = customer?.id?.toString()
+        if (blank(id)) {
+            log.warn("Customers.upsertFromWebhook: payload has no customer id - skipping")
+            return null
+        }
+        def key = "customer_${id}".toString()
+        def email = blank(customer?.email) ? null : customer.email.toString().trim()
+        for (int attempt = 0; attempt < WRITE_RETRIES; attempt++) {
+            try {
+                def res = Jcr.getOrCreateFile(session, pathFor(key))
+                res.write(payloadJson ?: "{}")
+                res.setProperty("jcr:mimeType", CUSTOMER_MIME)
+                res.setProperty("commerce:status", "received")
+                res.setProperty("commerce:customer_id", id)
+                if (customer.state != null) res.setProperty("commerce:source_status", customer.state.toString())
+                setDate(res, "commerce:updated_at", customer.updated_at)
+                setDate(res, "commerce:created_at", customer.created_at)
+                if (email) res.setProperty("commerce:email", email)
+                def name = [customer.first_name, customer.last_name].findAll { !blank(it) }.join(" ").trim()
+                if (name) res.setProperty("commerce:name", name)
+                def consent = customer.email_marketing_consent?.state?.toString()
+                if (consent != null) res.setProperty("commerce:marketing_consent", consent)
+                res.setProperty("commerce:marketing_enabled", consent == "subscribed")
+                if (customer.tags != null) res.setProperty("commerce:tags", customer.tags.toString())
+                res.setProperty("commerce:tax_exempt", customer.tax_exempt == true)
+                session.commit()
+                return key
+            } catch (Exception e) {
+                try { session.rollback() } catch (Exception ignore) {}
+                if (attempt == WRITE_RETRIES - 1) {
+                    try { log.warn("Customers.upsertFromWebhook ${key}: ${e.message}") } catch (Exception ignore) {}
+                } else {
+                    try { Thread.sleep(20L * (attempt + 1)) } catch (Exception ignore) {}
                 }
             }
         }
-        return out
+        return null
     }
 
-    // --- Classification (pure) -------------------------------------------------
-
-    /**
-     * Classify a customer from their stats + thresholds. Returns:
-     *   { segment, vip(boolean), recency }  where
-     *   segment  : dormant | at_risk | vip | new | repeat   (primary, by priority)
-     *   recency  : active | at_risk | dormant
-     *   vip is an orthogonal value flag (so a dormant VIP is still flagged vip).
-     *
-     * cfg keys (with defaults): vipMinSpend(100000), vipMinOrders(10),
-     * newMaxOrders(1), atRiskDays(60), dormantDays(120).
-     */
-    static Map segment(Map stats, Map cfg, long nowMs) {
-        def c = cfg ?: [:]
-        def vipMinSpend = num(c.vipMinSpend, 100000)
-        int vipMinOrders = intOr(c.vipMinOrders, 10)
-        int newMaxOrders = intOr(c.newMaxOrders, 1)
-        int atRiskDays = intOr(c.atRiskDays, 60)
-        int dormantDays = intOr(c.dormantDays, 120)
-
-        long orders = (stats?.orders ?: 0L) as long
-        def spent = (stats?.totalSpent ?: BigDecimal.ZERO) as BigDecimal
-        long lastMs = (stats?.lastOrderAtMs ?: 0L) as long
-        long ageDays = lastMs > 0 ? (long) ((nowMs - lastMs) / 86_400_000L) : Long.MAX_VALUE
-
-        boolean vip = (vipMinSpend != null && spent.compareTo(vipMinSpend) >= 0) || (orders >= vipMinOrders)
-        String recency = ageDays >= dormantDays ? "dormant" : (ageDays >= atRiskDays ? "at_risk" : "active")
-
-        String primary
-        if (recency == "dormant") primary = "dormant"
-        else if (recency == "at_risk") primary = "at_risk"
-        else if (vip) primary = "vip"
-        else if (orders <= newMaxOrders) primary = "new"
-        else primary = "repeat"
-
-        return [segment: primary, vip: vip, recency: recency]
-    }
-
-    // --- Persistence -----------------------------------------------------------
-
-    /** Read the stored CRM record for a key (empty map if none). Defensive. */
-    static Map read(session, String key) {
-        return Jcr.readMap(session, "${CRM_DIR}/${key}.json")
-    }
-
-    /**
-     * Write the CRM record (stats + classification). Returns the previous segment
-     * snapshot { segment, vip, recency } (empty when new) so the caller can detect
-     * transitions for alerting (#15). Defensive — never throws.
-     */
-    static Map write(session, log, Map stats, Map classification) {
-        def prev = [:]
+    /** Mark a customer deleted (customers/delete — parity with products/delete; ≠ GDPR redact). */
+    static void markDeleted(session, log, customerId) {
+        def key = keyFor(customerId, null)
+        if (key == null) return
         try {
-            def key = stats.key.toString()
-            def path = "${CRM_DIR}/${key}.json".toString()
-            def existing = Jcr.readMap(session, path)
-            prev = [segment: existing.segment, vip: existing.vip, recency: existing.recency]
-
-            def now = java.time.Instant.now().toString()
-            def aov = ((stats.orders ?: 0L) as long) > 0 ?
-                ((BigDecimal) stats.totalSpent).divide(new BigDecimal((long) stats.orders), 2, java.math.RoundingMode.HALF_UP) : BigDecimal.ZERO
-            def record = [
-                key       : key,
-                customerId: stats.customerId,
-                email     : stats.email,
-                name      : stats.name,
-                orders    : stats.orders,
-                totalSpent: ((BigDecimal) stats.totalSpent).toString(),
-                currency  : stats.currency,
-                aov       : aov.toString(),
-                firstOrderAt: stats.firstOrderAtMs && (stats.firstOrderAtMs as long) != Long.MAX_VALUE ? java.time.Instant.ofEpochMilli(stats.firstOrderAtMs as long).toString() : null,
-                lastOrderAt : stats.lastOrderAt,
-                segment   : classification.segment,
-                vip       : classification.vip,
-                recency   : classification.recency,
-                updatedAt : now,
-            ]
-            def res = Jcr.getOrCreateFile(session, path)
-            res.write(MAPPER.writeValueAsString(record))
-            res.setProperty("commerce:segment", str(classification.segment))
-            res.setProperty("commerce:vip", String.valueOf(classification.vip))
-            res.setProperty("commerce:recency", str(classification.recency))
-            res.setProperty("commerce:orders", String.valueOf(stats.orders))
-            res.setProperty("commerce:total_spent", ((BigDecimal) stats.totalSpent).toString())
-            if (stats.email) res.setProperty("commerce:email", stats.email.toString())
-            if (record.lastOrderAt) res.setProperty("commerce:last_order_at", record.lastOrderAt.toString())
+            def res = Jcr.safeGet(session, pathFor(key))
+            if (res == null || !res.exists()) return
+            res.setProperty("commerce:status", "deleted")
+            res.setProperty("commerce:deletedAt", new java.util.Date())
             session.commit()
         } catch (Exception e) {
             try { session.rollback() } catch (Exception ignore) {}
-            try { log.warn("Customers.write: ${e.message}") } catch (Exception ignore) {}
+            try { log.warn("Customers.markDeleted ${customerId}: ${e.message}") } catch (Exception ignore) {}
         }
-        return prev
     }
 
-    // --- Queries (for the endpoint) -------------------------------------------
+    // --- Lookup / queries (endpoint) -----------------------------------------------
 
-    /** Counts by segment + vip + recency across the CRM store. Defensive. */
-    static Map summary(session) {
-        def bySegment = [:]
-        def byRecency = [:]
-        long total = 0, vip = 0
-        eachCrm(session) { res ->
-            try {
-                total++
-                def seg = prop(res, "commerce:segment") ?: "unknown"
-                bySegment[seg] = ((bySegment[seg] ?: 0L) as long) + 1L
-                def rec = prop(res, "commerce:recency") ?: "unknown"
-                byRecency[rec] = ((byRecency[rec] ?: 0L) as long) + 1L
-                if (prop(res, "commerce:vip") == "true") vip++
-            } catch (Exception ignore) {}
-        }
-        return [total: total, vip: vip, bySegment: bySegment, byRecency: byRecency]
+    /** Customer node by email: property query, falling back to the guest key. Null when none. */
+    static Object findByEmail(session, String email) {
+        if (blank(email)) return null
+        try {
+            def v = email.trim().replace("'", "''")
+            def stmt = "/jcr:root${STORE_DIR}//element(*, nt:file)[@commerce:email='${v}']"
+            def q = session.getWorkspace().getQueryManager().createQuery(stmt, Query.XPATH)
+            q.limit(1)
+            def r = q.execute().getResources()
+            if (r != null && r.length > 0) return r[0]
+        } catch (Exception ignore) {}
+        def guest = Jcr.safeGet(session, pathFor(keyFor(null, email)))
+        return (guest != null && guest.exists()) ? guest : null
     }
 
-    /** CRM records, optionally filtered by segment, highest spend first. */
-    static List list(session, String segment, int limit) {
+    /**
+     * Partial-match customer search over name / email / customer id / store key
+     * (case-insensitive contains), by name (fallback: newest updated first). Same
+     * in-memory pass as the browse endpoint — the store is one flat folder and
+     * this backs an admin UI.
+     */
+    static List search(session, String query, int limit) {
+        def q = query == null ? "" : query.trim().toLowerCase()
+        if (q.isEmpty()) return []
         def rows = []
-        eachCrm(session) { res ->
+        eachCustomer(session) { res ->
             try {
-                if (segment != null && prop(res, "commerce:segment") != segment) return
-                rows << Jcr.readMap(session, res.getPath())
+                def hay = [propStr(res, "commerce:email"), propStr(res, "commerce:name"),
+                           propStr(res, "commerce:customer_id"), res.getName()]
+                if (hay.any { it != null && it.toLowerCase().contains(q) }) {
+                    rows << row(session, res)
+                }
             } catch (Exception ignore) {}
         }
-        rows.sort { a, b -> num(b.totalSpent, 0) <=> num(a.totalSpent, 0) }
+        rows.sort { a, b ->
+            int c = (a.name ?: "").toString().toLowerCase() <=> (b.name ?: "").toString().toLowerCase()
+            c != 0 ? c : ((b.updatedAt ?: "").toString() <=> (a.updatedAt ?: "").toString())
+        }
         return limit > 0 && rows.size() > limit ? rows.subList(0, limit) : rows
     }
 
-    // --- Traversal helpers -----------------------------------------------------
-
-    private static void eachOrder(session, Closure cb) {
-        def base = Jcr.safeGet(session, ORDERS_DIR)
-        if (base == null || !base.exists()) return
-        children(base).each { y ->
-            if (!(y.getName() ==~ /\d{4}/)) return
-            children(y).each { m ->
-                if (!(m.getName() ==~ /\d{1,2}/)) return
-                children(m).each { f ->
-                    try {
-                        if (f.getName().endsWith(".json")) {
-                            def order = MAPPER.readValue(f.content.toString(), Map.class)
-                            if (order != null) cb(order)
-                        }
-                    } catch (Exception ignore) {}
-                }
-            }
-        }
-    }
-
-    private static void eachCrm(session, Closure cb) {
-        def base = Jcr.safeGet(session, CRM_DIR)
-        if (base == null || !base.exists()) return
-        def it = base.list()
-        while (it.hasNext()) {
-            def c = it.next()
-            try { if (c.getName().endsWith(".json")) cb(c) } catch (Exception ignore) {}
-        }
-    }
-
-    private static List children(resource) {
-        def out = []
-        try { def it = resource.list(); while (it.hasNext()) out << it.next() } catch (Exception ignore) {}
+    /** One customer's record (props + raw mirror body) by store key. Empty map when absent. */
+    static Map read(session, String key) {
+        def res = Jcr.safeGet(session, pathFor(key))
+        if (res == null || !res.exists()) return [:]
+        def out = row(session, res)
+        out.customer = Jcr.readMap(session, res.getPath())
         return out
     }
 
-    // --- Order field extraction ------------------------------------------------
+    /** The endpoint row shape for one customer node (KEEP profile props only). */
+    // WIRE-SHAPED row (commerce.Api contract): id is the Shopify GID (guests
+    // without a Shopify id keep id=null and are addressed by key/path),
+    // timestamps are ms-precision ISO-8601.
+    static Map row(session, res) {
+        return [
+            key             : res.getName().replaceAll(/\.json$/, ""),
+            path            : res.getPath(),
+            id              : Api.gid("Customer", propStr(res, "commerce:customer_id")),
+            email           : propStr(res, "commerce:email"),
+            name            : propStr(res, "commerce:name"),
+            status          : propStr(res, "commerce:status"),
+            sourceStatus    : propStr(res, "commerce:source_status"),
+            tags            : propStr(res, "commerce:tags"),
+            taxExempt       : propStr(res, "commerce:tax_exempt") == "true",
+            marketingConsent: propStr(res, "commerce:marketing_consent"),
+            marketingEnabled: propStr(res, "commerce:marketing_enabled") == "true",
+            createdAt       : Api.instant(propVal(res, "commerce:created_at")),
+            updatedAt       : Api.instant(propVal(res, "commerce:updated_at")),
+        ]
+    }
 
-    private static String customerKey(order) {
-        def id = customerId(order)
-        if (id) return "id_${id}".toString()
-        def em = email(order)
-        if (em) return "email_${sanitize(em.toLowerCase())}".toString()
+    // --- Internals -------------------------------------------------------------------
+
+    private static void eachCustomer(session, Closure cb) {
+        def base = Jcr.safeGet(session, STORE_DIR)
+        if (base == null || !base.exists()) return
+        try {
+            def it = base.list()
+            while (it.hasNext()) {
+                def c = it.next()
+                try { if (c.getName().endsWith(".json")) cb(c) } catch (Exception ignore) {}
+            }
+        } catch (Exception ignore) {}
+    }
+
+    // Property readers tolerant of typed values (Date/Calendar/Number) AND legacy
+    // String values.
+    private static Object propVal(res, String name) {
+        try { if (res.hasProperty(name)) return res.getProperty(name).getValue() } catch (Exception ignore) {}
         return null
     }
 
-    private static String customerId(order) {
-        def id = order?.customer?.id
-        return id == null ? null : id.toString()
+    private static String propStr(res, String name) {
+        def v = propVal(res, name)
+        return v == null ? null : v.toString()
     }
 
-    private static String email(order) {
-        def em = order?.contact_email ?: order?.email ?: order?.customer?.email
-        return (em == null || em.toString().trim().isEmpty()) ? null : em.toString().trim()
+    private static void setDate(res, String name, value) {
+        long ms = parseMs(value)
+        if (ms > 0) res.setProperty(name, new java.util.Date(ms))
     }
 
-    private static String name(order) {
-        def c = order?.customer
-        if (c instanceof Map) {
-            def n = [c.first_name, c.last_name].findAll { it }.join(" ").trim()
-            if (n) return n
-        }
-        return null
-    }
-
-    private static long orderTimeMs(order) {
-        def created = order?.created_at
-        if (created != null) {
-            try { return java.time.OffsetDateTime.parse(created.toString()).toInstant().toEpochMilli() } catch (Exception ignore) {}
-        }
-        return 0L
-    }
-
-    private static String prop(res, String name) {
-        try { if (res.hasProperty(name)) return res.getProperty(name).getValue()?.toString() } catch (Exception ignore) {}
-        return null
-    }
-
-    private static BigDecimal num(v, dflt) {
-        def n = Money.toNumber(v)
-        return n != null ? n : (dflt == null ? null : new BigDecimal(dflt.toString()))
-    }
-
-    private static int intOr(v, int dflt) {
-        if (v == null) return dflt
-        try { return v.toString().trim() as int } catch (Exception e) { return dflt }
-    }
+    /** Value → epoch ms: Calendar / Date / Number / ISO string. 0 when unknown. */
+    private static boolean blank(v) { v == null || v.toString().trim().isEmpty() }
 
     private static String sanitize(String s) { s == null ? "" : s.replaceAll("[^A-Za-z0-9_.-]", "_") }
-    private static String str(v) { v == null ? "" : v.toString() }
 }

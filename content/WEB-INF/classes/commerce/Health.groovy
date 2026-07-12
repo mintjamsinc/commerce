@@ -227,7 +227,7 @@ class Health {
             .title("🩺", "Integration health")
             .status(icon, headline)
         fields.each { k, v -> m.field(k.toString(), v) }
-        m.field("Detected at", Instant.now().toString())
+        m.field("Detected at", Api.now())
         return m
     }
 

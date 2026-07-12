@@ -27,25 +27,38 @@ try {
     def configNode = repositorySession.getResource("/etc/commerce/config/shopify.yml")
     def config = YAML.parse(configNode)
 
-    // The webhook secret is INDEPENDENT of the Admin API credentials and lives at
-    // the top level of shopify.yml (webhooks work even when the Admin API is off).
-    String sharedSecret = config.webhookSecret
-    if (sharedSecret == null || sharedSecret.trim().isEmpty()) {
-        // Not a client error: the platform is not configured to verify webhooks.
-        verifyError = "webhookSecret is not configured in /etc/commerce/config/shopify.yml"
+    // A webhook's HMAC signing key depends on HOW the subscription was created:
+    //   • APP / Admin-API-registered subscriptions (webhookSubscriptionCreate — how
+    //     this app self-registers its topics) are signed with the APP'S CLIENT SECRET
+    //     (API secret key). This is the PRIMARY key.
+    //   • Subscriptions created manually in the Shopify admin (Settings > Notifications
+    //     > Webhooks) are signed with that page's shop webhook secret — kept as a
+    //     FALLBACK (config.webhookSecret) so hand-created webhooks still verify.
+    // We accept the payload if EITHER key produces a matching signature.
+    def adminApi = config?.adminApi
+    def candidates = []
+    def clientSecret = (adminApi instanceof Map) ? adminApi.clientSecret?.toString() : null
+    if (clientSecret != null && !clientSecret.trim().isEmpty()) candidates << clientSecret.trim()
+    def webhookSecret = config.webhookSecret?.toString()
+    if (webhookSecret != null && !webhookSecret.trim().isEmpty()) candidates << webhookSecret.trim()
+
+    if (candidates.isEmpty()) {
+        // Not a client error: the platform has no key to verify against.
+        verifyError = "no webhook verification secret configured (set adminApi.clientSecret, or webhookSecret for admin-created webhooks) in /etc/commerce/config/shopify.yml"
     } else {
         byte[] body = (rawBody instanceof byte[]) ? rawBody : rawBody.toString().getBytes("UTF-8")
-
-        Mac mac = Mac.getInstance("HmacSHA256")
-        mac.init(new SecretKeySpec(sharedSecret.getBytes("UTF-8"), "HmacSHA256"))
-        byte[] computed = mac.doFinal(body)
-        String computedBase64 = Base64.encoder.encodeToString(computed)
-
         String expected = (hmacHeader == null) ? "" : hmacHeader
-        // Constant-time comparison to avoid leaking timing information.
-        verified = java.security.MessageDigest.isEqual(
-            computedBase64.getBytes("UTF-8"),
-            expected.getBytes("UTF-8"))
+        for (secret in candidates) {
+            Mac mac = Mac.getInstance("HmacSHA256")
+            mac.init(new SecretKeySpec(secret.getBytes("UTF-8"), "HmacSHA256"))
+            String computedBase64 = Base64.encoder.encodeToString(mac.doFinal(body))
+            // Constant-time comparison to avoid leaking timing information.
+            if (java.security.MessageDigest.isEqual(
+                    computedBase64.getBytes("UTF-8"), expected.getBytes("UTF-8"))) {
+                verified = true
+                break
+            }
+        }
     }
 } catch (Exception e) {
     // Reading or parsing the secret failed (e.g. config missing): a server-side

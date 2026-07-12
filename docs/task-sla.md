@@ -14,7 +14,7 @@ scanTaskSla.groovy ── queries open human tasks from the BPMN engine (Camunda
         │            (order-review-flow / refund-review-flow / product-update-flow)
         ▼
 commerce.TaskSla.evaluate ── applies sla.yml rules (pure logic)
-        │                     ├─ escalation alert ──► commerce.Alerts ──► Notifications (#17)
+        │                     ├─ escalation alert ──► commerce.Alerts ──► Notifications
         │                     └─ returns breaches ──► engine action (priority bump / group)
         ▼
 commerce.TaskSla.prune ── drops cooldown state for tasks that have completed

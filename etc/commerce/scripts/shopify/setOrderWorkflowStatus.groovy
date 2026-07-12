@@ -17,8 +17,6 @@
 //   approved -> fulfillment_pending  (Fulfill Order task raised; waiting on a fulfiller)
 //   *        -> fulfilled            (workflow finished; terminal)
 //
-// See docs/commerce-status.md for the authoritative status list.
-//
 // Wiring
 // ------
 // This one script is attached at FOUR points via org.mintjams.script.bpm.CmsDelegate
@@ -61,6 +59,7 @@ def statusByElement = [
     "ServiceTask_approveOrder" : "approved",
     "UserTask_fulfillOrder"    : "fulfillment_pending",
     "EndEvent_orderProcessing" : "fulfilled",
+    "EndEvent_orderCancelled"  : "cancelled",
 ]
 def status = statusByElement[elementId]
 if (!status) {

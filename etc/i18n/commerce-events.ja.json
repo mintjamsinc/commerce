@@ -1,0 +1,52 @@
+{
+	"app.commerce-events.title": "コマースイベント",
+
+	"app.commerce-events.toolbar.refresh": "更新",
+	"app.commerce-events.toolbar.toggleSidebar": "フィルタの表示切替",
+	"app.commerce-events.toolbar.toggleDetail": "詳細の表示切替",
+
+	"app.commerce-events.replayMatchingBtn": "一括再実行",
+	"app.commerce-events.replayMatchingHint": "現在のフィルターに一致するすべてのイベントを再実行",
+	"app.commerce-events.replayMatchingTitle": "一括再実行",
+	"app.commerce-events.replayMatchingMsg": "条件（{desc}）に一致するすべてのイベントを再配信します。多数のイベントが再実行される可能性があります。",
+	"app.commerce-events.replayOk": "再実行",
+	"app.commerce-events.replayedMatched": "{matched} 件中 {replayed} 件を再実行しました。",
+	"app.commerce-events.replayOneHint": "このイベントを再実行",
+	"app.commerce-events.replayed": "{count} 件のイベントを再実行しました。",
+	"app.commerce-events.replayFailed": "再実行に失敗しました。",
+	"app.commerce-events.loadFailed": "イベントを読み込めませんでした。",
+	"app.commerce-events.noEvents": "条件に一致するイベントがありません。",
+
+	"app.commerce-events.filter.status": "ステータス",
+	"app.commerce-events.filter.statusError": "エラー",
+	"app.commerce-events.filter.statusReceived": "受信済み",
+	"app.commerce-events.filter.statusProcessed": "処理済み",
+	"app.commerce-events.filter.statusAll": "すべて",
+	"app.commerce-events.filter.source": "ソース",
+	"app.commerce-events.filter.topic": "トピック",
+	"app.commerce-events.filter.from": "期間（開始）",
+	"app.commerce-events.filter.to": "期間（終了）",
+
+	"app.commerce-events.table.when": "日付",
+	"app.commerce-events.table.source": "ソース",
+	"app.commerce-events.table.topic": "トピック",
+	"app.commerce-events.table.event": "イベント",
+	"app.commerce-events.table.status": "ステータス",
+	"app.commerce-events.table.tries": "試行",
+
+	"app.commerce-events.status.received": "受信",
+	"app.commerce-events.status.processed": "処理済み",
+	"app.commerce-events.status.error": "エラー",
+	"app.commerce-events.status.deleted": "削除",
+
+	"app.commerce-events.detail.title": "詳細",
+	"app.commerce-events.detail.empty": "行を選択すると詳細が表示されます。",
+	"app.commerce-events.detail.section": "イベント",
+	"app.commerce-events.detail.entityType": "エンティティ種別",
+	"app.commerce-events.detail.entityId": "エンティティID",
+	"app.commerce-events.detail.error": "エラー",
+
+	"app.commerce-events.statusbar.working": "処理中…",
+	"app.commerce-events.statusbar.count": "{count} 件のイベント",
+	"app.commerce-events.statusbar.ready": "準備完了"
+}

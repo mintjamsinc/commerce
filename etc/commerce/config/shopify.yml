@@ -2,17 +2,19 @@
 # Deploy to: /etc/commerce/config/shopify.yml
 # Managed by the Commerce app (Webtop > Commerce > Shop).
 
-# Webhook shared secret (from Shopify Admin > Notifications > Webhooks).
-# Used to verify incoming Shopify webhooks (HMAC-SHA256). This is REQUIRED to
-# receive webhooks at all and is kept INDEPENDENT of the Admin API credentials
-# below: webhooks are processed even when the Admin API integration is disabled.
-# IMPORTANT: Replace with the actual secret before deployment.
-webhookSecret: "REPLACE_WITH_WEBHOOK_SECRET"
+# Webhook shared secret — OPTIONAL. Incoming webhooks are verified by HMAC-SHA256.
+# The app self-registers its webhook subscriptions via the Admin API, and those are
+# signed with the APP'S CLIENT SECRET (adminApi.clientSecret below) — so they verify
+# automatically with no value here. Set this ONLY to also verify webhooks created by
+# hand in the Shopify admin (Settings > Notifications > Webhooks), which are signed
+# with that page's shop secret. Leave blank when all webhooks are app-registered.
+webhookSecret: ""
 
 # Admin API integration (REQUIRED).
 # The commerce integration uses the Shopify Admin API (GraphQL) to enrich products with
-# metafields, refresh the inventory mirror during reconciliation, and write completed
-# Fulfill Order tasks back as fulfillments. There is no on/off toggle: the Admin API is
+# metafields, reconcile the catalog mirror (status / price) and audit inventory via bulk
+# operations, and write completed Fulfill Order tasks back as fulfillments. There is no
+# on/off toggle: the Admin API is
 # active as soon as the four connection fields below are filled in. Until then, those
 # features are skipped with a warning ("Admin API not configured").
 #

@@ -2,8 +2,8 @@
 //
 // Invoked periodically by the commerce-task-sla timer route (as the service
 // user). Gathers the open human tasks from the BPMN engine, evaluates them
-// against the SLA rules in /etc/commerce/config/sla.yml, and escalates any
-// breaches: an alert through the notification channels (commerce.Alerts, the
+// against the configured SLA rules, and escalates any
+// breaches: an alert through the notification channels (the
 // same plumbing as the health monitor) plus an optional engine-side action
 // (priority bump / candidate group) so the task surfaces in operators' lists.
 //
@@ -25,8 +25,8 @@ if (__clusterLease == null) {
     return
 }
 try {
-    // Our BPMN flows that raise human tasks (see etc/bpm/processes/commerce/shopify).
-    def PROCESS_KEYS = ["order-review-flow", "refund-review-flow", "product-update-flow", "backorder-release-flow"]
+    // Our BPMN flows that raise human tasks.
+    def PROCESS_KEYS = ["order-review-flow", "refund-review-flow", "product-update-flow", "backorder-release-flow", "inventory-alert-flow"]
     def SLA_CONFIG = "/etc/commerce/config/sla.yml"
 
     try {

@@ -1,0 +1,227 @@
+/* Commerce Products app — app-specific styles.
+ *
+ * Layout, buttons, inputs and theme tokens come from the shared webtop-app.css
+ * (loaded alongside this file). These rules add the facet-rail + result-list
+ * layout, reusing the design-system tokens so the app stays consistent across
+ * themes. */
+
+:root {
+	--navbar-height: 2.5rem;
+	--statusbar-height: 1.75rem;
+	--success-color: var(--primary-color);
+}
+
+[v-cloak] { display: none !important; }
+
+#app { height: 100%; }
+
+/* ---- Toolbar / status bar (aligned with the Commerce apps) ----------------- */
+nav.nav-bar {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	margin: -1rem -1rem 0;
+	padding: 1rem 1.5rem 0.75rem;
+	color: var(--navbar-color) !important;
+	white-space: nowrap;
+	user-select: none;
+	position: relative;
+	z-index: 10;
+}
+.nav-spacer { flex: 1; min-width: 1rem; }
+.toolbar-group {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.25rem 0.5rem;
+	background-color: var(--window-controls-bg);
+	border: 1px solid var(--window-controls-border-color);
+	border-radius: 9999px;
+}
+.pb-searchbar { width: 20rem; max-width: 40vw; }
+.pb-searchbar .input-group { width: 100%; }
+
+.status-bar {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	height: var(--statusbar-height);
+	margin: 0 -1rem -1rem;
+	padding: 0 1rem;
+	color: var(--navbar-color);
+	font-size: 11px;
+	white-space: nowrap;
+	user-select: none;
+}
+.status-group { display: inline-flex; align-items: center; gap: 0.25rem; }
+.status-item { padding: 0 0.5rem; }
+
+/* ---- Two-pane body ---------------------------------------------------------- */
+.content-body {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	position: relative;
+	gap: 0.25rem;
+}
+.content-main {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	min-width: 0;
+	min-height: 0;
+	overflow: hidden;
+	gap: 0.75rem;
+}
+
+/* ---- Facet rail -------------------------------------------------------------- */
+.pb-facets {
+	display: flex;
+	flex-direction: column;
+	flex: none;
+	min-width: 0;
+	min-height: 0;
+	overflow-y: auto;
+	gap: 1rem;
+}
+
+/* Drag handle on the facet rail's right edge — mirrors the settings app's
+ * .sidebar-resize-handle so width adjustment feels identical across apps. */
+.sidebar-resize-handle {
+	width: 4px;
+	cursor: col-resize;
+	background-color: transparent;
+	flex-shrink: 0;
+	position: relative;
+	z-index: 2;
+	transition: background-color 0.15s;
+}
+.sidebar-resize-handle:hover,
+.sidebar-resize-handle:active { background-color: var(--selection-rect-border); }
+.pb-facet-group { display: flex; flex-direction: column; gap: 0.15rem; }
+.pb-facet-title {
+	font-weight: 700;
+	text-transform: uppercase;
+	color: var(--text-soft-color);
+	font-size: 11px;
+	padding-bottom: 0.25rem;
+	border-bottom: 1px solid var(--navbar-border-color);
+	margin-bottom: 0.25rem;
+}
+.pb-facet {
+	display: flex;
+	align-items: center;
+	gap: 0.4rem;
+	width: 100%;
+	text-align: left;
+	background: transparent;
+	border: 1px solid transparent;
+	border-radius: 0.4rem;
+	padding: 0.25rem 0.5rem;
+	cursor: pointer;
+	color: inherit;
+	font-size: 12px;
+}
+.pb-facet:hover { background: var(--item-hover-bg); }
+.pb-facet.active { background: var(--item-selected-bg); font-weight: 600; }
+.pb-facet-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pb-facet-count {
+	flex: none;
+	font-size: 10px;
+	color: var(--text-soft-color);
+	background: var(--window-controls-bg);
+	border-radius: 9999px;
+	padding: 0 0.4rem;
+}
+.pb-facet-empty { color: var(--text-soft-color); font-size: 11px; padding: 0.1rem 0.5rem; }
+
+/* ---- Result list -------------------------------------------------------------- */
+.pb-listhead { display: flex; align-items: center; gap: 0.5rem; }
+.pb-count { font-size: 12px; color: var(--text-soft-color); }
+.pb-capped { font-size: 11px; color: var(--warning-color); }
+
+.pb-state {
+	flex: 1;
+	min-height: 12rem;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 0.75rem;
+	opacity: 0.75;
+	text-align: center;
+}
+.pb-state .bi { font-size: 1.9rem; }
+
+.pb-table-scroll { flex: 1; min-height: 0; overflow: auto; }
+
+/* Data table base styling (width, padding, header bg/size/weight/uppercase)
+ * comes from the shared table.wt primitive in webtop-app.css. Only the sticky
+ * header — required by the scroll container above, which table.wt does not
+ * provide — is app-local; its background is supplied by table.wt. */
+table.wt { border-collapse: collapse; }
+table.wt thead th { position: sticky; top: 0; z-index: 1; }
+table.wt tbody td { border-bottom: 1px solid var(--navbar-border-color); }
+
+.pb-row:hover { background: var(--item-hover-bg); }
+.pb-open {
+	background: none;
+	border: none;
+	padding: 0;
+	cursor: pointer;
+	color: inherit;
+	font-size: 13px;
+	font-weight: 600;
+	text-align: left;
+}
+.pb-open:hover { text-decoration: underline; }
+.pb-handle { font-size: 11px; color: var(--text-soft-color); }
+.pb-tags { max-width: 16rem; overflow-wrap: anywhere; color: var(--text-soft-color); }
+.pb-date { white-space: nowrap; color: var(--text-soft-color); }
+/* Sales columns (qty / net / gross): right-aligned tabular figures. */
+.pb-num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* Status pill (active / draft / archived). */
+.pb-status {
+	display: inline-block;
+	padding: 0 0.4rem;
+	border-radius: 9999px;
+	font-size: 10px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+	background: var(--window-controls-bg);
+	color: var(--text-soft-color);
+}
+.pb-status.st-active { background: rgb(from var(--success-color) r g b / 0.15); color: var(--success-color); }
+.pb-status.st-draft { background: rgb(from var(--warning-color) r g b / 0.15); color: var(--warning-color); }
+.pb-status.st-archived { background: rgb(from var(--text-soft-color) r g b / 0.18); color: var(--text-soft-color); }
+
+/* Spinner. */
+.spinner {
+	width: 1.4rem;
+	height: 1.4rem;
+	border: 2px solid var(--window-controls-border-color);
+	border-top-color: var(--pane-toggle-active-bg, #0f766e);
+	border-radius: 50%;
+	animation: pb-spin 0.8s linear infinite;
+}
+@keyframes pb-spin { to { transform: rotate(360deg); } }
+.spin { animation: pb-spin 0.8s linear infinite; }
+
+/* Transient toast. */
+.commerce-toast {
+	position: fixed;
+	bottom: 2.75rem;
+	left: 50%;
+	transform: translateX(-50%);
+	padding: 0.55rem 1rem;
+	border-radius: 0.5rem;
+	background: #1f2937;
+	color: #f8fafc;
+	font-size: 0.8125rem;
+	box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+	z-index: 1000;
+	max-width: 80%;
+}
+.commerce-toast.error { background: #dc2626; color: #fff; }

@@ -1,14 +1,13 @@
 # Notification destinations for the commerce workflows
 # Deploy to: /etc/commerce/config/notifications.yml
 #
-# This file is kept SEPARATE from shopify.yml (Shopify credentials) so that
-# notification settings can be managed independently by the Commerce app
+# This file is kept SEPARATE from the Shopify credentials so that notification
+# settings can be managed independently by the Commerce app
 # (Webtop > Commerce > Notifications) without touching API secrets.
 #
 # Each manual task in the inventory / order / refund workflows fires a "create"
-# task listener (etc/commerce/scripts/shopify/notify*TaskCreated.groovy) that
-# builds one channel-agnostic message and dispatches it to every ENABLED channel
-# below. Each channel renders that message in its own format:
+# task listener that builds one channel-agnostic message and dispatches it to
+# every ENABLED channel below. Each channel renders that message in its own format:
 #   - Slack / Discord / Teams : markup posts (mrkdwn / markdown / Adaptive Card)
 #   - LINE                    : plain-text push via the Messaging API
 #   - webhook                 : structured JSON for any downstream consumer
@@ -16,8 +15,8 @@
 #
 # A channel is ON unless you set `enabled: false`. Sections you do not need can
 # be deleted entirely. Delivery is best-effort: a failure is logged and never
-# breaks the business process. See the channel adapters under
-# /content/WEB-INF/classes/commerce/ (SlackChannel, DiscordChannel, ...).
+# breaks the business process. Each channel is implemented by its own adapter
+# class in the shared commerce helper library.
 
 # Slack incoming webhook
 # https://api.slack.com/messaging/webhooks

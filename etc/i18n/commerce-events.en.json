@@ -1,0 +1,52 @@
+{
+	"app.commerce-events.title": "Commerce Events",
+
+	"app.commerce-events.toolbar.refresh": "Refresh",
+	"app.commerce-events.toolbar.toggleSidebar": "Toggle filters",
+	"app.commerce-events.toolbar.toggleDetail": "Toggle detail",
+
+	"app.commerce-events.replayMatchingBtn": "Replay matching",
+	"app.commerce-events.replayMatchingHint": "Replay every event matching the current filter",
+	"app.commerce-events.replayMatchingTitle": "Replay matching",
+	"app.commerce-events.replayMatchingMsg": "Re-dispatch every event matching: {desc}. This can replay many events.",
+	"app.commerce-events.replayOk": "Replay",
+	"app.commerce-events.replayedMatched": "Replayed {replayed} of {matched} matched.",
+	"app.commerce-events.replayOneHint": "Replay this event",
+	"app.commerce-events.replayed": "Replayed {count} event(s).",
+	"app.commerce-events.replayFailed": "Replay failed.",
+	"app.commerce-events.loadFailed": "Could not load events.",
+	"app.commerce-events.noEvents": "No events match the filter.",
+
+	"app.commerce-events.filter.status": "Status",
+	"app.commerce-events.filter.statusError": "Error",
+	"app.commerce-events.filter.statusReceived": "Received",
+	"app.commerce-events.filter.statusProcessed": "Processed",
+	"app.commerce-events.filter.statusAll": "All",
+	"app.commerce-events.filter.source": "Source",
+	"app.commerce-events.filter.topic": "Topic",
+	"app.commerce-events.filter.from": "Period (from)",
+	"app.commerce-events.filter.to": "Period (to)",
+
+	"app.commerce-events.table.when": "Date",
+	"app.commerce-events.table.source": "Source",
+	"app.commerce-events.table.topic": "Topic",
+	"app.commerce-events.table.event": "Event",
+	"app.commerce-events.table.status": "Status",
+	"app.commerce-events.table.tries": "Tries",
+
+	"app.commerce-events.status.received": "Received",
+	"app.commerce-events.status.processed": "Processed",
+	"app.commerce-events.status.error": "Error",
+	"app.commerce-events.status.deleted": "Deleted",
+
+	"app.commerce-events.detail.title": "Detail",
+	"app.commerce-events.detail.empty": "Select a row to see its details.",
+	"app.commerce-events.detail.section": "Event",
+	"app.commerce-events.detail.entityType": "Entity type",
+	"app.commerce-events.detail.entityId": "Entity ID",
+	"app.commerce-events.detail.error": "Error",
+
+	"app.commerce-events.statusbar.working": "Working…",
+	"app.commerce-events.statusbar.count": "{count} events",
+	"app.commerce-events.statusbar.ready": "Ready"
+}

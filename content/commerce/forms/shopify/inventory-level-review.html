@@ -651,6 +651,100 @@ body {
 				</div>
 			</section>
 
+			<!-- Inventory & Reorder Review: the mirror total crossed below the FIXED
+			     reorder threshold. There is no system-suggested quantity — the operator
+			     decides it, using the current stock, the threshold, and the previous
+			     order (date + quantity) shown for reference. Completing with a quantity
+			     records it in Shopify as incoming stock; a blank / 0 quantity means
+			     "reviewed, no reorder". -->
+			<section v-if="reorder" class="variants-section">
+				<h2 class="section-title">{{ t('form.commerce.shopify.inventoryLevelReview.reorderProposal', undefined, 'Reorder') }}</h2>
+				<div class="table-wrap">
+					<table class="variants-table">
+						<thead>
+							<tr>
+								<th>{{ t('form.commerce.shopify.inventoryLevelReview.colVariant', undefined, 'Variant') }}</th>
+								<th class="align-right">{{ t('form.commerce.shopify.inventoryLevelReview.colAvailable', undefined, 'Available') }}</th>
+								<th class="align-right">{{ t('form.commerce.shopify.inventoryLevelReview.reorderPoint', undefined, 'Reorder point') }}</th>
+								<th class="align-right">{{ t('form.commerce.shopify.inventoryLevelReview.lastOrderedAt', undefined, 'Last ordered') }}</th>
+								<th class="align-right">{{ t('form.commerce.shopify.inventoryLevelReview.lastOrderedQty', undefined, 'Last order qty') }}</th>
+								<th class="align-right">{{ t('form.commerce.shopify.inventoryLevelReview.lastReceivedAt', undefined, 'Last received') }}</th>
+								<th class="align-right">{{ t('form.commerce.shopify.inventoryLevelReview.leadTime', undefined, 'Previous lead time') }}</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><span class="variant-title">{{ reorderVariantLabel }}</span></td>
+								<td class="align-right">{{ formatNumber(reorder.available) }}</td>
+								<td class="align-right">{{ formatNumber(reorder.threshold) }}</td>
+								<td class="align-right">{{ reorder.lastOrderedAt ? formatDateOnly(reorder.lastOrderedAt) : '—' }}</td>
+								<td class="align-right">{{ reorder.lastOrderedQty == null ? '—' : formatNumber(reorder.lastOrderedQty) }}</td>
+								<td class="align-right">{{ reorder.lastReceivedAt ? formatDateOnly(reorder.lastReceivedAt) : '—' }}</td>
+								<td class="align-right">{{ lastLeadTimeText }}</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+				<!-- Reorder content. The SUMMARY (current draft) is visible to EVERYONE — like
+				     the memo content — so an observer can see what has been ordered; only the
+				     edit / clear controls and the edit form are gated on ownership (canReview).
+				     Saved incrementally on the product node (commerce:reorder_confirmed_qty /
+				     commerce:reorder_destination_location_id — the "current" draft); createIncomingTransfer
+				     moves it to commerce:reorder_last_orders (the "previous" order) and clears it on completion. -->
+				<div class="memo-body" style="padding:1rem 1.25rem;">
+					<!-- SUMMARY / status — visible to all viewers (view-only for non-owners) -->
+					<div v-if="hasReorderDraft" style="font-size:13px; margin-bottom:0.75rem;">{{ reorderDraftText }}</div>
+					<div v-else style="font-size:13px; color:var(--text-muted); margin-bottom:0.75rem;">{{ t('form.commerce.shopify.inventoryLevelReview.reorderNotEntered', undefined, 'No reorder entered (order quantity / destination).') }}</div>
+
+					<!-- EDIT controls — the OWNER only (canReview); viewing the summary above is not gated -->
+					<template v-if="canReview">
+						<!-- VIEW mode: edit / clear triggers -->
+						<div v-if="reorderMode === 'view'">
+							<div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+								<button class="btn btn-secondary" type="button" :disabled="locations.length === 0" @click="enterReorderEdit">
+									<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25a1.75 1.75 0 0 1 .445-.755l8.61-8.612zm1.414 1.06a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354l-1.086-1.086zM11.189 6.25 9.75 4.81l-6.286 6.287a.25.25 0 0 0-.064.108l-.558 1.953 1.953-.558a.25.25 0 0 0 .108-.064l6.286-6.286z"/></svg>
+									<span>{{ t('form.commerce.shopify.inventoryLevelReview.editReorder', undefined, 'Edit reorder') }}</span>
+								</button>
+								<button v-if="hasReorderDraft" class="btn btn-secondary" type="button" :disabled="reorderSaving" @click="clearReorderDraft">
+									<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M6.5 1a1 1 0 0 0-1 1v1H2.5a.5.5 0 0 0 0 1H3v9a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V4h.5a.5.5 0 0 0 0-1H10.5V2a1 1 0 0 0-1-1h-3zM4 4h8v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4zm2.5 2a.5.5 0 0 1 .5.5v5a.5.5 0 0 1-1 0v-5a.5.5 0 0 1 .5-.5zm3 0a.5.5 0 0 1 .5.5v5a.5.5 0 0 1-1 0v-5a.5.5 0 0 1 .5-.5z"/></svg>
+									<span>{{ t('form.commerce.shopify.inventoryLevelReview.clearReorder', undefined, 'Clear reorder') }}</span>
+								</button>
+							</div>
+							<p v-if="locations.length === 0" style="margin:0.75rem 0 0; font-size:12px; color:var(--text-muted);">{{ t('form.commerce.shopify.inventoryLevelReview.noLocations', undefined, 'No stock locations are known yet — recording an incoming transfer is unavailable.') }}</p>
+						</div>
+						<!-- EDIT mode (Update / Cancel, like the memo editor) -->
+						<div v-if="reorderMode === 'edit'" style="display:flex; flex-wrap:wrap; gap:1rem; align-items:flex-end;">
+						<label style="display:flex; flex-direction:column; gap:0.375rem; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-muted); font-weight:600;">
+							{{ t('form.commerce.shopify.inventoryLevelReview.orderDate', undefined, 'Order date') }}
+							<input type="date" v-model="orderDate" :disabled="reorderSaving"
+								style="width:10rem; padding:0.5rem 0.75rem; border:1px solid var(--border-strong); border-radius:var(--radius-sm); background:var(--surface); color:var(--text); font-size:13px;">
+						</label>
+						<label style="display:flex; flex-direction:column; gap:0.375rem; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-muted); font-weight:600;">
+							{{ t('form.commerce.shopify.inventoryLevelReview.confirmedQty', undefined, 'Confirmed order quantity') }}
+							<input type="number" min="0" step="1" v-model.number="orderQty" :disabled="reorderSaving"
+								style="width:10rem; padding:0.5rem 0.75rem; border:1px solid var(--border-strong); border-radius:var(--radius-sm); background:var(--surface); color:var(--text); font-size:13px;">
+						</label>
+						<label style="display:flex; flex-direction:column; gap:0.375rem; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-muted); font-weight:600;">
+							{{ t('form.commerce.shopify.inventoryLevelReview.destination', undefined, 'Deliver to (location)') }}
+							<select v-model="destinationId" :disabled="reorderSaving || locations.length === 0"
+								style="min-width:14rem; padding:0.5rem 0.75rem; border:1px solid var(--border-strong); border-radius:var(--radius-sm); background:var(--surface); color:var(--text); font-size:13px;">
+								<option v-for="loc in locations" :key="loc.id" :value="loc.id">{{ loc.name }}</option>
+							</select>
+						</label>
+						<!-- Auto-enable fulfillment for a destination that does not yet stock this item (default ON). -->
+						<label style="display:flex; align-items:center; gap:0.5rem; flex-basis:100%; font-size:13px; color:var(--text-soft);">
+							<input type="checkbox" v-model="activateLocation" :disabled="reorderSaving" style="width:auto; margin:0;">
+							<span>{{ t('form.commerce.shopify.inventoryLevelReview.autoActivateLocation', undefined, 'If fulfillment is disabled at the destination location, enable it automatically') }}</span>
+						</label>
+						<div style="display:flex; gap:0.5rem;">
+							<button class="btn btn-secondary" type="button" :disabled="reorderSaving" @click="cancelReorderEdit">{{ t('form.commerce.shopify.common.cancel', undefined, 'Cancel') }}</button>
+							<button class="btn btn-primary" type="button" :disabled="reorderSaving || !(orderQty > 0) || !destinationId" @click="saveReorderDraft">{{ t('form.commerce.shopify.common.update', undefined, 'Update') }}</button>
+						</div>
+					</div>
+					</template>
+				</div>
+			</section>
+
 			<section class="memo-section">
 				<h2 class="section-title">{{ t('form.commerce.shopify.inventoryLevelReview.memo', undefined, 'Memo') }}</h2>
 				<div class="memo-body">
@@ -721,14 +815,26 @@ body {
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 14.5a5 5 0 0 1 10 0 .5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5z"/></svg>
 					<span>{{ assignedNoticeText }}</span>
 				</span>
-				<!-- Assigned to me: Mark as reviewed -->
-				<button v-else
-					class="btn btn-primary" type="button"
-					:disabled="actionPending"
-					@click="onComplete">
-					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7 7a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.25 10.69l6.47-6.47a.75.75 0 0 1 1.06 0z"/></svg>
-					<span>{{ t('form.commerce.shopify.inventoryLevelReview.markReviewed', undefined, 'Mark as reviewed') }}</span>
-				</button>
+				<!-- Assigned to me: ONE completion button that toggles by whether a reorder
+				     draft is saved. Any in-progress edit must be saved/cancelled first. -->
+				<template v-else>
+					<button v-if="reorder"
+						class="btn btn-primary" type="button"
+						:disabled="actionPending || reorderMode === 'edit'"
+						@click="onCompleteReview">
+						<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7 7a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.25 10.69l6.47-6.47a.75.75 0 0 1 1.06 0z"/></svg>
+						<span>{{ hasReorderDraft
+							? t('form.commerce.shopify.inventoryLevelReview.recordOrderComplete', undefined, 'Record order & complete')
+							: t('form.commerce.shopify.inventoryLevelReview.completeNoReorder', undefined, 'Complete — no reorder') }}</span>
+					</button>
+					<button v-if="!reorder"
+						class="btn btn-primary" type="button"
+						:disabled="actionPending"
+						@click="onComplete">
+						<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7 7a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.25 10.69l6.47-6.47a.75.75 0 0 1 1.06 0z"/></svg>
+						<span>{{ t('form.commerce.shopify.inventoryLevelReview.markReviewed', undefined, 'Mark as reviewed') }}</span>
+					</button>
+				</template>
 			</div>
 		</footer>
 
@@ -856,6 +962,35 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.75/
 				effectiveThresholds: {},
 				shopifyURL: '',
 
+				// Reorder review (fixed threshold). Populated from the process variables
+				// the sweep set when the mirror total crossed below the reorder threshold;
+				// absent on legacy tasks → the reorder section hides. There is no system
+				// suggestion — the operator enters the quantity; last-order date/qty are
+				// shown for reference (read from the product node's commerce:reorder_last_orders map).
+				reorder: null,                  // { itemId, variantId, variantTitle, available, threshold, lastOrderedAt, lastOrderedQty }
+				// Reorder DRAFT ("current" order), saved incrementally into the product node's
+				// commerce:reorder_draft PER-ITEM map ({ "<itemId>": { qty, destination, at, by } },
+				// like commerce:reorder_last_orders). Reorder flows are per inventory item, so
+				// several variants of one product can be drafted at once — a per-item map keeps
+				// them from colliding. (A NODE property, not a process variable: a form's
+				// setProcessVariables has REPLACE semantics and would drop the sweep's variables.)
+				// orderQty / destinationId / orderDate are the EDIT buffer; savedQty /
+				// savedDestinationId / savedOrderAt mirror the persisted draft (drive the view
+				// text + the completion button's mode).
+				orderQty: null,
+				destinationId: '',
+				orderDate: '',                  // order date (YYYY-MM-DD, viewer's zone) — edit buffer
+				// Auto-enable fulfillment at the destination when it does not yet stock this item
+				// (createIncomingTransfer calls inventoryActivate). Saved into the draft as `activate`;
+				// default ON so a fresh destination "just works" without a Shopify-admin detour.
+				activateLocation: true,
+				savedQty: null,
+				savedDestinationId: '',
+				savedOrderAt: '',               // persisted order date as a UTC ISO instant
+				reorderMode: 'view',            // 'view' | 'edit'
+				reorderSaving: false,
+				locations: [],                  // [{ id, name }] from the locations mirror
+
 				// Internal memo
 				memo: null,                     // { id, name, at, content } or null
 				memoMode: 'view',               // 'view' | 'edit'
@@ -954,12 +1089,51 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.75/
 			canEditMemo() {
 				return this.isAssignedToMe && !this.taskCompleted;
 			},
+			// The reorder inputs follow the same ownership rule as the memo.
+			canReview() {
+				return this.isAssignedToMe && !this.taskCompleted;
+			},
+			reorderVariantLabel() {
+				const t = this.reorder && this.reorder.variantTitle;
+				return (t && t !== 'Default Title') ? t
+					: this.t('form.commerce.shopify.inventoryLevelReview.variantDefault', undefined, '(default)');
+			},
+			// Previous lead time = received date − ordered date (whole days), from the
+			// last completed reorder cycle. Shown so the operator can size THIS order
+			// against how long the previous restock actually took (past fact, no forecast).
+			// "—" until the previous order has a recorded receipt (receivedAt).
+			lastLeadTimeText() {
+				const r = this.reorder;
+				if (!r || !r.lastOrderedAt || !r.lastReceivedAt) return '—';
+				const o = new Date(r.lastOrderedAt).getTime();
+				const rc = new Date(r.lastReceivedAt).getTime();
+				if (Number.isNaN(o) || Number.isNaN(rc) || rc < o) return '—';
+				const days = Math.round((rc - o) / 86400000);
+				return this.t('form.commerce.shopify.inventoryLevelReview.leadTimeDays',
+					{ days }, '{days, plural, one {# day} other {# days}}');
+			},
 			memoTimestampText() {
 				if (!this.memo || !this.memo.at) return '';
 				return this.formatDate(this.memo.at) || this.memo.at;
 			},
 			memoDraftHasContent() {
 				return !!(this.memoDraft && this.memoDraft.trim());
+			},
+			// A reorder draft is "entered" only when BOTH a positive quantity and a
+			// destination are saved — this drives the view state and toggles the single
+			// completion button between "record order & complete" and "complete — no reorder".
+			hasReorderDraft() {
+				return !!(this.savedQty && this.savedQty > 0 && this.savedDestinationId);
+			},
+			// Human-readable summary of the saved draft (order date + qty + destination NAME,
+			// falling back to the id when the location is not in the mirror).
+			reorderDraftText() {
+				const loc = (this.locations || []).find((l) => l && l.id === this.savedDestinationId);
+				const name = loc ? loc.name : this.savedDestinationId;
+				const date = this.savedOrderAt ? this.formatDateOnly(this.savedOrderAt) : '—';
+				return this.t('form.commerce.shopify.inventoryLevelReview.reorderSummary',
+					{ date, qty: this.formatNumber(this.savedQty), location: name },
+					'Ordered {date} · qty {qty} · Deliver to {location}');
 			},
 			// "Assigned to X. View only." Built in JS (not the template) so the
 			// parameterized t() call stays clear of mustache brace parsing.
@@ -1020,6 +1194,12 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.75/
 				} catch (_) {
 					return d.toLocaleString(locale);
 				}
+			},
+
+			// Date ONLY (no time) in the viewer's zone — for order date / received date /
+			// previous received date etc.
+			formatDateOnly(value) {
+				return sdk.formatDateOnly(value, this.localization);
 			},
 
 			// Apply an effective-localization snapshot pushed by the host. Mirrors
@@ -1161,6 +1341,29 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.75/
 				this.loadMemoFromNode();
 				this.imageFailed = false;
 
+				// Reorder review carried on the process (fixed threshold). Absent on
+				// tasks raised before the flow unification → section hides. Keyed on
+				// inventoryItemId, always set by the sweep's ProcessStarter.
+				if (variableMap.inventoryItemId != null) {
+					const reorderItemId = String(variableMap.inventoryItemId || '');
+					const lastOrder = this.readLastOrder(this.node, reorderItemId);
+					this.reorder = {
+						itemId: reorderItemId,
+						variantId: String(variableMap.variantId || ''),
+						variantTitle: String(variableMap.variantTitle || ''),
+						available: variableMap.availableTotal != null ? Number(variableMap.availableTotal) : null,
+						threshold: variableMap.threshold != null ? Number(variableMap.threshold) : null,
+						lastOrderedAt: lastOrder.at,
+						lastOrderedQty: lastOrder.qty,
+						lastReceivedAt: lastOrder.receivedAt,
+					};
+					// No system suggestion — the operator enters the quantity manually.
+					await this.loadLocations();
+					// Restore any saved reorder draft (incremental save) from the product
+					// node's commerce:reorder_draft map, then seed the edit buffer.
+					this.loadReorderDraft();
+				}
+
 				// "View on Shopify" link
 				const shopDomain = sdk.readYamlScalar(configText, 'shopDomain');
 				const idForURL = productID || (product && product.id != null ? String(product.id) : '');
@@ -1227,6 +1430,63 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.75/
 					}
 				}));
 				return out;
+			},
+
+			// Known stock locations (id + display name) from the locations mirror,
+			// for the incoming-transfer destination picker. Names, never raw-ID
+			// entry (the "no exact-ID input" principle). Best-effort: an unreadable
+			// mirror leaves the list empty and the order action disabled.
+			async loadLocations() {
+				try {
+					// sdk.listChildren normalizes the host connection to { nodes, pageInfo,
+					// totalCount }, so consume the plain node array directly.
+					const children = await sdk.listChildren('/content/commerce/inventory/locations');
+					const list = (children && Array.isArray(children.nodes)) ? children.nodes : [];
+					const rows = [];
+					await Promise.all(list.map(async (c) => {
+						const name = (c && (c.name || c.nodeName)) || '';
+						if (!name || !String(name).endsWith('.json')) return;
+						const id = String(name).replace(/\.json$/, '');
+						try {
+							const text = await sdk.readNodeText('/content/commerce/inventory/locations/' + name);
+							const doc = JSON.parse(text);
+							rows.push({ id, name: (doc && doc.name) ? String(doc.name) : id });
+						} catch (e) {
+							rows.push({ id, name: id });
+						}
+					}));
+					rows.sort((a, b) => a.name.localeCompare(b.name));
+					this.locations = rows;
+					if (rows.length > 0) this.destinationId = rows[0].id;
+				} catch (e) {
+					this.locations = [];
+				}
+			},
+
+			// Read the durable "last order" reference for an inventory item from the
+			// product node's `commerce:reorder_last_orders` JSON map
+			// ({ "<itemId>": { at, qty, receivedAt } }), written by the incoming-transfer
+			// service (at/qty) and the receipt-confirmation service (receivedAt) on
+			// completion. Per-item so a multi-variant product shows the RIGHT previous
+			// order + its lead time. Returns { at:'', qty:null, receivedAt:'' } when
+			// absent / unparseable.
+			readLastOrder(node, itemId) {
+				const raw = sdk.getStringProp(node, 'commerce:reorder_last_orders');
+				if (!raw || !itemId) return { at: '', qty: null, receivedAt: '' };
+				try {
+					const map = JSON.parse(raw);
+					const entry = map && map[itemId];
+					if (entry && typeof entry === 'object') {
+						return {
+							at: entry.at || '',
+							qty: (entry.qty != null && entry.qty !== '') ? Number(entry.qty) : null,
+							receivedAt: entry.receivedAt || '',
+						};
+					}
+				} catch (_) {
+					// Unparseable → treat as no history.
+				}
+				return { at: '', qty: null, receivedAt: '' };
 			},
 
 			// ----------------------------------------------------------
@@ -1337,6 +1597,103 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.75/
 				}
 			},
 
+			// ----------------------------------------------------------
+			// Reorder draft ("current" order) — saved incrementally on the
+			// product node (commerce:reorder_confirmed_qty / commerce:reorder_destination_location_id),
+			// like the memo. createIncomingTransfer moves it to commerce:reorder_last_orders
+			// (the "previous" order) and clears it on completion, so nothing is left
+			// stale — the review task only ever ends through that service.
+			// ----------------------------------------------------------
+			// Parse this product node's commerce:reorder_draft map — a PER-ITEM map
+			// ({ "<itemId>": { qty, destination, at, by } }) like commerce:reorder_last_orders.
+			// Reorder flows are per item, so several variants of one product can be drafted at
+			// once; a per-item map (not flat props / process variables) keeps them from colliding.
+			// The handoff is a NODE property, not a process variable, because a form's
+			// setProcessVariables has REPLACE semantics (it would drop the sweep's variables).
+			readDraftMap() {
+				try { return JSON.parse(sdk.getStringProp(this.node, 'commerce:reorder_draft') || '{}') || {}; }
+				catch (e) { return {}; }
+			},
+
+			// Load THIS item's persisted draft into saved* (the mirror that drives the summary
+			// + the completion button's mode), then seed the edit buffer (qty / destination /
+			// order date) — defaults: first location, today in the viewer's zone.
+			loadReorderDraft() {
+				const d = (this.reorder && this.readDraftMap()[this.reorder.itemId]) || {};
+				const qty = Math.round(Number(d.qty) || 0);
+				this.savedQty = qty > 0 ? qty : null;
+				this.savedDestinationId = (this.savedQty && d.destination) ? String(d.destination) : '';
+				this.savedOrderAt = (this.savedQty && d.at) ? String(d.at) : '';
+				this.orderQty = this.savedQty;
+				this.destinationId = this.savedDestinationId || (this.locations[0] && this.locations[0].id) || '';
+				this.orderDate = this.savedOrderAt
+					? sdk.instantToLocalDate(this.savedOrderAt, this.localization)
+					: sdk.todayLocalDate(this.localization);
+				// Auto-enable fulfillment for an OFF destination — default ON (absent on legacy drafts).
+				this.activateLocation = (d.activate === undefined || d.activate === null)
+					? true
+					: (d.activate === true || d.activate === 'true');
+				this.reorderMode = 'view';
+			},
+
+			enterReorderEdit() {
+				if (!this.canReview) return;
+				this.loadReorderDraft();     // seed buffer from the persisted draft
+				this.reorderMode = 'edit';
+			},
+
+			cancelReorderEdit() {
+				if (this.reorderSaving) return;
+				this.loadReorderDraft();     // revert buffer to the persisted draft + view mode
+			},
+
+			async saveReorderDraft() {
+				if (this.reorderSaving || !this.canReview) return;
+				const qty = Math.round(Number(this.orderQty) || 0);
+				if (qty <= 0 || !this.destinationId) return;
+				if (!this.productPath || !this.reorder) {
+					this.showToast(this.t('form.commerce.shopify.inventoryLevelReview.memoNoPath', undefined, 'Cannot save: product path is unknown.'));
+					return;
+				}
+				// Order date: the operator's local date → the ms-precision UTC instant of
+				// that day's start; fall back to now if blank.
+				const orderedAt = sdk.localDateToInstant(this.orderDate, this.localization) || new Date().toISOString();
+				this.reorderSaving = true;
+				try {
+					// Read-modify-write THIS item's entry in the product-node draft map.
+					const map = this.readDraftMap();
+					map[this.reorder.itemId] = { qty, destination: String(this.destinationId), at: orderedAt, by: this.currentUserID || '', activate: !!this.activateLocation };
+					await sdk.setNodeProperty(this.productPath, 'commerce:reorder_draft', JSON.stringify(map));
+					const refreshed = await sdk.getNode(this.productPath);
+					if (refreshed) this.node = refreshed;
+					this.loadReorderDraft();
+				} catch (err) {
+					this.showToast(err && err.message ? err.message : String(err));
+				} finally {
+					this.reorderSaving = false;
+				}
+			},
+
+			async clearReorderDraft() {
+				if (this.reorderSaving || !this.canReview) return;
+				if (!this.productPath || !this.reorder) return;
+				this.reorderSaving = true;
+				try {
+					const map = this.readDraftMap();
+					delete map[this.reorder.itemId];
+					await sdk.setNodeProperty(this.productPath, 'commerce:reorder_draft', JSON.stringify(map));
+					const refreshed = await sdk.getNode(this.productPath);
+					if (refreshed) this.node = refreshed;
+					this.loadReorderDraft();
+				} catch (err) {
+					this.showToast(err && err.message ? err.message : String(err));
+				} finally {
+					this.reorderSaving = false;
+				}
+			},
+
+			// Complete a NON-reorder review task ("Mark as reviewed") — no reorder draft,
+			// so the completion service is a no-op.
 			async onComplete() {
 				if (this.actionPending) return;
 				this.actionPending = true;
@@ -1344,6 +1701,54 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.75/
 					await sdk.completeTask([]);
 					// The parent typically clears the form after completion. If we
 					// remain visible, fall back to the completed notice.
+					this.task = Object.assign({}, this.task, { completed: true });
+				} catch (err) {
+					this.showToast(err && err.message ? err.message : String(err));
+				} finally {
+					this.actionPending = false;
+				}
+			},
+
+			// Single completion action for a reorder task: routes by whether a reorder
+			// draft is saved. Editing must be saved/cancelled first (the button is
+			// disabled in edit mode, but guard here too).
+			async onCompleteReview() {
+				if (this.actionPending || this.reorderMode === 'edit') return;
+				if (this.hasReorderDraft) {
+					await this.completeWithOrder();
+				} else {
+					await this.completeNoReorder();
+				}
+			},
+
+			// Complete WITH the saved reorder: the draft (qty / destination / order date / WHO) is
+			// already persisted in the product node's commerce:reorder_draft map, so just
+			// complete — createIncomingTransfer reads that map entry, records the quantity in
+			// Shopify as incoming stock, and moves it into commerce:reorder_last_orders.
+			async completeWithOrder() {
+				this.actionPending = true;
+				try {
+					await sdk.completeTask([]);
+					this.task = Object.assign({}, this.task, { completed: true });
+				} catch (err) {
+					this.showToast(err && err.message ? err.message : String(err));
+				} finally {
+					this.actionPending = false;
+				}
+			},
+
+			// Complete with NO reorder: clear THIS item's draft entry so nothing rides into
+			// createIncomingTransfer (which keys reorderPlaced off a positive qty), then complete.
+			// The service is a no-op.
+			async completeNoReorder() {
+				this.actionPending = true;
+				try {
+					if (this.reorder && this.productPath) {
+						const map = this.readDraftMap();
+						delete map[this.reorder.itemId];
+						await sdk.setNodeProperty(this.productPath, 'commerce:reorder_draft', JSON.stringify(map));
+					}
+					await sdk.completeTask([]);
 					this.task = Object.assign({}, this.task, { completed: true });
 				} catch (err) {
 					this.showToast(err && err.message ? err.message : String(err));
