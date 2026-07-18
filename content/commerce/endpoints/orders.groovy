@@ -112,11 +112,21 @@ Map browseOrders() {
     // customerId: GID or numeric (Api.legacyId peels the GID server-side).
     def customerId = xpathSafe(Api.legacyId(blankToNull(request.getParameter("customerId"))))
     if (!customerId.isEmpty()) preds << "@commerce:customer_id = '${customerId}'".toString()
-    // from/to: ISO instants → index-backed range on the ordered_at business date.
+    // cancelled=true → the cancellation drill-down (the sales report's "cancelled count"
+    // links here): restrict to FULLY-cancelled orders (commerce:cancelled_at present — the
+    // reliable signal for BOTH admin-side and reject-flow cancels, unlike commerce:status
+    // which our own flow sets only) and range from/to on the CANCEL date, the occurrence-date
+    // axis the report counts by, instead of the order date. A partial-cancel's still-live order
+    // has no cancelled_at, so it is never included.
+    boolean cancelledOnly = "true".equalsIgnoreCase(request.getParameter("cancelled"))
+    if (cancelledOnly) preds << "@commerce:cancelled_at"
+    // from/to: ISO instants → index-backed range on the ordered_at business date (or the
+    // cancel date under the cancelled drill-down).
+    String dateAxis = cancelledOnly ? "commerce:cancelled_at" : "commerce:ordered_at"
     String fromIso = paramInstant("from")
     String toIso = paramInstant("to")
-    if (fromIso != null) preds << "@commerce:ordered_at >= xs:dateTime('${fromIso}')".toString()
-    if (toIso != null) preds << "@commerce:ordered_at <= xs:dateTime('${toIso}')".toString()
+    if (fromIso != null) preds << "@${dateAxis} >= xs:dateTime('${fromIso}')".toString()
+    if (toIso != null) preds << "@${dateAxis} <= xs:dateTime('${toIso}')".toString()
 
     // productId: resolve the order-id set from the line-grain sales facts (one facet COUNT over
     // @commerce:order_id — the whole match set, no scan cap). A typical product's set is small,

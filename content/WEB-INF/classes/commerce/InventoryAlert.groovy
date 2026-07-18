@@ -37,18 +37,19 @@ class InventoryAlert {
 
     // --- Pending queue ---------------------------------------------------------
 
-    /** Mark an inventory item as needing evaluation (upsert a marker). Defensive. */
+    /**
+     * Mark an inventory item as needing evaluation (upsert a marker). Update bursts for the same
+     * item race on this one marker path (concurrent same-path creates, rewrites overlapping the
+     * sweep's clearPending), so the write goes through the retrying Jcr.commitJson. Defensive.
+     */
     static void markPending(session, log, inventoryItemId) {
         def id = inventoryItemId?.toString()
         if (!id) {
             return
         }
         try {
-            def res = Jcr.getOrCreateFile(session, "${PENDING_DIR}/${id}.json".toString())
-            res.write(Jcr.toJson([inventory_item_id: id, at: Api.now()]))
-            session.commit()
+            Jcr.commitJson(session, "${PENDING_DIR}/${id}.json".toString(), [inventory_item_id: id, at: Api.now()])
         } catch (Exception e) {
-            try { session.rollback() } catch (Exception ignore) {}
             try { log.warn("InventoryAlert.markPending ${id}: ${e.message}") } catch (Exception ignore) {}
         }
     }

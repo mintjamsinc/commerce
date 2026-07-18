@@ -36,7 +36,7 @@ new values without updating this list.
 | `approved` | Order review cleared (auto-approved or a manual review was completed); the order is queued for fulfillment. | BPMN service task `ServiceTask_approveOrder` (`setOrderWorkflowStatus.groovy`) | No |
 | `fulfillment_pending` | Order workflow raised the "Fulfill Order" task; waiting on a fulfiller to pick, pack and ship. | BPMN `create` task listener (`setOrderWorkflowStatus.groovy`) | No |
 | `fulfilled` | Order workflow finished: the order was fulfilled (tracking recorded, and written back to Shopify when the Admin API is enabled). | BPMN end-event execution listener (`setOrderWorkflowStatus.groovy`) | Yes |
-| `cancelled` | Order workflow finished on the reject branch: the reviewer rejected the order (reason required) and the flow cancelled it in Shopify (Order Cancel, restock + refund). `commerce:cancel_writeback` / `commerce:cancel_reason` carry the detail. **Order-scoped.** | BPMN end-event execution listener (`setOrderWorkflowStatus.groovy`) | Yes |
+| `cancelled` | Order workflow ended without fulfillment, via one of three paths: (1) the reviewer rejected the order (reason required) and the flow cancelled it in Shopify (Order Cancel, restock + refund; `commerce:cancel_writeback` / `commerce:cancel_reason` carry the detail); (2) the order was cancelled in Shopify while the Fulfill Order task was claimed and the assignee closed it without fulfilling (`commerce:fulfillment_decision = close`, Shopify write-back bypassed); (3) the order was cancelled in Shopify while its open task was unassigned and the reconcile step terminated the workflow. **Order-scoped.** | BPMN end-event execution listener (`setOrderWorkflowStatus.groovy`, paths 1–2) / orders/updated reconcile (`reconcileOrderCancellation.groovy`, path 3) | Yes |
 | `resolved` | Refund workflow finished: the refund was screened, optionally reviewed, and recorded (the order's refund summary updated). A refund is already executed in Shopify, so this is the terminal audit state. | BPMN end-event execution listener (`setRefundWorkflowStatus.groovy`) | Yes |
 | `backordered` | A paid order line could not be fulfilled from stock (shortfall) or is sold ahead as a pre-order; a line-level backorder record is waiting for stock. **Backorder-scoped.** | Camel route (order-paid → `detectBackorders.groovy`) | No |
 | `ready` | The awaited stock for a backorder has arrived; the "Release Backorder" task is open, waiting on an operator. **Backorder-scoped.** | BPMN `create` task listener (`setBackorderWorkflowStatus.groovy`) | No |
@@ -67,14 +67,15 @@ any state ─→ deleted    (on Shopify product deletion)
 received ─→ (screen order against review rules)
               ├─ no rule matched ──────────────────────┐
               └─ rule matched → review_pending ────────┤
-                                                        ↓
-                                                     approved
+                                   │ (rejected)         ↓
+                                   └─→ cancelled     approved
                                                         ↓
                                               fulfillment_pending
-                                                        ↓
-                                           (record tracking + Shopify write-back)
-                                                        ↓
-                                                    fulfilled
+                                   ┌────────────────────┤
+                                   │ (order cancelled   ↓
+                                   │  in Shopify)    (record tracking + Shopify write-back)
+                                   ↓                    ↓
+                               cancelled            fulfilled
 
 any state ─→ error      (on processing failure)
 ```
@@ -82,7 +83,11 @@ any state ─→ error      (on processing failure)
 Orders share the vocabulary with products: `received`, `review_pending`,
 `error` are common. The order flow then continues through `approved` →
 `fulfillment_pending` → `fulfilled` (the order equivalent of the product's
-terminal `monitored`).
+terminal `monitored`). A Shopify-side cancellation ends `fulfillment_pending`
+in `cancelled` instead: automatically when the open task is unassigned
+(`reconcileOrderCancellation.groovy` terminates the instance), or through the
+assignee's close-without-fulfilling action on the task form (the flow's close
+branch, which bypasses the Shopify fulfillment write-back).
 
 ### Refund lifecycle transitions
 
@@ -174,6 +179,8 @@ driven by `commerce:status`, not by `commerce:source_status`.
 | `etc/commerce/scripts/shopify/setWorkflowStatus.groovy` | `commerce:status = threshold_pending` / `review_pending` / `monitored` (products) |
 | `etc/commerce/scripts/shopify/setOrderWorkflowStatus.groovy` | `commerce:status = review_pending` / `approved` / `fulfillment_pending` / `fulfilled` / `cancelled` (orders) |
 | `etc/commerce/scripts/shopify/recordFulfillment.groovy` | `commerce:tracking_number` / `commerce:tracking_company` / `commerce:fulfilled_at` / `commerce:fulfillment_writeback` / `commerce:fulfillment_id` (orders) |
+| `etc/commerce/scripts/shopify/reconcileOrderCancellation.groovy` | `commerce:status = cancelled` (orders; unassigned-task termination after a Shopify-side cancel) |
+| `etc/commerce/scripts/shopify/setFulfillmentHold.groovy` | `commerce:fulfillment_hold` / `commerce:fulfillment_hold_fo_ids` / `commerce:fulfillment_hold_updated_at` (orders; mirror of the fulfillment-order hold state) |
 | `etc/commerce/scripts/shopify/setRefundWorkflowStatus.groovy` | `commerce:status = review_pending` / `resolved` (refunds) |
 | `etc/commerce/scripts/shopify/recordRefund.groovy` | `commerce:refund_amount` / `commerce:currency` / `commerce:restocked` (refunds); `commerce:refunded_amount` / `commerce:refund_count` / `commerce:source_status` (orders) |
 | `etc/commerce/scripts/shopify/detectBackorders.groovy` (via `commerce.Backorders`) | `commerce:status = backordered` + backorder facts (backorders) |

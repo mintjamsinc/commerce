@@ -4,17 +4,21 @@
 // (which reconciles the INVENTORY mirror); it shares the same broker scaffolding.
 //
 // The bulk query (BulkQueries.ORDERS_BACKFILL_TEMPLATE) is rooted at orders with a nested
-// lineItems connection AND a refund-id FLAG list (refunds { id } — Bulk rejects a connection
+// lineItems connection, a refund-id FLAG list (refunds { id } — Bulk rejects a connection
 // field inside a list field and caps a query at 5 connections, so the refund DETAIL cannot ride
-// the export), so the JSONL is a 2-level stream in GRAPHQL shape:
+// the export) AND the full payment transactions list (a plain LIST field, so it CAN ride), so
+// the JSONL is a 2-level stream in GRAPHQL shape:
 //   {"id":"gid://shopify/Order/111","legacyResourceId":"111", ... }              // order (no __parentId)
 //   {"id":"gid://shopify/LineItem/9","quantity":2, ... ,"__parentId":".../Order/111"}  // line item
 //   {"id":"gid://shopify/Refund/5","__parentId":".../Order/111"}                       // refund id flag
+//   {"id":"gid://shopify/OrderTransaction/7", ... ,"__parentId":".../Order/111"}       // transaction
 // We accumulate one order's subtree, then on the next order line flush it: NORMALIZE the GraphQL
 // order node (+ its line items) to the REST (webhook) body shape every mirror consumer expects,
-// UPSERT the order file committing in batches, and RECORD the order as a refund CANDIDATE when it
-// flagged refund ids. Refund flags are ALSO accepted inline on the order line (o.refunds as a
-// list) in case the export inlines the list field.
+// UPSERT the order file committing in batches, RECORD the order as a refund CANDIDATE when it
+// flagged refund ids, and MIRROR its cash-in transactions into the payment store
+// (PaymentMirror; already-mirrored ones are skipped). Refund flags and transactions are ALSO
+// accepted inline on the order line (o.refunds / o.transactions as lists) in case the export
+// inlines the list fields.
 //
 // REFUND DETAIL PHASE (after the stream): for each candidate order whose flagged refund ids are
 // NOT all mirrored yet, fetch that order's refunds via the foreground Admin GraphQL API
@@ -53,10 +57,13 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.util.zip.GZIPInputStream
+import commerce.Api
 import commerce.BulkJobs
 import commerce.Jcr
 import commerce.Money
 import commerce.Orders
+import commerce.PaymentMirror
+import commerce.Payments
 import commerce.Reconciliation
 import commerce.RefundMirror
 import commerce.SalesFacts
@@ -136,8 +143,10 @@ try {
     // large export stays small.
     def state = [orders: 0, created: 0, skipped: 0,
                  refundsStored: 0, refundsSkipped: 0, refundsFailed: 0, ordersWithRefunds: 0,
+                 paymentsStored: 0, paymentsSkipped: 0, paymentsFailed: 0,
                  sinceCommit: 0, curOrder: null, curOrderGid: null, curLineItems: [],
-                 curRefundGids: new LinkedHashSet(), refundCandidates: new LinkedHashMap()]
+                 curRefundGids: new LinkedHashSet(), curTransactions: [],
+                 refundCandidates: new LinkedHashMap()]
 
     def flush = {
         def node = state.curOrder
@@ -179,6 +188,11 @@ try {
                     // customer grouping. A guest order (no customer) simply omits customer_id.
                     setDate(res, "commerce:ordered_at", body.created_at)
                     setStr(res, "commerce:customer_id", body.customer?.id)
+                    // Cancellation timestamp (terminal, order-level; parity with the webhook path
+                    // order-updated.xml). Shopify sets cancelled_at only on a FULL cancel, so this is
+                    // the occurrence-date axis the sales report facet-counts cancellations by. A live
+                    // order has no cancelled_at, so setDate simply omits it (sparse).
+                    setDate(res, "commerce:cancelled_at", body.cancelled_at)
                     // Lifecycle: claim "received" ONLY for a new node; NEVER reset an existing order's
                     // integration status (it is owned by the review/fulfil/cancel flow).
                     if (isNew) {
@@ -203,6 +217,12 @@ try {
                         if (!rids.isEmpty()) state.refundCandidates[oid] = rids
                     }
 
+                    // Mirror the order's payment transactions (cash-in only) into the payment
+                    // store. Unlike the refund detail, the transactions rode the export itself
+                    // (a plain list field), so no post-stream fetch phase is needed. Staged —
+                    // the stores ride the batch commit below.
+                    mirrorTransactions(oid, state.curTransactions, body, state)
+
                     if (++state.sinceCommit >= BATCH) {
                         repositorySession.commit()
                         state.sinceCommit = 0
@@ -217,6 +237,7 @@ try {
         state.curOrderGid = null
         state.curLineItems = []
         state.curRefundGids = new LinkedHashSet()
+        state.curTransactions = []
     }
 
     eachJsonlLine(httpClient, url) { line ->
@@ -228,6 +249,7 @@ try {
             state.curOrderGid = o.id?.toString()
             state.curLineItems = []
             state.curRefundGids = new LinkedHashSet()
+            state.curTransactions = []
             // Tolerate an export that INLINES the refund flags on the order line (refunds is a
             // plain list field; whether Bulk explodes it into its own lines is version-sensitive).
             def inline = o.refunds
@@ -237,11 +259,20 @@ try {
                     if (rgid != null && !rgid.isEmpty()) state.curRefundGids << rgid
                 }
             }
+            // Same tolerance for the transactions list (payment mirror source).
+            def inlineTxns = o.transactions
+            if (inlineTxns instanceof List) {
+                inlineTxns.each { t -> if (t instanceof Map) state.curTransactions << t }
+            }
         } else if (state.curOrderGid != null && o["__parentId"]?.toString() == state.curOrderGid) {
             def lineGid = o.id?.toString()
             if (lineGid != null && lineGid.startsWith("gid://shopify/Refund/")) {
                 // refund id flag of the current order (detail is fetched post-stream)
                 state.curRefundGids << lineGid
+            } else if (lineGid != null && lineGid.startsWith("gid://shopify/OrderTransaction/")) {
+                // payment transaction child of the current order (an export may explode the
+                // transactions list into child lines instead of inlining it)
+                state.curTransactions << o
             } else {
                 // line-item child of the current order (deeper nesting keys off a different
                 // __parentId and is ignored)
@@ -323,6 +354,9 @@ try {
         refundsSkipped   : state.refundsSkipped,
         refundsFailed    : state.refundsFailed,
         ordersWithRefunds: state.ordersWithRefunds,
+        paymentsStored   : state.paymentsStored,
+        paymentsSkipped  : state.paymentsSkipped,
+        paymentsFailed   : state.paymentsFailed,
     ])
     if (completed && job.type?.toString() == "orders-backfill") {
         try {
@@ -337,7 +371,7 @@ try {
             log.warn("importBulkResult: sales-fact seed kick failed: ${ke.message}")
         }
     }
-    log.info("importBulkResult: job ${jobId} - ${state.orders} order(s) imported, ${state.created} new, ${state.skipped} skipped, ${state.refundsStored} refund(s) stored, ${state.refundsSkipped} already mirrored, ${state.refundsFailed} failed")
+    log.info("importBulkResult: job ${jobId} - ${state.orders} order(s) imported, ${state.created} new, ${state.skipped} skipped, ${state.refundsStored} refund(s) stored, ${state.refundsSkipped} already mirrored, ${state.refundsFailed} failed, ${state.paymentsStored} payment(s) stored, ${state.paymentsSkipped} already mirrored, ${state.paymentsFailed} failed")
 } catch (Exception e) {
     try { repositorySession.rollback() } catch (Exception ignore) {}
     if (isTransient(e)) {
@@ -534,6 +568,36 @@ List taxLines(list) {
     }
 }
 
+// Mirror one order's payment transactions (rode the export as a plain list field) into the
+// payment store: normalize each GraphQL node to the REST body shape, keep only the successful
+// cash-in ones (sale/capture — commerce.Payments.isCashIn; refund cash-out is anchored by the
+// refund store), and SKIP an already-mirrored transaction so a webhook-delivered node is never
+// reset by a re-import. The order's own shopMoney currency anchors the base-amount decision.
+// Stores are STAGED (they ride the caller's batch commit); a per-transaction failure is counted
+// and never sinks the order.
+void mirrorTransactions(String oid, List txnNodes, Map orderBody, Map state) {
+    if (txnNodes == null || txnNodes.isEmpty()) return
+    def shopCurrency = orderBody?.total_price_set?.shop_money?.currency_code?.toString()
+    txnNodes.each { tn ->
+        if (!(tn instanceof Map)) return
+        try {
+            def rest = PaymentMirror.toRestTransaction((Map) tn, oid)
+            def tid = rest?.id?.toString()
+            if (tid == null || tid.trim().isEmpty()) return
+            if (!Payments.isCashIn(rest)) return
+            if (PaymentMirror.findTransactionResource(repositorySession, tid) != null) {
+                state.paymentsSkipped++
+                return
+            }
+            PaymentMirror.storeTransaction(repositorySession, rest, null, shopCurrency)
+            state.paymentsStored++
+        } catch (Exception te) {
+            state.paymentsFailed++
+            try { log.warn("importBulkResult: payment store failed (order ${oid}): ${te.message}") } catch (Exception ignore) {}
+        }
+    }
+}
+
 // Pause between per-order refund fetches (Admin API cost-bucket courtesy).
 void throttle() {
     try { Thread.sleep(RefundMirror.THROTTLE_MS) }
@@ -569,29 +633,11 @@ Long orderNumberFrom(name) {
 // --- Mirror path / typed props ------------------------------------------------
 
 // The NEW-node path for an order: /content/commerce/orders/raw/{yyyy}/{MM}/order_{id}.json, nested
-// by the ORDER's created_at (historical placement). Falls back to server-now only when created_at
-// is missing/unparseable.
+// by the ORDER's created_at in UTC (the shared fold rule — embedded shop-local offsets convert,
+// see commerce.Api.utcYearMonth). Falls back to now only when created_at is missing/unparseable.
 String derivePath(String oid, createdAt) {
-    def ym = yearMonth(createdAt)
+    def ym = Api.utcYearMonth(createdAt)
     return "${Orders.STORE_DIR}/${ym[0]}/${ym[1]}/order_${oid}.json".toString()
-}
-
-// [yyyy, MM] from an ISO timestamp, honouring the embedded offset (Shopify emits shop-local
-// timestamps), falling back to server-now when absent/unparseable.
-List yearMonth(v) {
-    def s = v?.toString()?.trim()
-    if (s) {
-        try {
-            def odt = java.time.OffsetDateTime.parse(s)
-            return [String.format("%04d", odt.getYear()), String.format("%02d", odt.getMonthValue())]
-        } catch (Exception ignore) {}
-        try {
-            def odt = java.time.Instant.parse(s).atOffset(java.time.ZoneOffset.UTC)
-            return [String.format("%04d", odt.getYear()), String.format("%02d", odt.getMonthValue())]
-        } catch (Exception ignore) {}
-    }
-    def now = java.time.OffsetDateTime.now()
-    return [String.format("%04d", now.getYear()), String.format("%02d", now.getMonthValue())]
 }
 
 // Typed setters — set ONLY when a value is present (missing -> omit), mirroring order-paid's

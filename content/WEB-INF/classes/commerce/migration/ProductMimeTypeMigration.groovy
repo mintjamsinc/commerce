@@ -1,4 +1,6 @@
-package commerce
+package commerce.migration
+
+import commerce.Jcr
 
 /**
  * One-time migration: retroactively stamp the dedicated product MIME type

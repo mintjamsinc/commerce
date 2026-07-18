@@ -1,7 +1,12 @@
-package commerce
+package commerce.migration
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import javax.jcr.query.Query
+
+import commerce.Api
+import commerce.Refunds
+import commerce.SalesFacts
+import commerce.SalesReconcile
 
 /**
  * One-time re-drain. The refund reconcile DEFINITIONS changed: the restocking fee (refund_discrepancy) is
@@ -17,7 +22,7 @@ import javax.jcr.query.Query
  *             A ring now means an UNACCOUNTED adjustment (the restocking fee is no longer a ring).
  *   orders  — recompute each refund-bearing order's sales fact so restocking_fee_base lands on it.
  *
- * Lives under /content/WEB-INF/classes; registered in {@link commerce.Migrations}.
+ * Lives under /content/WEB-INF/classes; registered in {@link commerce.migration.Migrations}.
  */
 class RestockingFeeMigration {
 

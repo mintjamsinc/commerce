@@ -35,7 +35,7 @@ try {
             .field("Orders", summary.orders)
             .field("Refunds", summary.refunds)
             .field("Report", summary.path)
-        Notifications.dispatch(log, "customerDataRequest", config, message)
+        Notifications.dispatch(log, "customerDataRequest", config, message, Notifications.CAT_COMPLIANCE)
     }
 } catch (Exception e) {
     log.warn("customerDataRequest: notification failed: ${e.message}")

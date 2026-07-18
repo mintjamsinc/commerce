@@ -48,6 +48,28 @@ class WorkflowStatus {
     }
 
     /**
+     * Read a two-valued operator decision off the resource at `path`: returns
+     * `altValue` when the property holds it (trimmed, case-insensitive), else
+     * `defaultValue`. This is the shared mechanics of the "read decision"
+     * service-task scripts (order review approve/reject, fulfillment
+     * fulfill/close): an absent/unknown/unreadable decision always falls back
+     * to the default, which each flow picks as its pre-decision behaviour.
+     */
+    static String readDecision(session, log, String source, String path,
+                               String propName, String altValue, String defaultValue) {
+        try {
+            def resource = session.getResource(path)
+            if (resource != null && resource.exists() && resource.hasProperty(propName)) {
+                def v = resource.getProperty(propName).getValue()?.toString()?.trim()?.toLowerCase()
+                if (v == altValue) return altValue
+            }
+        } catch (Exception e) {
+            log.warn("${source}: ${path}: ${e.message} - defaulting to ${defaultValue}")
+        }
+        return defaultValue
+    }
+
+    /**
      * Set commerce:status on the resource at `path`, committing the change. A
      * missing resource or any repository error is logged (prefixed with `source`)
      * and swallowed - the workflow continues regardless. When `elementId` is

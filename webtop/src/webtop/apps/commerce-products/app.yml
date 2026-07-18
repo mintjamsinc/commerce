@@ -1,5 +1,6 @@
 identifier: d8124555-df36-442d-ac2e-18845218bfad
 title: Commerce Products
+category: commerce
 icon: assets/icons/icon.svg
 isAdminOnly: true
 # The product facet browser: drill into the mirrored catalog by the

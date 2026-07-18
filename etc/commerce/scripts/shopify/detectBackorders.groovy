@@ -187,7 +187,7 @@ void notifyCreated(order, List created) {
             .field("Units awaited", units)
             .bullets("Items", lines)
 
-        Notifications.dispatch(log, "detectBackorders", config, message)
+        Notifications.dispatch(log, "detectBackorders", config, message, Notifications.CAT_BACKORDERS)
     } catch (Exception e) {
         log.warn("detectBackorders: notification failed: ${e.message}")
     }

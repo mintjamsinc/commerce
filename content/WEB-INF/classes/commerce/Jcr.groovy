@@ -16,6 +16,8 @@ class Jcr {
 
     private static final ObjectMapper MAPPER = new ObjectMapper()
 
+    private static final int COMMIT_RETRIES = 6
+
     /** Resolve a resource, returning null on any error (path missing / no access). */
     static safeGet(session, String path) {
         try {
@@ -41,6 +43,34 @@ class Jcr {
             cur = cur.getOrCreateFolder(parts[i])
         }
         return cur.getOrCreateFile(parts[parts.size() - 1])
+    }
+
+    /**
+     * Write a small JSON document to a file (creating it and any missing parents)
+     * and commit, retrying the transient races a hot marker path sees under
+     * concurrent writers: a lost same-path create race (another session created
+     * the node between the existence check and the create) and a row-lock wait
+     * against a concurrent removal of the same node. Rolls back and backs off
+     * between attempts so the session stays usable; the last failure is rethrown
+     * for the caller to log.
+     */
+    static void commitJson(session, String path, Map doc) {
+        Exception last = null
+        for (int attempt = 0; attempt < COMMIT_RETRIES; attempt++) {
+            if (attempt > 0) {
+                try { Thread.sleep(50L << (attempt - 1)) } catch (Exception ignore) {}
+            }
+            try {
+                def res = getOrCreateFile(session, path)
+                res.write(toJson(doc))
+                session.commit()
+                return
+            } catch (Exception e) {
+                last = e
+                try { session.rollback() } catch (Exception ignore) {}
+            }
+        }
+        throw last
     }
 
     /** Read and parse a JSON document into a Map, or an empty map if absent/blank/invalid. */

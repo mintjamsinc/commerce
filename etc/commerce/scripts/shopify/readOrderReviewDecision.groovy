@@ -9,20 +9,14 @@
 // Requires exchange headers: orderPath
 // Sets exchange headers:     reviewDecision ("approved" | "rejected")
 
+import commerce.WorkflowStatus
+
 if (!orderPath) {
     throw new IllegalArgumentException("Required header 'orderPath' is missing")
 }
 
-def decision = "approved"
-try {
-    def resource = repositorySession.getResource(orderPath)
-    if (resource != null && resource.exists() && resource.hasProperty("commerce:review_decision")) {
-        def v = resource.getProperty("commerce:review_decision").getValue()?.toString()?.trim()?.toLowerCase()
-        if (v == "rejected") decision = "rejected"
-    }
-} catch (Exception e) {
-    log.warn("readOrderReviewDecision: ${orderPath}: ${e.message} - defaulting to approved")
-}
+def decision = WorkflowStatus.readDecision(repositorySession, log, "readOrderReviewDecision",
+    orderPath.toString(), "commerce:review_decision", "rejected", "approved")
 
 context.setAttribute("reviewDecision", decision)
 log.info("readOrderReviewDecision: ${orderPath} -> ${decision}")

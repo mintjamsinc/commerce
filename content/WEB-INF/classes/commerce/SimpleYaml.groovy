@@ -1,13 +1,15 @@
 package commerce
 
 /**
- * Minimal YAML reader for the commerce config files, which are deliberately a
+ * Minimal YAML reader for the commerce config files that are deliberately a
  * controlled two-level structure: top-level scalars and one level of nested
- * scalars (e.g. notifications.yml channels, health.yml rule groups). It is NOT a
+ * scalars (e.g. planning.yml defaults, health.yml rule groups). It is NOT a
  * general YAML parser — it is the server-side counterpart of the Webtop Commerce
  * app's parseSimpleYaml, kept dependency-free so classes under WEB-INF/classes
- * (which cannot use the script `YAML` binding) can read config without pulling in
- * a YAML library.
+ * (which cannot use the script `YAML` binding) can read those files without a
+ * YAML library. For files nested deeper than two levels (e.g. notifications.yml
+ * with its per-category channel sets) use api.util.YAML.parse instead — the full
+ * snakeyaml-engine parser that also backs the script binding.
  *
  * Coercion mirrors the editor: true/false → Boolean, integers → Long, decimals →
  * Double, quoted strings are unquoted, everything else is a String. Comments

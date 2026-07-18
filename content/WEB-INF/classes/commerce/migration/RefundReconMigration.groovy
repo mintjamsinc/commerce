@@ -1,7 +1,10 @@
-package commerce
+package commerce.migration
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import javax.jcr.query.Query
+
+import commerce.SalesFacts
+import commerce.SalesReconcile
 
 /**
  * One-time migration: stamp the A′ reconciliation props ({@code commerce:refund_reconciled},
@@ -14,7 +17,7 @@ import javax.jcr.query.Query
  * cash refunded) is WARNed here (e.g. a restocking fee the store kept), the same as the live webhook path.
  * Nodes already carrying the marker are skipped. Idempotent and defensive: one bad node never stops the run.
  *
- * Lives under /content/WEB-INF/classes; registered in {@link commerce.Migrations}.
+ * Lives under /content/WEB-INF/classes; registered in {@link commerce.migration.Migrations}.
  */
 class RefundReconMigration {
 

@@ -14,13 +14,15 @@
     </routeConfiguration>
 
     <!--
-      Automatic event replay + housekeeping. Fires every 5 minutes
-      (after a 2-minute warm-up) and runs the replay task as the service user:
-      it re-dispatches events that ended in "error" (bounded attempts, after a
-      backoff) back through direct:commerce-ingest, then prunes old processed events.
-      Manual, on-demand replay uses the same ingest path from the events endpoint.
+      Automatic event replay. Fires every 5 minutes (after a 2-minute warm-up)
+      and runs the replay task as the service user: it re-dispatches events that
+      ended in "error" (bounded attempts, after a backoff) back through
+      direct:commerce-ingest. Manual, on-demand replay uses the same ingest path
+      from the events endpoint. Event-log retention/pruning is handled separately
+      by the housekeeping batch (commerce-housekeeping / houseKeeping.groovy).
     -->
     <route id="commerce-replay" routeConfigurationId="commerce-replay-error-handler">
+        <routeProperty key="mi:history" value="failure"/>
         <from uri="timer:commerce-replay?period=300000&amp;delay=120000"/>
 
         <setHeader name="runAs">

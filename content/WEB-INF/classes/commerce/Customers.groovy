@@ -217,11 +217,10 @@ class Customers {
     }
 
     private static void setDate(res, String name, value) {
-        long ms = parseMs(value)
-        if (ms > 0) res.setProperty(name, new java.util.Date(ms))
+        def d = Api.date(value)
+        if (d != null) res.setProperty(name, d)
     }
 
-    /** Value → epoch ms: Calendar / Date / Number / ISO string. 0 when unknown. */
     private static boolean blank(v) { v == null || v.toString().trim().isEmpty() }
 
     private static String sanitize(String s) { s == null ? "" : s.replaceAll("[^A-Za-z0-9_.-]", "_") }

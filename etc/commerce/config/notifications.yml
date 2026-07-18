@@ -5,66 +5,82 @@
 # settings can be managed independently by the Commerce app
 # (Webtop > Commerce > Notifications) without touching API secrets.
 #
-# Each manual task in the inventory / order / refund workflows fires a "create"
-# task listener that builds one channel-agnostic message and dispatches it to
-# every ENABLED channel below. Each channel renders that message in its own format:
+# Every notification carries a CATEGORY, one of:
+#   inventory / orders / refunds / fulfillment / backorders / compliance / operations
+# The "default" channel set below is used for every category that has no entry
+# under "categories". A category listed under "categories" uses ITS OWN channel
+# set exactly as written — the default set is not consulted for that category
+# (channels not listed in a category set are off for that category).
+#
+# Each channel renders the same channel-agnostic message in its own format:
 #   - Slack / Discord / Teams : markup posts (mrkdwn / markdown / Adaptive Card)
 #   - LINE                    : plain-text push via the Messaging API
 #   - webhook                 : structured JSON for any downstream consumer
 #   - email                   : plain-text email over SMTP
 #
-# A channel is ON unless you set `enabled: false`. Sections you do not need can
+# A channel is ON unless you set `enabled: false`. Channels you do not need can
 # be deleted entirely. Delivery is best-effort: a failure is logged and never
 # breaks the business process. Each channel is implemented by its own adapter
 # class in the shared commerce helper library.
 
-# Slack incoming webhook
-# https://api.slack.com/messaging/webhooks
-slack:
-  enabled: false
-  webhookUrl: "REPLACE_WITH_SLACK_WEBHOOK_URL"
+default:
+  # Slack incoming webhook
+  # https://api.slack.com/messaging/webhooks
+  slack:
+    enabled: false
+    webhookUrl: "REPLACE_WITH_SLACK_WEBHOOK_URL"
 
-# Discord incoming webhook
-# https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks
-discord:
-  enabled: false
-  webhookUrl: "REPLACE_WITH_DISCORD_WEBHOOK_URL"
+  # Discord incoming webhook
+  # https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks
+  discord:
+    enabled: false
+    webhookUrl: "REPLACE_WITH_DISCORD_WEBHOOK_URL"
 
-# Microsoft Teams incoming webhook (Workflows / connector URL)
-# Posts an Adaptive Card. https://learn.microsoft.com/microsoftteams/platform/
-teams:
-  enabled: false
-  webhookUrl: "REPLACE_WITH_TEAMS_WEBHOOK_URL"
+  # Microsoft Teams incoming webhook (Workflows / connector URL)
+  # Posts an Adaptive Card. https://learn.microsoft.com/microsoftteams/platform/
+  teams:
+    enabled: false
+    webhookUrl: "REPLACE_WITH_TEAMS_WEBHOOK_URL"
 
-# LINE via the Messaging API push endpoint
-# accessToken : channel access token (Bearer)
-# to          : destination user / group / room ID resolved by your bot
-# endpoint    : optional override; defaults to the public push endpoint
-# https://developers.line.biz/en/reference/messaging-api/#send-push-message
-line:
-  enabled: false
-  accessToken: "REPLACE_WITH_LINE_CHANNEL_ACCESS_TOKEN"
-  to: "REPLACE_WITH_LINE_RECIPIENT_ID"
+  # LINE via the Messaging API push endpoint
+  # accessToken : channel access token (Bearer)
+  # to          : destination user / group / room ID resolved by your bot
+  # endpoint    : optional override; defaults to the public push endpoint
+  # https://developers.line.biz/en/reference/messaging-api/#send-push-message
+  line:
+    enabled: false
+    accessToken: "REPLACE_WITH_LINE_CHANNEL_ACCESS_TOKEN"
+    to: "REPLACE_WITH_LINE_RECIPIENT_ID"
 
-# Generic outbound webhook (any HTTP endpoint / iPaaS)
-# Posts structured JSON: { source, title, status, summary, fields, <textField> }.
-# textField : JSON key carrying the full plain-text body (default "text").
-webhook:
-  enabled: false
-  url: "REPLACE_WITH_WEBHOOK_URL"
-  textField: "text"
+  # Generic outbound webhook (any HTTP endpoint / iPaaS)
+  # Posts structured JSON: { source, title, status, summary, fields, <textField> }.
+  # textField : JSON key carrying the full plain-text body (default "text").
+  webhook:
+    enabled: false
+    url: "REPLACE_WITH_WEBHOOK_URL"
+    textField: "text"
 
-# Email over SMTP (JDK-only client; no extra mail library required)
-# security : none | starttls (port 587) | ssl (port 465)
-# username/password are optional (omit for an unauthenticated relay).
-# to       : comma-separated recipient list.
-email:
-  enabled: false
-  smtpHost: "REPLACE_WITH_SMTP_HOST"
-  smtpPort: 587
-  security: "starttls"
-  username: "REPLACE_WITH_SMTP_USERNAME"
-  password: "REPLACE_WITH_SMTP_PASSWORD"
-  from: "commerce@example.com"
-  to: "ops@example.com"
-  subjectPrefix: "[Commerce] "
+  # Email over SMTP (JDK-only client; no extra mail library required)
+  # security : none | starttls (port 587) | ssl (port 465)
+  # username/password are optional (omit for an unauthenticated relay).
+  # to       : comma-separated recipient list.
+  email:
+    enabled: false
+    smtpHost: "REPLACE_WITH_SMTP_HOST"
+    smtpPort: 587
+    security: "starttls"
+    username: "REPLACE_WITH_SMTP_USERNAME"
+    password: "REPLACE_WITH_SMTP_PASSWORD"
+    from: "commerce@example.com"
+    to: "ops@example.com"
+    subjectPrefix: "[Commerce] "
+
+# Per-category channel sets. Uncomment a category to give it its own
+# destinations (same channel keys as under "default"), e.g. a dedicated Slack
+# channel for inventory alerts:
+#
+# categories:
+#   inventory:
+#     slack:
+#       enabled: true
+#       webhookUrl: "REPLACE_WITH_STOCK_ALERTS_WEBHOOK_URL"

@@ -33,6 +33,11 @@
 				<span class="dash-live-dot"></span>{{ connected ? t('app.commerce-dashboard.live.on') : t('app.commerce-dashboard.live.off') }}
 			</span>
 
+			<button v-if="pendingCount > 0" class="wt-pending-badge" @click="pollPending"
+				:title="t('app.commerce-dashboard.pending.title', { count: pendingCount })">
+				<i class="bi bi-hourglass-split"></i> {{ t('app.commerce-dashboard.pending.label', { count: pendingCount }) }}
+			</button>
+
 			<span class="nav-spacer"></span>
 
 			<!-- Window controls -->
@@ -107,22 +112,20 @@
 					</div>
 				</div>
 
-				<!-- ===== Sales ===== -->
+				<!-- ===== Fulfillment ===== -->
 				<div class="island dash-card">
-					<div class="dash-card-head"><i class="bi bi-receipt"></i>{{ t('app.commerce-dashboard.card.sales') }}</div>
-					<div class="dash-metric">
-						<span class="dash-metric-value">{{ sales.orders }}</span>
-						<span class="dash-metric-unit">{{ t('app.commerce-dashboard.unit.ordersDays', { days: sales.days }) }}</span>
+					<div class="dash-card-head has-link">
+						<span class="head-title"><i class="bi bi-truck"></i>{{ t('app.commerce-dashboard.card.fulfillment') }}</span>
+						<button class="btn-icon" :title="t('app.commerce-dashboard.fulfillment.openTitle')"
+							@click="openOrders('fulfillment_pending')">
+							<i class="bi bi-box-arrow-up-right"></i>
+						</button>
 					</div>
-					<div class="dash-rows">
-						<div class="dash-row" v-for="r in sales.revenueRows">
-							<span class="dash-row-label"><i class="bi bi-cash-coin"></i>{{ r.label }}</span>
-							<span class="dash-row-value">{{ r.value }}</span>
-						</div>
-						<div class="dash-row" v-for="r in sales.statusRows">
-							<span class="dash-row-label">{{ r.label }}</span>
-							<span class="dash-row-value">{{ r.value }}</span>
-						</div>
+					<!-- The whole-book backlog (not window-scoped): an old order still waiting to
+					     ship is exactly the one this card must not hide. -->
+					<div class="dash-metric">
+						<span class="dash-metric-value">{{ fulfillment.pending }}</span>
+						<span class="dash-metric-unit">{{ t('app.commerce-dashboard.unit.awaitingFulfillment') }}</span>
 					</div>
 				</div>
 

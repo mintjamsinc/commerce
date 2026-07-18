@@ -90,6 +90,50 @@
 .status-ok { color: var(--success-color); }
 .status-err { color: var(--danger-color); }
 
+/* A small dot marking the notification category selector's trigger when the
+ * selected category carries its own dedicated channel set. */
+.notif-cat-dot {
+	display: inline-block;
+	width: 0.4rem;
+	height: 0.4rem;
+	border-radius: 50%;
+	background: var(--primary-color);
+	vertical-align: middle;
+}
+
+/* Channel group title row with the per-channel "copy default" action. */
+.notif-channel-title {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+}
+
+/* A quiet inline icon+label action: muted at rest, primary on hover and while
+ * the post-click checkmark is showing. The weight and case of the surrounding
+ * group title are dropped so the action reads as a label, not a heading. */
+.notif-copy-btn {
+	display: inline-flex;
+	align-items: center;
+	border: none;
+	background: transparent;
+	padding: 0;
+	color: var(--text-muted-color);
+	cursor: pointer;
+	font-family: inherit;
+	font-size: inherit;
+	font-weight: 400;
+	text-transform: none;
+	letter-spacing: -0.025em;
+	white-space: nowrap;
+	transition: color 0.15s;
+}
+
+.notif-copy-btn:hover,
+.notif-copy-btn.copied {
+	color: var(--primary-color);
+}
+
 /* ----------------------------------------------------------------------------
  * Layout — aligned with the shared Webtop look (eip-modeler / other apps).
  * The shared webtop-app.css ships base components; these rules bring the

@@ -1,8 +1,9 @@
 // Commerce dashboard snapshot endpoint (admin).
 //
-// One aggregated JSON view for the Commerce Dashboard Webtop app: sales and
-// inventory KPIs (commerce.Dashboard), integration health (commerce.Health) and
-// open-task / SLA counts (BPMN engine + commerce.TaskSla). Read-only.
+// One aggregated JSON view for the Commerce Dashboard Webtop app: the sales trend
+// (occurrence-date summary), fulfillment and inventory KPIs (commerce.Dashboard),
+// integration health (commerce.Health) and open-task / SLA counts (BPMN engine +
+// commerce.TaskSla). Read-only.
 //
 // Lives OUTSIDE /content/public, so the CGI enforces authentication and ACLs.
 //
@@ -29,22 +30,18 @@ def PROCESS_KEYS = ["order-review-flow", "refund-review-flow", "product-update-f
 
 int days = paramInt("days", 7, 1, 90)
 int salesDays = paramInt("salesDays", 30, 1, 365)
+// The viewer's IANA timezone (sent by the dashboard app from the user's Preferences).
+// Drives the day-window arithmetic; absent/invalid falls back to UTC, never the
+// server default, so the dashboard is server-timezone independent.
+String tz = request.getParameter("tz")?.trim() ?: null
+def tzZone = commerce.SalesQuery.zoneOf(tz)
 
 try {
     def out = [generatedAt: Api.now()]
 
-    // ONE sales-fact aggregation serves both the Sales card and the Sales-trend hero
-    // (same window, same population defaults) — computed once, shared below.
-    Map salesRangeShared = null
-    try {
-        long lo = Dashboard.windowStartMs(salesDays)
-        def opts = commerce.SalesQuery.defaults(commerce.SalesQuery.config(repositorySession))
-        salesRangeShared = commerce.SalesQuery.salesRange(repositorySession, lo, System.currentTimeMillis(), opts)
-    } catch (Exception e) { log.warn("dashboard: sales range failed: ${e.message}") }
-
-    // Sales + inventory (defensive: each section degrades independently).
-    try { out.sales = Dashboard.salesSummary(repositorySession, salesDays, salesRangeShared) }
-    catch (Exception e) { log.warn("dashboard: sales failed: ${e.message}"); out.sales = [error: true] }
+    // Fulfillment + inventory (defensive: each section degrades independently).
+    try { out.fulfillment = Dashboard.fulfillmentSummary(repositorySession) }
+    catch (Exception e) { log.warn("dashboard: fulfillment failed: ${e.message}"); out.fulfillment = [error: true] }
 
     try { out.inventory = Dashboard.inventorySummary(repositorySession) }
     catch (Exception e) { log.warn("dashboard: inventory failed: ${e.message}"); out.inventory = [error: true] }
@@ -70,13 +67,13 @@ try {
     try { out.crm = crmSummary() }
     catch (Exception e) { log.warn("dashboard: crm failed: ${e.message}"); out.crm = [error: true] }
 
-    try { out.salesTrend = salesTrendSummary(salesDays, salesRangeShared) }
+    try { out.salesTrend = salesTrendSummary(salesDays, tz, tzZone) }
     catch (Exception e) { log.warn("dashboard: salesTrend failed: ${e.message}"); out.salesTrend = [error: true] }
 
     try { out.reconciliation = reconciliationSummary() }
     catch (Exception e) { log.warn("dashboard: reconciliation failed: ${e.message}"); out.reconciliation = [error: true] }
 
-    try { out.outboundSync = syncSummary(salesDays) }
+    try { out.outboundSync = syncSummary(salesDays, tzZone) }
     catch (Exception e) { log.warn("dashboard: outboundSync failed: ${e.message}"); out.outboundSync = [error: true] }
 
     response.setStatus(200)
@@ -255,46 +252,37 @@ Map crmSummary() {
     return [customers: customers]
 }
 
-// Sales trend: the daily series + top products + AOV for the headline chart.
-// Everything comes from the index-backed sales facts (commerce.SalesQuery — uncapped, exact);
-// the top products are the line-grain facet top-N by base gross, labelled with the mirrored
-// product titles (the facts carry only the real product_id dimension key). The range report
-// is shared with the Sales card (computed once per request).
-Map salesTrendSummary(int salesDays, Map shared) {
+// Sales trend: the occurrence-date daily series + top products for the headline chart.
+// The KPIs mirror the Commerce Reports app's occurrence-date summary
+// (commerce.SalesQuery.occurrenceSummary — uncapped, exact) so the dashboard headline
+// and the report can never disagree: confirmed sales (paymentAmount + refundAmount —
+// the payment basis: cash in minus cash out, refundAmount NEGATIVE), the new-order
+// count, and AOV = newOrderAmount / newOrderCount
+// (the per-order value of the window's NEW orders — refunds against older orders must
+// not bend it). All money is base-currency. The top products stay on the line-grain
+// sales facts (commerce.SalesQuery.topProducts), labelled with the mirrored product
+// titles (the facts carry only the real product_id dimension key).
+Map salesTrendSummary(int salesDays, String tz, tzZone) {
     long hi = System.currentTimeMillis()
-    long lo = Dashboard.windowStartMs(salesDays)
-    def opts = commerce.SalesQuery.defaults(commerce.SalesQuery.config(repositorySession))
-    def report = (shared != null) ? shared : commerce.SalesQuery.salesRange(repositorySession, lo, hi, opts)
+    long lo = Dashboard.windowStartMs(salesDays, tzZone)
+    def report = commerce.SalesQuery.occurrenceSummary(repositorySession, lo, hi, tz)
+    def totals = report.totals ?: [:]
+    String baseCurrency = report.baseCurrency
 
-    // Pick the primary currency (largest native total) for the single-series sparkline + AOV.
-    // report.totals.revenue is a [{currency, amount}] array (Key-Value shape).
-    def revenue = (report.totals?.revenue ?: [])
-    String primary = null
-    double best = -1
-    revenue.each { entry ->
-        double a = parseD(entry.amount)
-        if (a > best) { best = a; primary = entry.currency }
-    }
-    double totalRevenue = 0d
-    if (primary != null) {
-        def e = revenue.find { it.currency == primary }
-        if (e != null) totalRevenue = parseD(e.amount)
-    }
-    long orders = (report.totals?.orders ?: 0L) as long
-    double aov = orders > 0 ? totalRevenue / orders : 0d
+    long orders = (totals.newOrderCount ?: 0L) as long
+    double newOrderAmount = parseD(totals.newOrderAmount)
+    double aov = orders > 0 ? newOrderAmount / orders : 0d
 
-    // Per-day value: the per-day base-currency rollup (per-day native-by-currency is a 2-dim
-    // grouping the facet clause does not declare) — for a single-currency shop base == native,
-    // and for multi-currency it is the meaningful cross-currency series.
+    // Per-day series: the confirmed-sales figure — the same headline the KPI shows.
     def points = (report.daily ?: []).collect { d ->
-        [date: d.date, orders: d.orders, revenue: parseD(d.baseRevenue)]
+        [date: d.date, orders: d.newOrderCount, revenue: parseD(d.confirmedSales)]
     }
 
-    // TOP5 products by base gross over the same window/population, titled from the product mirror.
-    // The rows carry only the GID — peel to the numeric storage key HERE.
+    // TOP5 products by base gross over the same window (population defaults), titled from the
+    // product mirror. The rows carry only the GID — peel to the numeric storage key HERE.
+    def opts = commerce.SalesQuery.defaults(commerce.SalesQuery.config(repositorySession))
     def top = commerce.SalesQuery.topProducts(repositorySession, lo, hi, 5, opts)
     def titles = commerce.Pim.titles(repositorySession, top.collect { Api.legacyId(it.productId) })
-    String baseCurrency = report.totals?.baseCurrency
     top.each { row ->
         row.title = titles[Api.legacyId(row.productId)]
         row.baseCurrency = baseCurrency
@@ -302,12 +290,10 @@ Map salesTrendSummary(int salesDays, Map shared) {
 
     return [
         days          : salesDays,
-        primaryCurrency: primary,
         baseCurrency  : baseCurrency,
-        totalRevenue  : totalRevenue,
+        totalRevenue  : parseD(totals.confirmedSales),
         totalOrders   : orders,
         aov           : aov,
-        metrics       : report.totals?.metrics ?: [:],
         points        : points,
         topProducts   : top,
     ]
@@ -338,10 +324,10 @@ Map latestReconReport() {
 }
 
 // Outbound CMS → Shopify writes, tallied by outcome over the window.
-Map syncSummary(int windowDays) {
+Map syncSummary(int windowDays, zone) {
     // Reports.operations now filters by an XPath date range (not a day count), so
-    // translate the window into a from-bound (start of day, windowDays ago).
-    def zone = java.time.ZoneId.systemDefault()
+    // translate the window into a from-bound (start of day, windowDays ago, in the
+    // viewer's timezone — UTC when the client sent none).
     def fromIso = java.time.LocalDate.now(zone).minusDays(windowDays)
         .atStartOfDay(zone).toOffsetDateTime()
         .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)

@@ -48,6 +48,22 @@ if (orderResource == null || !orderResource.exists()) {
     return
 }
 
+// --- 0. Never fulfill a cancelled order (defence in depth) -------------------
+// The flow's close branch normally bypasses this task, but this task can still
+// be reached for a cancelled order by a process instance started on an older
+// definition (deployed versions keep their original topology) or by a
+// cancellation racing task completion. Shopify would reject the write anyway;
+// skip it — and the fulfilled-at stamp — outright, with the outcome audited.
+try {
+    if (orderResource.hasProperty("commerce:cancelled_at")) {
+        setWriteback(orderPath, "skipped", null, "order is cancelled in Shopify - fulfillment bypassed")
+        log.info("recordFulfillment: ${orderPath} is cancelled in Shopify - skipping fulfillment")
+        return
+    }
+} catch (Exception e) {
+    log.warn("recordFulfillment: cancelled_at check failed for ${orderPath}: ${e.message} - continuing")
+}
+
 // --- Read tracking details entered by the fulfiller --------------------------
 def trackingNumber = null
 def trackingCompany = null

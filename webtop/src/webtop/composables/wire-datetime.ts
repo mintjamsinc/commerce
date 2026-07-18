@@ -68,6 +68,37 @@ export function completeDateTimeLocal(v: string, end: boolean): string {
 	return s;
 }
 
+function pad2(n: number): string { return String(n).padStart(2, '0'); }
+
+/**
+ * Today's calendar date ("yyyy-MM-dd") as observed in `timeZone` (the effective
+ * Preferences zone; the browser zone when empty). Used to seed a default filter
+ * window on the same date-only granularity an operator's `<input type="date">` uses,
+ * so the default and a hand-typed range share one code path.
+ */
+export function todayInZone(timeZone: string): string {
+	const tz = String(timeZone || '').trim();
+	const now = new Date();
+	if (!tz) return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+	const dtf = new Intl.DateTimeFormat('en-US', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
+	const p: any = {};
+	for (const part of dtf.formatToParts(now)) p[part.type] = part.value;
+	return `${p.year}-${p.month}-${p.day}`;
+}
+
+/**
+ * A bare date ("yyyy-MM-dd") shifted by whole calendar days. The arithmetic runs on a
+ * UTC epoch so a DST transition in the window never drifts the result — a calendar-day
+ * offset must add the same number of days regardless of any wall-clock gap that day.
+ * Passes malformed input through unchanged.
+ */
+export function shiftDate(date: string, deltaDays: number): string {
+	const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date || '').trim());
+	if (!m) return date;
+	const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]) + deltaDays * 86_400_000);
+	return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+}
+
 function minuteOfDayToHHmm(totalMin: number): string {
 	const m = ((totalMin % 1440) + 1440) % 1440;
 	const hh = Math.floor(m / 60);

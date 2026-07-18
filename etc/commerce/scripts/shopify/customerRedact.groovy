@@ -40,7 +40,7 @@ try {
                 .field("Checkouts", summary.checkouts)
                 .field("Events", summary.events)
         }
-        Notifications.dispatch(log, "customerRedact", config, message)
+        Notifications.dispatch(log, "customerRedact", config, message, Notifications.CAT_COMPLIANCE)
     }
 } catch (Exception e) {
     log.warn("customerRedact: notification failed: ${e.message}")

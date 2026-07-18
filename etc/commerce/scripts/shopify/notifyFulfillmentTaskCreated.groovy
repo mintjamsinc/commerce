@@ -12,11 +12,12 @@
 //
 // Notification destinations are shared with the rest of the commerce tooling.
 //
-// Delivery goes to every enabled channel in the shared registry - Slack,
-// Discord, Teams, LINE, generic webhook and email - via commerce.Notifications.
-// Each channel renders the same message in its
-// own format using the JDK built-in java.net.http.HttpClient / SMTP client (no
-// extra JAR required).
+// Delivery goes through commerce.Notifications under the "fulfillment" category:
+// the channel set configured for that category in notifications.yml (or the
+// default set when the category has none) receives the message on every enabled
+// channel - Slack, Discord, Teams, LINE, generic webhook and email. Each channel
+// renders the same message in its own format using the JDK built-in
+// java.net.http.HttpClient / SMTP client (no extra JAR required).
 //
 // IMPORTANT: a notification failure must never break the business process, so
 // every external call is wrapped defensively and only logged on error.
@@ -95,7 +96,7 @@ def message = NotificationMessage.create()
     .footer(taskName, assignee)
 
 // --- Dispatch to each enabled channel ----------------------------------------
-Notifications.dispatch(log, "notifyFulfillmentTaskCreated", config, message)
+Notifications.dispatch(log, "notifyFulfillmentTaskCreated", config, message, Notifications.CAT_FULFILLMENT)
 
 // --- Helpers -----------------------------------------------------------------
 

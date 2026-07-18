@@ -1,0 +1,28 @@
+# Data retention (automatic pruning of accumulated history stores)
+# Deploy to: /etc/commerce/config/retention.yml
+# Managed by the Commerce app (Webtop > Commerce > Maintenance > Retention).
+#
+# Each value is a number of DAYS; records older than that are pruned by the
+# periodic housekeeping batch (commerce-housekeeping). 0 (or empty) means keep
+# forever (no pruning). Business/accounting data (orders, payments, refunds) is
+# NOT auto-pruned here — it is removed only by the explicit, audited manual purge
+# action in the same section.
+
+# Master switch for the housekeeping batch. false = nothing is auto-pruned.
+enabled: true
+
+# Event log — raw inbound payloads (/content/commerce/events). Pruned regardless
+# of status (processed AND error alike), so the log window is status-independent.
+eventLog: 30
+
+# Webhook idempotency markers (/content/commerce/history/webhooks).
+webhookMarkers: 30
+
+# Bulk job records (/content/commerce/jobs/shopify).
+bulkJobs: 90
+
+# Reconciliation run reports (/content/commerce/reconciliation).
+reconciliation: 365
+
+# Health daily metrics (/content/commerce/health/metrics) — one small file/day.
+health: 400

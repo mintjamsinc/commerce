@@ -1,11 +1,16 @@
-package commerce
+package commerce.migration
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import javax.jcr.query.Query
 
+import commerce.Api
+import commerce.RefundMirror
+import commerce.SalesFacts
+import commerce.SalesReconcile
+
 /**
  * One-time migration: backfill the cash-out (refunds block) props on existing refund nodes —
- * {@code refunded_day} (facet axis), {@code refund_returns_base} / {@code refund_returns_shipping_base} /
+ * {@code refund_returns_base} / {@code refund_returns_shipping_base} /
  * {@code refund_restocking_fee_income_base} (breakdown, via {@link commerce.SalesReconcile#reconProps}),
  * and {@code refund_ordered_at} (parent order's ordered_at, for the crossPeriod flag) — and recompute each
  * refund-bearing order so the renamed {@code restocking_fee_income_base} lands and the pre-rename
@@ -13,7 +18,7 @@ import javax.jcr.query.Query
  * correct throughout; this migration is the cleanup that converges the old name to zero.
  *
  * Defensive: one bad node never stops the run. Lives under /content/WEB-INF/classes; registered in
- * {@link commerce.Migrations}.
+ * {@link commerce.migration.Migrations}.
  */
 class RefundCashOutMigration {
 
@@ -39,8 +44,6 @@ class RefundCashOutMigration {
                         if (v instanceof Boolean) res.setProperty(k.toString(), (boolean) v)
                         else if (v != null) res.setProperty(k.toString(), (BigDecimal) v)
                     }
-                    def refundedMs = Api.epochMs(body.created_at)
-                    if (refundedMs != null) res.setProperty("commerce:refunded_day", SalesReconcile.dayOf(refundedMs))
                     def orderedAt = RefundMirror.orderedAtOf(session, body.order_id)
                     if (orderedAt != null) res.setProperty("commerce:refund_ordered_at", new java.util.Date(orderedAt))
                     def oid = (body.order_id != null) ? Api.legacyId(body.order_id) : null

@@ -1,22 +1,23 @@
-// Commerce Reports — the sales report console for the Shopify→CMS integration.
+// Commerce Reports — the occurrence-date sales summary console for the
+// Shopify→CMS integration.
 //
-// Three panes (mirroring commerce-oplog / commerce-events): a left filter sidebar
-// (a from/to period), a center list (daily orders + revenue per currency + the
-// base-currency rollup), and a right detail pane showing the selected day's
-// breakdown. The list header carries the "Download CSV" export.
+// Two panes (mirroring commerce-oplog / commerce-events): a left filter sidebar
+// (a from/to period) and a center column stacking the occurrence KPI hero island
+// above the daily list island. The list header carries the "Download CSV" export.
 //
 // Driven by a single admin endpoint:
-//   reports.groovy?type=sales[&from&to | &days]
-//                 [&includeCancelled=true|false][&financialStatus=paid,…]
-//                 [&format=csv[&csvView=refunds][&taxMode=excl|incl]]
-//     — from/to are ISO-8601 instants (platform wire convention; the client
-//       resolves the datetime-local wall-clock in the effective timezone), and
-//       win over the rolling 30-day window. The population params slice the
-//       report (cancelled in/out, financial statuses). The report has two views:
-//       the sales P/L (`pl`, order date) and the refund cash-out (`refunds`,
-//       refund date); the CSV follows the on-screen tab. returnsBasis is NOT sent
-//       (the P/L is order-date only; the refund-date view is the `refunds` block).
-//       Content-Disposition makes a plain navigation save.
+//   reports.groovy?type=occurrence&from=<ISO>&to=<ISO>[&tz=<IANA>][&format=csv]
+//     — from/to are ISO-8601 UTC instants (platform wire convention). The client
+//       ALWAYS sends an explicit window: it takes the operator's date-only picks
+//       (or, when the range is left empty, the last 30 calendar days ending today)
+//       and pads them to the day boundaries — 00:00:00 / 23:59:59 — of the effective
+//       timezone. It never sends the endpoint's `days` shorthand. Every event is
+//       counted on its OWN date (new orders by ordered_at, full cancels by
+//       cancelled_at, payments by paid_at, refunds by refunded_at); confirmedSales =
+//       paymentAmount + refundAmount (the payment basis: cash in minus cash out;
+//       refundAmount is NEGATIVE). No population params — the report counts every
+//       event on its date. Content-Disposition makes a plain navigation save for the
+//       CSV.
 //
 // Read-only: this console never writes to Shopify or the CMS. Self-contained
 // (ichigo.js runtime only).
@@ -30,11 +31,18 @@ import {
 	formatNumber,
 	formatCurrency,
 } from '../../composables/use-localization.js';
-import { wallClockToIso, completeDateTimeLocal } from '../../composables/wire-datetime.js';
+import { wallClockToIso, completeDateTimeLocal, todayInZone, shiftDate } from '../../composables/wire-datetime.js';
+import { fetchPendingCount } from '../../composables/use-pending-badge.js';
 
 type AnyInstance = any;
 
 const REPORTS_SCRIPT = '/content/commerce/endpoints/reports.groovy';
+// The default window when the operator leaves the range empty: the last N calendar
+// days ending today (inclusive — today and the N-1 preceding days).
+const DEFAULT_WINDOW_DAYS = 30;
+// The Commerce Orders (facet browser) app id — the cancelled-count drill-down
+// asks the shell to open/re-target it with a { cancelled, from, to } filter.
+const ORDERS_APP_ID = 'e5a3c6f8-7b1d-4e2a-9c04-1f6b8d3e5a7c';
 
 const App = {
 	data() {
@@ -48,28 +56,27 @@ const App = {
 			toast: '',
 			toastError: false,
 
-			// Operator-picked date range (datetime-local; empty → last 30 days) plus
-			// the population controls: returns basis (order/refund date), cancelled
-			// orders in/out, and a comma-separated financial-status list (empty →
-			// server default).
-			report: { from: '', to: '', includeCancelled: '', financialStatus: '' },
+			// Operator-picked date range (date-only, yyyy-MM-dd; empty → last 30 days).
+			report: { from: '', to: '' },
 			// The APPLIED snapshot: the list AND the CSV derive from THIS, never the
 			// live inputs, so the export can never drift from the shown preview.
-			applied: { from: '', to: '', includeCancelled: '', financialStatus: '' },
+			applied: { from: '', to: '' },
 			hasApplied: false,
-			reportPreview: null as null | any,
-			selectedRow: null as any,   // the day shown in the detail pane
-
-			// The P/L is tax-exclusive with tax as its own row; the hero toggle only re-picks the headline
-			// figure (revenue excl. tax ↔ total charged incl. tax) — it never mixes tax into a number.
-			taxMode: 'excl' as 'excl' | 'incl',
-			// Two exclusive views: the sales P/L (order date) and the refund cash-out list (refund date).
-			// They come from different cohorts, so switching REMOVES the other from view — never side by side.
-			view: 'sales' as 'sales' | 'refunds',
+			// The occurrence-date report (type=occurrence). Cleared on every apply so
+			// the new window never shows stale figures; the hero stays MOUNTED and
+			// renders '--' placeholders while the fetch is in flight (it must never
+			// blink out of the layout during a search).
+			occurrencePreview: null as null | any,
 
 			_base: '' as string,
 			_messageListener: null as any,
 			_toastTimer: null as any,
+
+			// "反映待ち" badge: the live count of orders whose sales facts are still being recomputed
+			// (async drainer backlog). Polled so every operator — not just whoever ran the import — sees
+			// when the figures are still catching up.
+			pendingCount: 0,
+			_pendingTimer: null as any,
 
 			// Resizable filter sidebar (LEFT).
 			sidebarVisible: true,
@@ -78,102 +85,21 @@ const App = {
 			sidebarMaxWidth: 480,
 			_boundSidebarResizeMove: null as any,
 			_boundSidebarResizeUp: null as any,
-
-			// Resizable detail pane (RIGHT).
-			detailVisible: true,
-			detailWidth: 340,
-			detailMinWidth: 240,
-			detailMaxWidth: 640,
-			_boundDetailResizeMove: null as any,
-			_boundDetailResizeUp: null as any,
 		};
 	},
 
 	computed: {
-		reportDaily(): any[] { return (this.reportPreview && Array.isArray(this.reportPreview.daily)) ? this.reportPreview.daily : []; },
-		rowCount(): number { return this.reportDaily.length; },
-		baseCurrency(): string { return (this.reportPreview && this.reportPreview.totals && this.reportPreview.totals.baseCurrency) || ''; },
-		canDownload(): boolean {
-			if (!this.hasApplied || this.busy) return false;
-			return (this.view === 'refunds') ? this.refundsDaily.length > 0 : this.reportDaily.length > 0;
-		},
-		// Totals block of the sales response (null while nothing is loaded — drives
-		// the summary header's v-if). The nested getters default to {} so the
-		// template can dereference them without guards; fmtBase(null) renders '—'.
-		reportTotals(): any { return (this.reportPreview && this.reportPreview.totals) || null; },
-		reportMetrics(): any { return (this.reportTotals && this.reportTotals.metrics) || {}; },
-		reportStats(): any { return (this.reportTotals && this.reportTotals.stats) || {}; },
-		reportPercentiles(): any { return (this.reportTotals && this.reportTotals.percentiles) || {}; },
-		// Orders the backend could not decompose into components — when > 0 the
-		// summary shows a warning that the breakdown columns are partial.
-		incompleteOrders(): number { return Number((this.reportTotals && this.reportTotals.incompleteOrders) || 0) || 0; },
-
-		// ---- P/L (the primary reading; order-date basis) -----------------------
-		// The canonical tax-exclusive P/L block the server composes additively (grossSales − discounts −
-		// returns … = totalRevenue, + tax + duties = totalCharged). New screens read `pl` ONLY — never
-		// `metrics` (whose `returns`/`totalSales` are tax-INCLUSIVE, a name collision).
-		plTotals(): any { return (this.reportTotals && this.reportTotals.pl) || {}; },
-		diagnostics(): any { return (this.reportTotals && this.reportTotals.diagnostics) || {}; },
-		// ---- Refund cash-out (refund-date basis; the Refunds tab) ----------------
-		refundsSummary(): any { return (this.reportTotals && this.reportTotals.refunds) || {}; },
-		refundsDaily(): any[] { return (this.reportPreview && this.reportPreview.refunds && Array.isArray(this.reportPreview.refunds.daily)) ? this.reportPreview.refunds.daily : []; },
-		refundsHasCrossPeriod(): boolean { return this.refundsDaily.some((r: any) => r && r.crossPeriod); },
-		refundsMixedCurrency(): boolean { return !!(this.refundsSummary && this.refundsSummary.mixedCurrency); },
-		refundsUnmigrated(): number { return Number((this.refundsSummary && this.refundsSummary.unmigratedRefunds) || 0) || 0; },
-
-		// ---- Diagnostics (footer: "reconciled OK" when all clear, the issues when not) ----------
-		// The server counts what it could NOT place (lossy orders, unclassified/unreconciled/unmigrated
-		// refunds, day-vs-total drift). All zero → "OK". Non-zero → surfaced so someone notices — a zero
-		// here means "checked and clean", never "not looked at".
-		diagnosticsIssues(): string[] {
-			const d: any = this.diagnostics || {};
-			const r: any = this.refundsSummary || {};
-			const n = (v: any) => Number(v || 0) || 0;
-			const out: string[] = [];
-			if (n(d.lossyOrders)) out.push(this.t('app.commerce-reports.diag.lossyOrders', { count: n(d.lossyOrders), amount: this.fmtBase(d.lossyRevenue) }));
-			if (n(d.unclassifiedRefundAdjustments)) out.push(this.t('app.commerce-reports.diag.unclassified', { amount: this.fmtBase(d.unclassifiedRefundAdjustments) }));
-			if (n(d.unreconciledRefunds)) out.push(this.t('app.commerce-reports.diag.unreconciled', { count: n(d.unreconciledRefunds) }));
-			if (n(r.unmigratedRefunds)) out.push(this.t('app.commerce-reports.diag.unmigrated', { count: n(r.unmigratedRefunds) }));
-			const drift: any = d.dayTotalDrift || {};
-			if (Object.keys(drift).some((k) => n(drift[k]))) out.push(this.t('app.commerce-reports.diag.drift'));
-			if (r.mixedCurrency) out.push(this.t('app.commerce-reports.diag.mixedCurrency'));
-			return out;
-		},
-		diagnosticsOk(): boolean { return !!this.reportTotals && this.diagnosticsIssues.length === 0; },
-		taxIncl(): boolean { return this.taxMode === 'incl'; },
-		heroMainValue(): any { return this.taxIncl ? this.plTotals.totalCharged : this.plTotals.totalRevenue; },
-		heroMainLabel(): string { return this.taxIncl ? this.t('app.commerce-reports.hero.totalCharged') : this.t('app.commerce-reports.hero.totalRevenue'); },
-		// Mini-ladder groupings (the waterfall): grossSales − (discounts+returns) + (shipping+otherIncome) = totalRevenue.
-		ladderDeductions(): number { return Number(this.plTotals.discounts || 0) + Number(this.plTotals.returns || 0); },
-		ladderAdditions(): number { return Number(this.plTotals.shipping || 0) + Number(this.plTotals.otherIncome || 0); },
-		// Return rate = returns / grossSales (tax-exclusive both). Null when there is no gross to divide by.
-		returnRate(): number | null {
-			const g = Number(this.plTotals.grossSales || 0);
-			if (!g) return null;
-			return Number(this.plTotals.returns || 0) / g;
-		},
-		// The server's population string ("financialStatus=paid,…; includeCancelled=false") rendered as
-		// localized labels (e.g. "Target: Paid, Partially Refunded / Cancelled Orders: Excluded") — the raw
-		// wire string must never reach the screen (that was the earlier "financialStatus=…" leak).
-		populationLabel(): string {
-			const raw = String((this.reportPreview && this.reportPreview.population) || '').trim();
-			if (!raw) return '—';
-			const out: string[] = [];
-			const fs = /financialStatus=([^;]*)/.exec(raw);
-			if (fs) {
-				const v = fs[1].trim();
-				const target = (!v || v === 'all')
-					? this.t('app.commerce-reports.status.all')
-					: v.split(',').map((s) => s.trim()).filter(Boolean)
-						.map((s) => this.t('app.commerce-reports.status.' + s, undefined, s)).join('・');
-				out.push(`${this.t('app.commerce-reports.population.target')}: ${target}`);
-			}
-			const cx = /includeCancelled=(true|false)/.exec(raw);
-			if (cx) {
-				const key = cx[1] === 'true' ? 'app.commerce-reports.population.cancelledInclude' : 'app.commerce-reports.population.cancelledExclude';
-				out.push(`${this.t('app.commerce-reports.population.cancelled')}: ${this.t(key)}`);
-			}
-			return out.length ? out.join(' ／ ') : raw;
+		occurrenceDaily(): any[] { return (this.occurrencePreview && Array.isArray(this.occurrencePreview.daily)) ? this.occurrencePreview.daily : []; },
+		occurrenceTotals(): any { return (this.occurrencePreview && this.occurrencePreview.totals) || {}; },
+		rowCount(): number { return this.occurrenceDaily.length; },
+		baseCurrency(): string { return (this.occurrencePreview && this.occurrencePreview.baseCurrency) || ''; },
+		canDownload(): boolean { return this.hasApplied && !this.busy && this.occurrenceDaily.length > 0; },
+		// The hero's period line — '--' while the window's data is loading (the hero
+		// itself never unmounts).
+		occRangeLabel(): string {
+			const p: any = this.occurrencePreview;
+			if (!p) return '--';
+			return `${this.fmtRangeDate(p.from)} – ${this.fmtRangeDate(p.to)}`;
 		},
 	},
 
@@ -208,15 +134,13 @@ const App = {
 			} catch (_) { return s; }
 		},
 		// Money via Intl.NumberFormat (grouping + currency-standard decimals: JPY 0,
-		// USD 2, …). Display picks the context: 'code' (JPY 1,000) where several
-		// currencies can sit side by side (the native per-currency line), the
-		// compact 'narrowSymbol' (¥1,000) where every value is the ONE base
-		// currency (tiles, daily table, detail pane) — repeating the code on every
+		// USD 2, …). Every value here is the ONE base currency, so the compact
+		// 'narrowSymbol' (¥1,000) is used throughout — repeating the code on every
 		// cell of a single-currency table is noise.
-		fmtMoney(amount: any, currency: any, display: 'code' | 'narrowSymbol' = 'code'): string {
+		fmtMoney(amount: any, currency: any): string {
 			if (amount == null || amount === '') return '—';
 			const c = String(currency || '').trim();
-			if (c) return formatCurrency(this.localization, amount, { currency: c, currencyDisplay: display });
+			if (c) return formatCurrency(this.localization, amount, { currency: c, currencyDisplay: 'narrowSymbol' });
 			return formatNumber(this.localization, amount);
 		},
 		// Integer count with grouping (orders).
@@ -225,41 +149,17 @@ const App = {
 			return formatNumber(this.localization, v, { maximumFractionDigits: 0 });
 		},
 		// Base-currency amount, formatted in the report's base currency.
-		fmtBase(v: any): string { return this.fmtMoney(v, this.baseCurrency, 'narrowSymbol'); },
-		// Deduction amount (discounts, returns) rendered as an explicit NEGATIVE, so the
-		// P/L row reads left to right: sales total − discounts − returns = total. The
-		// server keeps deductions as positive magnitudes; the sign is presentation only.
-		// Zero stays a plain 0 (no "-¥0").
-		fmtBaseNeg(v: any): string {
-			if (v == null || v === '') return '—';
+		fmtBase(v: any): string { return this.fmtMoney(v, this.baseCurrency); },
+		// Hero variants: '--' while the window's data is loading, so the KPI strip
+		// keeps its shape instead of unmounting during a search.
+		occInt(v: any): string { return this.occurrencePreview ? this.fmtInt(v) : '--'; },
+		occBase(v: any): string { return this.occurrencePreview ? this.fmtBase(v) : '--'; },
+		// Negative-amount signal — drives the danger color on money cells
+		// (refundAmount is negative by design; confirmedSales can go negative).
+		isNeg(v: any): boolean {
 			const n = Number(v);
-			if (!isFinite(n) || n === 0) return this.fmtBase(v);
-			return this.fmtMoney(-Math.abs(n), this.baseCurrency, 'narrowSymbol');
+			return isFinite(n) && n < 0;
 		},
-		// Per-currency revenue array [{currency, amount}] → formatted "JPY 1,385" lines.
-		revenueLines(rev: any): string[] {
-			if (!Array.isArray(rev)) return [];
-			return rev.map((e: any) => this.fmtMoney(e && e.amount, e && e.currency));
-		},
-		fmtRevenue(rev: any): string {
-			const lines = this.revenueLines(rev);
-			return lines.length ? lines.join(' · ') : '—';
-		},
-		// Percent (return rate), locale-aware. Null → '—'.
-		fmtPct(v: any): string {
-			if (v == null) return '—';
-			try { return formatNumber(this.localization, v, { style: 'percent', maximumFractionDigits: 1 }); }
-			catch (_) { return `${(Number(v) * 100).toFixed(1)}%`; }
-		},
-		// A P/L column is shown only when it is non-zero somewhere (total or any day) — the all-zero
-		// columns (discounts / other income, typically) auto-collapse so the table reads as one clean path.
-		plColShow(field: string): boolean {
-			if (Number((this.plTotals as any)[field] || 0) !== 0) return true;
-			return this.reportDaily.some((d: any) => Number((d && d.pl && d.pl[field]) || 0) !== 0);
-		},
-		// Hero tax toggle (headline figure only) and the sales/refunds view switch (exclusive).
-		setTaxMode(m: 'excl' | 'incl') { this.taxMode = m; },
-		setView(v: 'sales' | 'refunds') { this.view = v; this.selectedRow = null; },
 
 		onMounted() {
 			const vm = this;
@@ -279,23 +179,21 @@ const App = {
 				instance.appState = () => ({
 					from: vm.report.from,
 					to: vm.report.to,
-					includeCancelled: vm.report.includeCancelled,
-					financialStatus: vm.report.financialStatus,
 				});
 				await vm.resolveBase();
 				await vm.loadPanesState();
 				vm.applyLaunchOptions(options, true);
 				await vm.apply();
+				vm.startPendingPoll();
 				vm.$nextTick(() => { try { instance.notifyLaunched(); } catch (_) {} });
 			};
 		},
 		onUnmount() {
 			if (this._messageListener) window.removeEventListener('message', this._messageListener);
 			if (this._toastTimer) clearTimeout(this._toastTimer);
+			this.stopPendingPoll();
 			if (this._boundSidebarResizeMove) document.removeEventListener('mousemove', this._boundSidebarResizeMove);
 			if (this._boundSidebarResizeUp) document.removeEventListener('mouseup', this._boundSidebarResizeUp);
-			if (this._boundDetailResizeMove) document.removeEventListener('mousemove', this._boundDetailResizeMove);
-			if (this._boundDetailResizeUp) document.removeEventListener('mouseup', this._boundDetailResizeUp);
 		},
 
 		// ---- Window controls -------------------------------------------------
@@ -303,9 +201,8 @@ const App = {
 		onToggleMaximizeWindow() { this.instance?.toggleMaximize(); },
 		onCloseWindow() { this.instance?.requestClose(); },
 
-		// ---- Panes: toggle / resize / persist --------------------------------
+		// ---- Sidebar: toggle / resize / persist --------------------------------
 		toggleSidebar() { this.sidebarVisible = !this.sidebarVisible; this.persistPanesState(); },
-		toggleDetail() { this.detailVisible = !this.detailVisible; this.persistPanesState(); },
 
 		onSidebarResizeStart(event: MouseEvent) {
 			const vm = this;
@@ -326,25 +223,6 @@ const App = {
 			document.addEventListener('mousemove', vm._boundSidebarResizeMove);
 			document.addEventListener('mouseup', vm._boundSidebarResizeUp);
 		},
-		onDetailResizeStart(event: MouseEvent) {
-			const vm = this;
-			event.preventDefault();
-			const startX = event.clientX;
-			const startWidth = vm.detailWidth;
-			vm._boundDetailResizeMove = (e: MouseEvent) => {
-				const delta = startX - e.clientX;
-				vm.detailWidth = Math.max(vm.detailMinWidth, Math.min(vm.detailMaxWidth, startWidth + delta));
-			};
-			vm._boundDetailResizeUp = () => {
-				if (vm._boundDetailResizeMove) document.removeEventListener('mousemove', vm._boundDetailResizeMove);
-				if (vm._boundDetailResizeUp) document.removeEventListener('mouseup', vm._boundDetailResizeUp);
-				vm._boundDetailResizeMove = null;
-				vm._boundDetailResizeUp = null;
-				vm.persistPanesState();
-			};
-			document.addEventListener('mousemove', vm._boundDetailResizeMove);
-			document.addEventListener('mouseup', vm._boundDetailResizeUp);
-		},
 		async persistPanesState() {
 			const vm = this;
 			const db = vm.instance?.api?.db;
@@ -353,7 +231,6 @@ const App = {
 			try {
 				await db.setUserSetting(userID, 'commerce-reports', 'panes', JSON.parse(JSON.stringify({
 					sidebar: { visible: vm.sidebarVisible, width: vm.sidebarWidth },
-					detail: { visible: vm.detailVisible, width: vm.detailWidth },
 				})));
 			} catch (_) { /* non-critical */ }
 		},
@@ -368,54 +245,21 @@ const App = {
 					const legacy = await db.getUserSetting(userID, 'commerce-reports', 'sidebar');
 					if (legacy) state = { sidebar: legacy };
 				}
-				if (state) {
-					if (state.sidebar) {
-						vm.sidebarVisible = state.sidebar.visible ?? true;
-						vm.sidebarWidth = state.sidebar.width ?? vm.sidebarWidth;
-					}
-					if (state.detail) {
-						vm.detailVisible = state.detail.visible ?? true;
-						vm.detailWidth = state.detail.width ?? vm.detailWidth;
-					}
+				if (state && state.sidebar) {
+					vm.sidebarVisible = state.sidebar.visible ?? true;
+					vm.sidebarWidth = state.sidebar.width ?? vm.sidebarWidth;
 				}
 			} catch (_) { /* non-critical */ }
 		},
 
-		// ---- Row selection (detail pane) -------------------------------------
-		selectRow(d: any) { this.selectedRow = d; this.detailVisible = true; },
-
-		// 3-state cancelled-orders picker ('' = server default | exclude | include).
-		async openCancelledMenu(event: MouseEvent) {
-			const trigger = event.currentTarget as HTMLElement;
-			if (!trigger || !this.instance) return;
-			const rect = trigger.getBoundingClientRect();
-			const cur = String(this.report.includeCancelled);
-			const items = [
-				{ id: 'default', label: this.t('app.commerce-reports.filter.serverDefault'), selected: cur === '' },
-				{ id: 'false', label: this.t('app.commerce-reports.filter.cancelled.exclude'), selected: cur === 'false' },
-				{ id: 'true', label: this.t('app.commerce-reports.filter.cancelled.include'), selected: cur === 'true' },
-			];
-			const handle = this.instance.popup.open({ anchor: rect, placement: 'bottom-start', minWidth: rect.width, items });
-			const result = await handle.result;
-			if (result == null) return;
-			this.report.includeCancelled = (String(result) === 'default') ? '' : String(result);
-		},
-		cancelledLabel(v: any): string {
-			switch (String(v)) {
-				case 'true': return this.t('app.commerce-reports.filter.cancelled.include');
-				case 'false': return this.t('app.commerce-reports.filter.cancelled.exclude');
-				default: return this.t('app.commerce-reports.filter.serverDefault');
-			}
-		},
-
-		// Apply a saved state / deep-link. Shape:
-		//   { from?, to?, includeCancelled?, financialStatus? }.
+		// Apply a saved state / deep-link. Shape: { from?, to? }.
 		applyLaunchOptions(options: any, initial = false) {
 			const o = (options && typeof options === 'object') ? options : {};
-			if (o.from != null) this.report.from = completeDateTimeLocal(String(o.from), false);
-			if (o.to != null) this.report.to = completeDateTimeLocal(String(o.to), true);
-			if (o.includeCancelled != null && String(o.includeCancelled) !== '') this.report.includeCancelled = (o.includeCancelled === true || String(o.includeCancelled) === 'true') ? 'true' : 'false';
-			if (o.financialStatus != null) this.report.financialStatus = String(o.financialStatus);
+			// Accepts either a bare date or a legacy full instant/datetime-local value
+			// (older saved sessions) — either way, only the yyyy-MM-dd prefix survives,
+			// matching the date-only <input type="date"> this now feeds.
+			if (o.from != null) this.report.from = String(o.from).trim().slice(0, 10);
+			if (o.to != null) this.report.to = String(o.to).trim().slice(0, 10);
 			if (!initial) this.apply();
 		},
 		refresh() { this.load(); },
@@ -438,69 +282,66 @@ const App = {
 			return res.json();
 		},
 
-		// ---- Sales report (date-range preview + CSV download) ----------------
+		// ---- Occurrence-date report (date-range preview + CSV download) --------
 		// The query is derived from the APPLIED snapshot, so the CSV download always
 		// matches the shown preview. Dates go over the wire as ISO-8601 instants
 		// resolved in the effective (Preferences) timezone.
-		reportQuery(format: string): string {
+		occurrenceQuery(format: string): string {
 			const p = new URLSearchParams();
-			p.set('type', 'sales');
-			const fromIso = wallClockToIso(this.applied.from, this.localization.timeZone, false);
-			const toIso = wallClockToIso(this.applied.to, this.localization.timeZone, true);
+			p.set('type', 'occurrence');
+			const tz = this.localization.timeZone;
+			// Resolve the effective window as bare dates first. An empty operator range
+			// defaults to the last DEFAULT_WINDOW_DAYS calendar days ending today,
+			// resolved in the effective timezone — the SAME date-only basis as a manual
+			// pick, so the default and a hand-typed range share one wire path. Both
+			// endpoints then go over the wire as ISO-8601 UTC instants padded to the day
+			// boundaries (00:00:00 / 23:59:59) of that zone; this client never sends the
+			// `days` shorthand, so the endpoint always receives an explicit from/to.
+			let fromDate = this.applied.from;
+			let toDate = this.applied.to;
+			if (!fromDate && !toDate) {
+				toDate = todayInZone(tz);
+				fromDate = shiftDate(toDate, -(DEFAULT_WINDOW_DAYS - 1));
+			}
+			const fromIso = wallClockToIso(completeDateTimeLocal(fromDate, false), tz, false);
+			const toIso = wallClockToIso(completeDateTimeLocal(toDate, true), tz, true);
 			if (fromIso) p.set('from', fromIso);
 			if (toIso) p.set('to', toIso);
-			if (!fromIso && !toIso) p.set('days', '30');
-			// Population controls — also from the APPLIED snapshot, so the CSV's
-			// population always matches the preview's.
-			// Population params ride only when the operator SET them — an absent param keeps the
-			// sales.yml default in force (operator sovereignty; resolveOpts treats presence as override).
-			// NOTE: returnsBasis is intentionally NOT sent. The P/L is order-date only (pl.basis is always
-			// "order"); the refund-date view is the separate Refunds tab (the `refunds` block), so a basis
-			// selector here would be a control that changes nothing — removed on purpose.
-			if (this.applied.includeCancelled !== '') p.set('includeCancelled', String(this.applied.includeCancelled));
-			const fs = String(this.applied.financialStatus || '').trim();
-			if (fs) p.set('financialStatus', fs);
+			// The same timezone that resolved the wall-clock range also labels the
+			// day rows: the endpoint buckets each event on its local day in this zone.
+			if (tz) p.set('tz', tz);
 			if (format) p.set('format', format);
-			// The CSV follows the on-screen tab. The refund cash-out CSV carries basis=refund and no tax
-			// mode (it is cash); the sales CSV embeds the current tax-mode in its comment header (the P/L
-			// columns are the same either way — it just records which headline the operator was reading).
-			if (format === 'csv') {
-				if (this.view === 'refunds') p.set('csvView', 'refunds');
-				else p.set('taxMode', this.taxIncl ? 'incl' : 'excl');
-			}
 			return p.toString();
 		},
 		async apply() {
 			this.applied = {
 				from: this.report.from,
 				to: this.report.to,
-				includeCancelled: this.report.includeCancelled,
-				financialStatus: this.report.financialStatus,
 			};
 			this.hasApplied = true;
-			this.selectedRow = null;
+			// Invalidate for the new window: the hero/list must never show the OLD
+			// window's figures against the new period — they render '--' / empty
+			// instead until the fetch lands.
+			this.occurrencePreview = null;
 			return this.load();
 		},
+		// Reload the applied window. On a plain refresh (same window) the previous
+		// figures stay visible until the response replaces them.
 		async load() {
 			this.busy = true;
-			try { await this.loadReportPreview(); }
-			finally { this.busy = false; }
-		},
-		async loadReportPreview() {
 			try {
-				const j = await this.getJson(`${REPORTS_SCRIPT}?${this.reportQuery('')}`);
-				this.reportPreview = this.$markRaw(j);
-				this.selectedRow = null;
+				const j = await this.getJson(`${REPORTS_SCRIPT}?${this.occurrenceQuery('')}`);
+				this.occurrencePreview = this.$markRaw(j);
 			} catch (e: any) {
-				this.reportPreview = null;
+				this.occurrencePreview = null;
 				this.showToast(e?.message || this.t('app.commerce-reports.loadFailed', undefined, 'Could not load the report.'), true);
-			}
+			} finally { this.busy = false; }
 		},
 		// Stream the CSV through the browser's downloader; the endpoint sets
 		// Content-Disposition, so a plain navigation saves the file.
 		downloadReportCsv() {
 			if (!this.canDownload) return;
-			const url = `${this._base}${REPORTS_SCRIPT}?${this.reportQuery('csv')}`;
+			const url = `${this._base}${REPORTS_SCRIPT}?${this.occurrenceQuery('csv')}`;
 			try {
 				const a = document.createElement('a');
 				a.href = url;
@@ -509,6 +350,32 @@ const App = {
 				a.click();
 				a.remove();
 			} catch (_) { window.open(url, '_blank'); }
+		},
+
+		// Drill-down from the "cancelled count" cell → open (or re-target) the Commerce
+		// Orders browser filtered to the FULL cancels of that calendar day. The day range is sent as bare
+		// wall-clock strings; the browser resolves them in the effective timezone and (with cancelled=true)
+		// ranges on the cancel date. No-op when the day had zero cancellations.
+		openCancelledOrders(row: any) {
+			if (!row || !Number(row.cancelledCount)) return;
+			const day = String(row.date || '').slice(0, 10);
+			if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return;
+			const options = { cancelled: true, from: `${day}T00:00`, to: `${day}T23:59` };
+			try {
+				window.parent?.postMessage({ type: 'open-app', appId: ORDERS_APP_ID, options }, window.location.origin);
+			} catch (_) { /* parent unavailable */ }
+		},
+
+		// ---- "反映待ち" pending badge ----------------------------------------
+		async pollPending() {
+			try { this.pendingCount = await fetchPendingCount(this._base); } catch (_) { /* keep last */ }
+		},
+		startPendingPoll() {
+			this.pollPending();
+			this._pendingTimer = window.setInterval(() => this.pollPending(), 15000);
+		},
+		stopPendingPoll() {
+			if (this._pendingTimer) { clearInterval(this._pendingTimer); this._pendingTimer = null; }
 		},
 
 		// ---- Toast -----------------------------------------------------------

@@ -1,6 +1,10 @@
-package commerce
+package commerce.migration
 
 import javax.jcr.query.Query
+
+import commerce.Api
+import commerce.Jcr
+import commerce.Reconciliation
 
 /**
  * One-time migration: bring already-written reconciliation run reports in

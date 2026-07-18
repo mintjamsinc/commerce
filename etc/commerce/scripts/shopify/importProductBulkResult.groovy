@@ -53,7 +53,7 @@ import java.util.zip.GZIPInputStream
 import commerce.BulkJobs
 import commerce.Jcr
 import commerce.Pim
-import commerce.ProductMimeTypeMigration
+import commerce.migration.ProductMimeTypeMigration
 import commerce.Reconciliation
 import commerce.ShopifyAdmin
 

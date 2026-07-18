@@ -1,5 +1,7 @@
 identifier: c1e7d2a4-5f83-4b96-a0d1-7e2c9f4b3a68
 title: Commerce Customer
+category: commerce
+enableStartMenu: false
 icon: assets/icons/icon.svg
 isAdminOnly: true
 # The customer editor: everything about one customer in one place. Displays the

@@ -1,5 +1,6 @@
 identifier: 7c6a1e52-3d4b-4f8a-9c21-0a7e5b6d4f10
 title: Commerce
+category: commerce
 icon: assets/icons/icon.svg
 isAdminOnly: true
 actions:

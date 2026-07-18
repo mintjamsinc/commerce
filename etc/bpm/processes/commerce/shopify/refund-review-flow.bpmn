@@ -9,9 +9,19 @@
   <!-- Refund processing workflow. Started by the refund-created ingestion route
        (a sibling of the order-paid route) when a refunds/create webhook arrives. A refund is
        already executed in Shopify by the time we hear about it, so this flow is
-       audit/triage only: screen the refund, raise a manual "Refund Review" task
-       when a rule matches, then record the refund (and update the linked order's
-       refund summary). No money is moved and nothing is written back to Shopify. -->
+       audit/triage only: screen the refund, RECORD it (computed facts + the linked
+       order's refund summary), then raise a manual "Refund Review" task when a
+       rule matches. No money is moved and nothing is written back to Shopify.
+
+       Recording runs BEFORE the review gate ON PURPOSE: the occurrence sales report
+       aggregates the props recordRefund stamps (refunded_day / refund_amount_base),
+       and the review rules flag exactly the refunds that matter most to the report
+       (fullRefund / highRefundValue — e.g. every full-cancellation refund). Were
+       recording parked behind the review task, those refunds would be INVISIBLE to
+       the report until an operator got to the task. The review is audit-only and
+       reverses nothing, so there is nothing to record "after" it — this also makes
+       the webhook path symmetric with the backfill path (RefundMirror.storeRefund
+       stamps the same props at store time). -->
   <bpmn:process id="refund-review-flow" name="Refund Processing Flow" isExecutable="true">
     <bpmn:startEvent id="StartEvent_start">
       <bpmn:outgoing>Flow_start_screen</bpmn:outgoing>
@@ -38,17 +48,38 @@
         </camunda:field>
       </bpmn:extensionElements>
       <bpmn:incoming>Flow_start_screen</bpmn:incoming>
-      <bpmn:outgoing>Flow_screen_gw</bpmn:outgoing>
+      <bpmn:outgoing>Flow_screen_record</bpmn:outgoing>
     </bpmn:serviceTask>
 
-    <!-- 2. Review required? -->
+    <!-- 2. Record the refund: persist computed totals on the refund and update
+         the linked order's cumulative refund summary. Runs before the review
+         gate (see the process comment above) so a refund awaiting review is
+         already report-visible; the review form also benefits from the
+         computed props being present. -->
+    <bpmn:serviceTask id="ServiceTask_recordRefund" name="Record Refund" camunda:class="org.mintjams.script.bpm.CmsDelegate">
+      <bpmn:extensionElements>
+        <camunda:field name="path">
+          <camunda:string>/etc/commerce/scripts/shopify/recordRefund.groovy</camunda:string>
+        </camunda:field>
+        <camunda:field name="inputs">
+          <camunda:string>refundPath,order_id</camunda:string>
+        </camunda:field>
+        <camunda:field name="runAs">
+          <camunda:string>commerce-service-user</camunda:string>
+        </camunda:field>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_screen_record</bpmn:incoming>
+      <bpmn:outgoing>Flow_record_gw</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- 3. Review required? -->
     <bpmn:exclusiveGateway id="Gateway_reviewRequired" name="Review required?">
-      <bpmn:incoming>Flow_screen_gw</bpmn:incoming>
+      <bpmn:incoming>Flow_record_gw</bpmn:incoming>
       <bpmn:outgoing>Flow_review_no</bpmn:outgoing>
       <bpmn:outgoing>Flow_review_yes</bpmn:outgoing>
     </bpmn:exclusiveGateway>
 
-    <!-- 2a. A rule matched: an operator reviews the refund. -->
+    <!-- 3a. A rule matched: an operator reviews the refund. -->
     <bpmn:userTask id="UserTask_refundReview" name="Refund Review" camunda:formKey="cms:/content/commerce/forms/shopify/refund-review.html">
       <bpmn:extensionElements>
         <camunda:taskListener event="create" class="org.mintjams.script.bpm.CmsDelegate">
@@ -77,30 +108,12 @@
       <bpmn:outgoing>Flow_review_join</bpmn:outgoing>
     </bpmn:userTask>
 
-    <!-- 2b. Join the auto-acknowledge and reviewed branches. -->
+    <!-- 3b. Join the auto-acknowledge and reviewed branches. -->
     <bpmn:exclusiveGateway id="Gateway_reviewJoin">
       <bpmn:incoming>Flow_review_no</bpmn:incoming>
       <bpmn:incoming>Flow_review_join</bpmn:incoming>
-      <bpmn:outgoing>Flow_join_record</bpmn:outgoing>
+      <bpmn:outgoing>Flow_join_end</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-
-    <!-- 3. Record the refund: persist computed totals on the refund and update
-         the linked order's cumulative refund summary. -->
-    <bpmn:serviceTask id="ServiceTask_recordRefund" name="Record Refund" camunda:class="org.mintjams.script.bpm.CmsDelegate">
-      <bpmn:extensionElements>
-        <camunda:field name="path">
-          <camunda:string>/etc/commerce/scripts/shopify/recordRefund.groovy</camunda:string>
-        </camunda:field>
-        <camunda:field name="inputs">
-          <camunda:string>refundPath,order_id</camunda:string>
-        </camunda:field>
-        <camunda:field name="runAs">
-          <camunda:string>commerce-service-user</camunda:string>
-        </camunda:field>
-      </bpmn:extensionElements>
-      <bpmn:incoming>Flow_join_record</bpmn:incoming>
-      <bpmn:outgoing>Flow_record_end</bpmn:outgoing>
-    </bpmn:serviceTask>
 
     <bpmn:endEvent id="EndEvent_refundProcessing">
       <bpmn:extensionElements>
@@ -117,12 +130,13 @@
           </camunda:field>
         </camunda:executionListener>
       </bpmn:extensionElements>
-      <bpmn:incoming>Flow_record_end</bpmn:incoming>
+      <bpmn:incoming>Flow_join_end</bpmn:incoming>
     </bpmn:endEvent>
 
     <!-- Sequence flows -->
     <bpmn:sequenceFlow id="Flow_start_screen" sourceRef="StartEvent_start" targetRef="ServiceTask_screenRefund"/>
-    <bpmn:sequenceFlow id="Flow_screen_gw" sourceRef="ServiceTask_screenRefund" targetRef="Gateway_reviewRequired"/>
+    <bpmn:sequenceFlow id="Flow_screen_record" sourceRef="ServiceTask_screenRefund" targetRef="ServiceTask_recordRefund"/>
+    <bpmn:sequenceFlow id="Flow_record_gw" sourceRef="ServiceTask_recordRefund" targetRef="Gateway_reviewRequired"/>
     <bpmn:sequenceFlow id="Flow_review_no" name="No" sourceRef="Gateway_reviewRequired" targetRef="Gateway_reviewJoin">
       <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${requiresReview == false}</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
@@ -130,8 +144,7 @@
       <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${requiresReview == true}</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="Flow_review_join" sourceRef="UserTask_refundReview" targetRef="Gateway_reviewJoin"/>
-    <bpmn:sequenceFlow id="Flow_join_record" sourceRef="Gateway_reviewJoin" targetRef="ServiceTask_recordRefund"/>
-    <bpmn:sequenceFlow id="Flow_record_end" sourceRef="ServiceTask_recordRefund" targetRef="EndEvent_refundProcessing"/>
+    <bpmn:sequenceFlow id="Flow_join_end" sourceRef="Gateway_reviewJoin" targetRef="EndEvent_refundProcessing"/>
   </bpmn:process>
 
   <bpmndi:BPMNDiagram id="BPMNDiagram_refund_review">
@@ -142,20 +155,20 @@
       <bpmndi:BPMNShape id="Shape_ServiceTask_screenRefund" bpmnElement="ServiceTask_screenRefund">
         <dc:Bounds x="230" y="180" width="100" height="80"/>
       </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_ServiceTask_recordRefund" bpmnElement="ServiceTask_recordRefund">
+        <dc:Bounds x="385" y="180" width="100" height="80"/>
+      </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Gateway_reviewRequired" bpmnElement="Gateway_reviewRequired">
-        <dc:Bounds x="385" y="195" width="50" height="50"/>
+        <dc:Bounds x="540" y="195" width="50" height="50"/>
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="377" y="169" width="76" height="14"/>
+          <dc:Bounds x="532" y="169" width="76" height="14"/>
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_UserTask_refundReview" bpmnElement="UserTask_refundReview">
-        <dc:Bounds x="450" y="300" width="100" height="80"/>
+        <dc:Bounds x="605" y="300" width="100" height="80"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_Gateway_reviewJoin" bpmnElement="Gateway_reviewJoin">
-        <dc:Bounds x="535" y="195" width="50" height="50"/>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Shape_ServiceTask_recordRefund" bpmnElement="ServiceTask_recordRefund">
-        <dc:Bounds x="635" y="180" width="100" height="80"/>
+        <dc:Bounds x="690" y="195" width="50" height="50"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Shape_EndEvent_refundProcessing" bpmnElement="EndEvent_refundProcessing">
         <dc:Bounds x="792" y="202" width="36" height="36"/>
@@ -164,36 +177,36 @@
         <di:waypoint x="176" y="220"/>
         <di:waypoint x="230" y="220"/>
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Edge_Flow_screen_gw" bpmnElement="Flow_screen_gw">
+      <bpmndi:BPMNEdge id="Edge_Flow_screen_record" bpmnElement="Flow_screen_record">
         <di:waypoint x="330" y="220"/>
         <di:waypoint x="385" y="220"/>
       </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_record_gw" bpmnElement="Flow_record_gw">
+        <di:waypoint x="485" y="220"/>
+        <di:waypoint x="540" y="220"/>
+      </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_Flow_review_no" bpmnElement="Flow_review_no">
-        <di:waypoint x="435" y="220"/>
-        <di:waypoint x="535" y="220"/>
+        <di:waypoint x="590" y="220"/>
+        <di:waypoint x="690" y="220"/>
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="478" y="202" width="15" height="14"/>
+          <dc:Bounds x="633" y="202" width="15" height="14"/>
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_Flow_review_yes" bpmnElement="Flow_review_yes">
-        <di:waypoint x="410" y="245"/>
-        <di:waypoint x="410" y="340"/>
-        <di:waypoint x="450" y="340"/>
+        <di:waypoint x="565" y="245"/>
+        <di:waypoint x="565" y="340"/>
+        <di:waypoint x="605" y="340"/>
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="394" y="271" width="20" height="14"/>
+          <dc:Bounds x="549" y="271" width="20" height="14"/>
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Edge_Flow_review_join" bpmnElement="Flow_review_join">
-        <di:waypoint x="550" y="340"/>
-        <di:waypoint x="560" y="340"/>
-        <di:waypoint x="560" y="245"/>
+        <di:waypoint x="705" y="340"/>
+        <di:waypoint x="715" y="340"/>
+        <di:waypoint x="715" y="245"/>
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Edge_Flow_join_record" bpmnElement="Flow_join_record">
-        <di:waypoint x="585" y="220"/>
-        <di:waypoint x="635" y="220"/>
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Edge_Flow_record_end" bpmnElement="Flow_record_end">
-        <di:waypoint x="735" y="220"/>
+      <bpmndi:BPMNEdge id="Edge_Flow_join_end" bpmnElement="Flow_join_end">
+        <di:waypoint x="740" y="220"/>
         <di:waypoint x="792" y="220"/>
       </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>

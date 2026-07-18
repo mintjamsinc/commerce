@@ -64,17 +64,34 @@ class BulkQueries {
      * foreground Admin API (RefundMirror.refundsQuery) and only for orders whose refund ids are
      * not yet mirrored.
      *
+     * PAYMENT TRANSACTIONS (full nodes): each order also carries its `transactions` — a plain
+     * LIST field on Order (not a connection), so unlike the refund detail it CAN ride the export
+     * with its scalar fields + amountSet. The consumer mirrors the successful sale/capture ones
+     * into the payment store (commerce.PaymentMirror) for the occurrence report's payment axis.
+     *
      * JSONL lines:
      *   {"id":"gid://shopify/Order/111", ...order node fields...}                    // order (no __parentId)
      *   {"id":"gid://shopify/LineItem/222", ..., "__parentId":"gid://shopify/Order/111"} // line item
      *   {"id":"gid://shopify/Refund/333", "__parentId":"gid://shopify/Order/111"}        // refund id flag
+     *   {"id":"gid://shopify/OrderTransaction/444", ..., "__parentId":"gid://shopify/Order/111"} // transaction
      *
-     * (Whether a refund id emits as its own JSONL line, as above, or inlines on the order line as
-     * a refunds:[{id}] list is version-sensitive — the consumer tolerates BOTH.)
+     * (Whether a refund id / transaction emits as its own JSONL line, as above, or inlines on the
+     * order line as a refunds:[{id}] / transactions:[...] list is version-sensitive — the consumer
+     * tolerates BOTH.)
+     *
+     * STATUS UNIVERSE: the filter always carries an explicit `(status:open OR status:closed OR
+     * status:cancelled)` clause (buildOrdersFilter). Shopify's order search does NOT match
+     * cancelled orders by default — live-observed 2026-07-14: cancelling 1 of 102 orders made every
+     * subsequent full-range backfill export only 101, so the cancelled order's mirror went stale
+     * (no cancelled_at) and its refund flags never reached the refund detail phase. A backfill is
+     * the WHOLE historical import, so it must cover every order lifecycle state. NB `status:any` is
+     * REST-only vocabulary — the GraphQL search syntax accepts open/closed/cancelled/not_closed,
+     * so the universe is spelled out as an OR of the three terminal-inclusive states.
      *
      * The filter is injected as a bare search string inside orders(query: "%FILTER%"); the whole
      * query is GraphQL-string-escaped by ShopifyAdmin.startBulk (gqlString) before it is sent, and
-     * buildOrdersFilter admits only digits+dashes into the dates, so there is no injection surface.
+     * buildOrdersFilter admits only digits+dashes into the dates (plus the static status clause
+     * above), so there is no injection surface.
      */
     static final String ORDERS_BACKFILL_TEMPLATE = '''
 {
@@ -195,6 +212,26 @@ class BulkQueries {
         # fetches it per refund-bearing order via the foreground Admin API. Only scalar id here.
         refunds {
           id
+        }
+        # Payment transactions for the payment (cash-in) mirror. Order.transactions is a plain
+        # LIST field (NOT a connection), so — unlike the refund detail — it can ride this export:
+        # it either INLINES on the order root line or explodes into OrderTransaction child lines
+        # (version-sensitive, like the refunds flag; the consumer tolerates BOTH). The consumer
+        # mirrors only successful sale/capture transactions (commerce.Payments.isCashIn) into the
+        # payment store. amountSet carries shopMoney, so a bulk-mirrored payment gets a REAL base
+        # amount even where the webhook body has none. NB verify field availability against the
+        # pinned Admin API version.
+        transactions {
+          id
+          kind
+          status
+          gateway
+          createdAt
+          processedAt
+          amountSet {
+            shopMoney { amount currencyCode }
+            presentmentMoney { amount currencyCode }
+          }
         }
       }
     }
@@ -485,8 +522,23 @@ class BulkQueries {
         return parts.join(" ")
     }
 
-    /** The orders backfill filters on created_at — a thin delegate so the orders path is unchanged. */
+    /**
+     * Every order status the search syntax can express, OR-joined. Shopify's order search matches
+     * OPEN orders only by default, so without this clause a cancelled (or archived) order silently
+     * drops out of the backfill: its mirror never learns cancelled_at and its refunds are never
+     * flagged for the detail phase, so the sales report misses both the cancellation and the
+     * refund. `status:any` is NOT valid GraphQL search syntax (REST-only) — the accepted values
+     * are open/closed/cancelled (and the not_closed shortcut), hence the explicit OR.
+     */
+    static final String ORDERS_STATUS_ALL = "(status:open OR status:closed OR status:cancelled)"
+
+    /**
+     * The orders backfill filter: the all-statuses clause (ALWAYS — a backfill is the whole
+     * historical import, cancelled/archived orders included) AND the operator's created_at window
+     * when one was given. Space-joined terms are ANDed by the search syntax.
+     */
     static String buildOrdersFilter(Map params) {
-        return buildDateFilter("created_at", params)
+        def dates = buildDateFilter("created_at", params)
+        return dates ? "${ORDERS_STATUS_ALL} ${dates}".toString() : ORDERS_STATUS_ALL
     }
 }

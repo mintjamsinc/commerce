@@ -42,16 +42,17 @@ class SalesFacts {
 
     // --- Pending queue (mirrors commerce.InventoryAlert) -----------------------
 
-    /** Mark an order as needing a fact recompute (upsert a marker + commit). Defensive. */
+    /**
+     * Mark an order as needing a fact recompute (upsert a marker + commit). Webhook bursts for the
+     * same order race on this one marker path (concurrent same-path creates, rewrites overlapping
+     * the drainer's clearPending), so the write goes through the retrying Jcr.commitJson. Defensive.
+     */
     static void markPending(session, log, orderId) {
         def id = Api.legacyId(orderId)
         if (!id) return
         try {
-            def res = Jcr.getOrCreateFile(session, "${PENDING_DIR}/${id}.json".toString())
-            res.write(Jcr.toJson([order_id: id, at: Api.now()]))
-            session.commit()
+            Jcr.commitJson(session, "${PENDING_DIR}/${id}.json".toString(), [order_id: id, at: Api.now()])
         } catch (Exception e) {
-            try { session.rollback() } catch (Exception ignore) {}
             try { log.warn("SalesFacts.markPending ${id}: ${e.message}") } catch (Exception ignore) {}
         }
     }
@@ -82,11 +83,9 @@ class SalesFacts {
         def id = Api.legacyId(orderId)
         if (!id) return
         try {
-            def res = Jcr.getOrCreateFile(session, "${PENDING_DIR}/${id}.json".toString())
-            res.write(Jcr.toJson([order_id: id, at: Api.now(), no_body_retries: retries]))
-            session.commit()
+            Jcr.commitJson(session, "${PENDING_DIR}/${id}.json".toString(),
+                [order_id: id, at: Api.now(), no_body_retries: retries])
         } catch (Exception e) {
-            try { session.rollback() } catch (Exception ignore) {}
             try { log.warn("SalesFacts.markPendingRetry ${id}: ${e.message}") } catch (Exception ignore) {}
         }
     }
@@ -381,16 +380,11 @@ class SalesFacts {
         try { return res?.getPath() } catch (Exception ignore) { return null }
     }
 
-    // [yyyy, MM] of an epoch-ms instant in the server zone (matches Sales.ordered_day / the rest of the
-    // server). Fact folder placement only — reads recurse, and prune is by @commerce:order_id, so a
-    // month drift is harmless. Falls back to now when the timestamp is absent.
+    // [yyyy, MM] of an epoch-ms instant in UTC (the shared fold rule, Api.utcYearMonth). Fact folder
+    // placement only — reads recurse, and prune is by @commerce:order_id, so a month drift is
+    // harmless; the report's day rows are query-time range() buckets on the Date props, never
+    // derived from the path. Falls back to now when the timestamp is absent.
     private static List yearMonth(Object ms) {
-        def zdt
-        if (ms != null) {
-            try { zdt = java.time.Instant.ofEpochMilli(((Number) ms).longValue()).atZone(java.time.ZoneId.systemDefault()) }
-            catch (Exception ignore) {}
-        }
-        if (zdt == null) zdt = java.time.ZonedDateTime.now(java.time.ZoneId.systemDefault())
-        return [String.format("%04d", zdt.getYear()), String.format("%02d", zdt.getMonthValue())]
+        return Api.utcYearMonth(ms)
     }
 }

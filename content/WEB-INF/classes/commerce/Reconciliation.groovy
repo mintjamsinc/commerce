@@ -160,7 +160,8 @@ class Reconciliation {
     static def writeRunReport(session, Map report) {
         def scope = (report.scope ?: SCOPE_DIFF).toString()
         long nowMs = System.currentTimeMillis()
-        def ym = new java.text.SimpleDateFormat("yyyy/MM").format(new java.util.Date(nowMs))
+        // Month fold in UTC — the shared storage fold rule (Api.utcYearMonth).
+        def ym = Api.utcYearMonth(nowMs).join("/")
         // Scope-distinct filenames keep the store human-navigable; readers key off
         // the commerce:scope property, never the name.
         def prefix = (scope == SCOPE_INVENTORY) ? "inventory" : "recon"

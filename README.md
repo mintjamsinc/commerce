@@ -290,10 +290,14 @@ The product mirror is also a **data platform**:
   queryable without a separate replay step. Surfaced in the **Commerce Import**
   app. See [`docs/reconciliation.md`](docs/reconciliation.md).
 - **Reports & audit export** — sales reports read from an index-backed sales-fact
-  store (`commerce.SalesQuery`, one facet pass, no row cap) and present two
-  deliberately separate views: an order-date P/L (gross → net → total →
-  total charged) and a refund-date cash-out view — plus the outbound-write
-  audit trail — as JSON or CSV. See [`docs/reports.md`](docs/reports.md).
+  store (`commerce.SalesQuery`, facet passes, no row cap): the occurrence-date
+  summary (every event counted on its own date — the view the Commerce Reports
+  app and the dashboard's sales-trend hero share) and the outbound-write audit
+  trail, as JSON or CSV. The former order-date P/L / refund cash-out report was
+  retired end to end (endpoint, webtop tabs, dashboard Sales card and the P/L
+  read layer); the fact write path is untouched, and the browse sort axes
+  (product sales, customer spend) still read the same facts.
+  See [`docs/reports.md`](docs/reports.md).
 
 ---
 
@@ -410,7 +414,7 @@ The built-in `admin` user bypasses ACLs and needs no grant; add real operators t
 The same descriptor registers the JCR **`commerce` namespace**
 (`http://www.mintjams.jp/commerce/1.0`) used by every commerce metadata property
 (see [Status model](#status-model)); a one-time migration of legacy pre-namespace
-data is in `content/WEB-INF/classes/commerce/NamespaceMigration.groovy`.
+data is in `content/WEB-INF/classes/commerce/migration/NamespaceMigration.groovy`.
 
 ---
 
@@ -468,15 +472,15 @@ linked guide.
 | `refund-review.yml` | Refund review | [`docs/refund-tool.md`](docs/refund-tool.md) |
 | `sla.yml` | Task SLA | [`docs/task-sla.md`](docs/task-sla.md) |
 | `health.yml` | Integration health | [`docs/health-monitor.md`](docs/health-monitor.md) |
-| `sales.yml` | *(no settings-app UI yet)* | [`docs/reports.md`](docs/reports.md) |
 
-There is no longer a `storefront.yml` or a `crm.yml` — those domains were
-simplified down to a read endpoint and an Admin-API mirror with nothing left to
-configure (see [Public product feed](#public-product-feed-a-read-endpoint--a-thin-js-client)
-and [Customers](#customers)). `sales.yml` controls the sales-report population
-(`financialStatus` / `includeCancelled` / `returnsBasis`) but, unlike every
-other file above, has no section in the Commerce settings app yet — it is
-edited directly on disk.
+There is no longer a `storefront.yml`, a `crm.yml`, or a `sales.yml` — those
+domains were simplified down to a read endpoint, an Admin-API mirror, and
+built-in defaults with nothing left to configure (see
+[Public product feed](#public-product-feed-a-read-endpoint--a-thin-js-client)
+and [Customers](#customers)). The sales-report population now uses BUILT-IN
+defaults (`financialStatus` = all statuses, cancelled excluded, `returnsBasis` =
+order), still overridable per request via the reports endpoint params — see
+[`docs/reports.md`](docs/reports.md).
 
 ### `etc/commerce/config/shopify.yml` — Shop
 
@@ -488,9 +492,15 @@ edited directly on disk.
 
 ### `etc/commerce/config/notifications.yml` — Notifications
 
-Each manual task builds one channel-agnostic message and dispatches it to every
-**enabled** channel; each channel renders it in its own format. A channel is on
-unless you set `enabled: false`.
+Each notification (task created, backorder event, GDPR action, monitoring alert)
+builds one channel-agnostic message tagged with a **category** (`inventory` /
+`orders` / `refunds` / `fulfillment` / `backorders` / `compliance` /
+`operations`). The file holds a `default` channel set plus, optionally, a
+dedicated channel set per category under `categories:` — a listed category
+delivers **only** through its own set, every other category uses `default`. The
+message goes to every **enabled** channel of the chosen set; each channel renders
+it in its own format. A channel is on unless you set `enabled: false`. The
+channel fields below apply inside `default:` and inside each category set.
 
 | Channel | Fields | Purpose |
 |---|---|---|

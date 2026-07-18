@@ -2,7 +2,7 @@ package commerce
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import java.time.LocalDate
-import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
 /**
@@ -167,7 +167,7 @@ class Backorders {
                 return false
             }
 
-            def now = LocalDate.now(ZoneId.systemDefault())
+            def now = LocalDate.now(ZoneOffset.UTC)
             def createdAt = Api.now()
             def path = "${BASE_DIR}/${now.format(YM)}/${recordName(orderId, lineItemId)}".toString()
 
@@ -205,7 +205,7 @@ class Backorders {
     /** True when a backorder record for this order+line exists (this or last month). */
     static boolean exists(session, orderId, lineItemId) {
         def name = recordName(orderId, lineItemId)
-        def today = LocalDate.now(ZoneId.systemDefault())
+        def today = LocalDate.now(ZoneOffset.UTC)
         for (int i = 0; i <= 1; i++) {
             def path = "${BASE_DIR}/${today.minusMonths(i).format(YM)}/${name}".toString()
             def res = Jcr.safeGet(session, path)

@@ -48,11 +48,31 @@ class Alerts {
 
             def notif = loadNotifications(session)
             if (notif != null) {
-                Notifications.dispatch(log, "alerts", notif, message)
+                // Both monitors that alert through here (health, task SLA) are
+                // operational monitoring — one shared category.
+                Notifications.dispatch(log, "alerts", notif, message, Notifications.CAT_OPERATIONS)
             }
             return true
         } catch (Exception e) {
             warn(log, "fire(${key}) failed: ${e.message}")
+            return false
+        }
+    }
+
+    /**
+     * Send an alert immediately, with no cooldown — for monitors that notify on
+     * every occurrence. Returns true when the alert was dispatched.
+     */
+    static boolean send(session, log, NotificationMessage message) {
+        try {
+            def notif = loadNotifications(session)
+            if (notif == null) {
+                return false
+            }
+            Notifications.dispatch(log, "alerts", notif, message, Notifications.CAT_OPERATIONS)
+            return true
+        } catch (Exception e) {
+            warn(log, "send failed: ${e.message}")
             return false
         }
     }
@@ -96,7 +116,15 @@ class Alerts {
         if (res == null || !res.exists()) {
             return null
         }
-        return SimpleYaml.parse(res.content?.toString())
+        // Full YAML parser (the config nests channel sets under categories, which
+        // is deeper than SimpleYaml's two-level structure). Same engine as the
+        // script-side YAML binding, so both read paths behave identically.
+        def text = res.content?.toString()
+        if (text == null || text.trim().isEmpty()) {
+            return null
+        }
+        def parsed = api.util.YAML.parse(text)
+        return parsed instanceof Map ? (Map) parsed : null
     }
 
     private static void warn(log, String msg) {

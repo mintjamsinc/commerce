@@ -102,7 +102,10 @@ Shopify 管理画面（またはアプリのスコープ設定）で、以下の
 対応チャネルは **Slack / Discord / Teams / LINE / Email / 汎用 Webhook** の 6 種類です。
 **出荷時はすべて無効（`enabled: false`）** なので、使うチャネルを有効化し、
 接続先（Incoming Webhook URL / トークン / SMTP 等）を設定してください（最低 1 つ）。
-1 つのタスク作成イベントから、有効なすべてのチャネルへ同報されます。
+在庫アラートのタスクは `inventory` カテゴリで通知されます: 1 つのタスク作成
+イベントから、`default` セット（在庫アラートを他の通知と分けたい場合は
+`categories:` 配下に `inventory` 用として設定した専用セット）の有効なすべての
+チャネルへ同報されます（[notification-channels.md](notification-channels.md) 参照）。
 
 ### 2-4. 閾値の方針（任意）
 - 閾値は運用者が登録する**固定の発注点（個数）**で、システムが導出・書き換えすることはありません。

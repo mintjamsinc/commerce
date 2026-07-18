@@ -25,15 +25,17 @@
 				</button>
 			</div>
 
+			<button v-if="pendingCount > 0" class="wt-pending-badge" @click="pollPending"
+				:title="t('app.commerce-reports.pending.title', { count: pendingCount })">
+				<i class="bi bi-hourglass-split"></i> {{ t('app.commerce-reports.pending.label', { count: pendingCount }) }}
+			</button>
+
 			<span class="nav-spacer"></span>
 
-			<!-- Pane toggles: filters sidebar (left) + detail pane (right) -->
+			<!-- Pane toggle: filters sidebar (left) -->
 			<div class="pane-toggles">
 				<button class="btn-icon pane-toggle-btn" :class="{ active: sidebarVisible }" @click="toggleSidebar" :title="t('app.commerce-reports.toolbar.toggleSidebar', undefined, 'Toggle filters')">
 					<i class="bi bi-layout-sidebar-inset"></i>
-				</button>
-				<button class="btn-icon pane-toggle-btn" :class="{ active: detailVisible }" @click="toggleDetail" :title="t('app.commerce-reports.toolbar.toggleDetail', undefined, 'Toggle detail')">
-					<i class="bi bi-layout-sidebar-inset-reverse"></i>
 				</button>
 			</div>
 
@@ -45,337 +47,134 @@
 			</div>
 		</nav>
 
-		<!-- Content: 3-pane (left period / center list / right detail) -->
+		<!-- Content: 2-pane (left period / center list) -->
 		<div class="content-body">
 
-			<!-- Left: period (from/to, sent as ISO-8601 UTC) + population controls
-			     (returns basis / cancelled orders / financial statuses) — all applied
-			     together through the same Apply flow. -->
+			<!-- Left: period (from/to, sent as ISO-8601 UTC), applied through the Apply flow. -->
 			<aside v-if="sidebarVisible" class="ops-sidebar island" :style="{ width: sidebarWidth + 'px' }">
 				<section class="property-group">
 					<div class="ops-field">
 						<label class="property-label">{{ t('app.commerce-reports.from') }}</label>
-						<input class="wt w-100" type="datetime-local" v-model="report.from">
+						<input class="wt w-100" type="date" v-model="report.from">
 					</div>
 					<div class="ops-field">
 						<label class="property-label">{{ t('app.commerce-reports.to') }}</label>
-						<input class="wt w-100" type="datetime-local" v-model="report.to">
+						<input class="wt w-100" type="date" v-model="report.to">
 					</div>
-					<div class="ops-field">
-						<label class="property-label">{{ t('app.commerce-reports.filter.financialStatus') }}</label>
-						<input class="wt w-100" v-model="report.financialStatus" placeholder="paid,partially_refunded,refunded" @keyup.enter="apply" />
+					<div class="mt-1">
+						<button class="wt wt-primary" :disabled="busy" @click="apply"><i class="bi bi-search"></i> {{ t('common.search') }}</button>
 					</div>
-					<div class="ops-field">
-						<label class="property-label">{{ t('app.commerce-reports.filter.includeCancelled') }}</label>
-						<div class="wt-select">
-							<button type="button" class="wt-select-trigger" @click.stop="openCancelledMenu($event)">
-								<span class="wt-select-value">{{ cancelledLabel(report.includeCancelled) }}</span>
-								<i class="bi bi-chevron-down wt-select-chevron"></i>
-							</button>
-						</div>
-					</div>
-					<button class="wt wt-primary wt-slim" :disabled="busy" @click="apply"><i class="bi bi-search"></i> {{ t('common.search') }}</button>
 				</section>
 			</aside>
 			<div v-if="sidebarVisible" class="sidebar-resize-handle" @mousedown="onSidebarResizeStart"></div>
 
-			<!-- Center: list — header bar (CSV) + daily rows -->
-			<main class="content-main island p-0">
-				<div class="ops-list-head">
-					<button class="wt wt-slim" :disabled="!canDownload" @click="downloadReportCsv">
+			<!-- Center column — a transparent flex-column wrapper holding, stacked, the occurrence
+			     KPI hero as its OWN island ABOVE the list island (<main>). They are sibling islands.
+			     Closed by </div> right after </main>. -->
+			<div class="content-col">
+
+				<!-- Occurrence hero — bare KPI strip mirroring the platform dashboard's ops-side hero
+				     (bold value + uppercase soft label, no per-metric card). ALWAYS mounted: while the
+				     window's data is loading (apply clears the cache) every figure renders as the '--'
+				     placeholder instead of unmounting, so the hero never blinks out during a search.
+				     Negative amounts (refundAmount is negative by design; confirmedSales can go
+				     negative) are colored with the danger token. -->
+				<div class="island rp-occ-hero">
+					<div class="rp-occ-range">{{ occRangeLabel }}</div>
+					<div class="rp-occ-kpis">
+						<div class="rp-occ-kpi">
+							<span class="rp-occ-kpi-value">{{ occInt(occurrenceTotals.newOrderCount) }}</span>
+							<span class="rp-occ-kpi-label">{{ t('app.commerce-reports.occ.newOrders') }}</span>
+						</div>
+						<div class="rp-occ-kpi">
+							<span class="rp-occ-kpi-value" :class="{ 'rp-neg': isNeg(occurrenceTotals.newOrderAmount) }">{{ occBase(occurrenceTotals.newOrderAmount) }}</span>
+							<span class="rp-occ-kpi-label">{{ t('app.commerce-reports.occ.newOrderAmount') }}</span>
+						</div>
+						<div class="rp-occ-kpi">
+							<span class="rp-occ-kpi-value">{{ occInt(occurrenceTotals.cancelledCount) }}</span>
+							<span class="rp-occ-kpi-label">{{ t('app.commerce-reports.occ.cancelled') }}</span>
+						</div>
+						<div class="rp-occ-kpi">
+							<span class="rp-occ-kpi-value">{{ occBase(occurrenceTotals.paymentAmount) }}</span>
+							<span class="rp-occ-kpi-label">{{ t('app.commerce-reports.occ.paymentAmount') }}</span>
+						</div>
+						<div class="rp-occ-kpi">
+							<span class="rp-occ-kpi-value">{{ occInt(occurrenceTotals.refundCount) }}</span>
+							<span class="rp-occ-kpi-label">{{ t('app.commerce-reports.occ.refunds') }}</span>
+						</div>
+						<div class="rp-occ-kpi">
+							<span class="rp-occ-kpi-value" :class="{ 'rp-neg': isNeg(occurrenceTotals.refundAmount) }">{{ occBase(occurrenceTotals.refundAmount) }}</span>
+							<span class="rp-occ-kpi-label">{{ t('app.commerce-reports.occ.refundAmount') }}</span>
+						</div>
+						<div class="rp-occ-kpi">
+							<span class="rp-occ-kpi-value rp-occ-primary" :class="{ 'rp-neg': isNeg(occurrenceTotals.confirmedSales) }">{{ occBase(occurrenceTotals.confirmedSales) }}</span>
+							<span class="rp-occ-kpi-label">{{ t('app.commerce-reports.occ.confirmedSales') }}</span>
+						</div>
+					</div>
+				</div>
+
+				<!-- List island — the CSV export (top-right) + the daily occurrence table -->
+				<main class="content-main island p-0">
+
+				<!-- List head: the CSV download button, right-aligned — the button sits directly
+				     above the list (cf. commerce-oplog's .ops-list-head). -->
+				<div class="rp-list-head">
+					<button class="wt wt-primary wt-slim" :disabled="!canDownload" @click="downloadReportCsv">
 						<i class="bi bi-download"></i> {{ t('app.commerce-reports.download') }}
 					</button>
 				</div>
 
-				<!-- Hero (sales view): the P/L headline (revenue) + a mini-ladder + KPI cards. The tax
-				     toggle only re-picks the headline (revenue excl. tax ↔ total charged incl. tax) — the
-				     P/L is tax-exclusive with tax on its own row, never mixed into a figure. -->
-				<div v-if="reportTotals && view === 'sales'" class="rp-hero">
-					<div class="rp-hero-head">
-						<div class="rp-hero-main">
-							<div class="rp-hero-label">{{ heroMainLabel }}</div>
-							<div class="rp-hero-value">{{ fmtBase(heroMainValue) }}</div>
-							<div class="rp-hero-range">
-								{{ fmtRangeDate(reportPreview.from) }} – {{ fmtRangeDate(reportPreview.to) }}
-								<span class="rp-hero-pop">· {{ populationLabel }}</span>
-							</div>
-						</div>
-						<div class="rp-tax-toggle">
-							<button class="wt wt-slim" :class="{ 'wt-primary': !taxIncl }" @click="setTaxMode('excl')">{{ t('app.commerce-reports.hero.taxExcl') }}</button>
-							<button class="wt wt-slim" :class="{ 'wt-primary': taxIncl }" @click="setTaxMode('incl')">{{ t('app.commerce-reports.hero.taxIncl') }}</button>
-						</div>
-					</div>
-					<!-- Mini-ladder (waterfall): gross − (discounts+returns) + (shipping+otherIncome) = revenue. -->
-					<div class="rp-ladder">
-						<div class="rp-ladder-step"><span class="rp-ladder-label">{{ t('app.commerce-reports.hero.ladder.gross') }}</span><span class="rp-ladder-val">{{ fmtBase(plTotals.grossSales) }}</span></div>
-						<span class="rp-ladder-op">−</span>
-						<div class="rp-ladder-step"><span class="rp-ladder-label">{{ t('app.commerce-reports.hero.ladder.deductions') }}</span><span class="rp-ladder-val">{{ fmtBase(ladderDeductions) }}</span></div>
-						<span class="rp-ladder-op">+</span>
-						<div class="rp-ladder-step">
-							<span class="rp-ladder-label">{{ t('app.commerce-reports.hero.ladder.additions') }}</span>
-							<span class="rp-ladder-val">{{ fmtBase(ladderAdditions) }}</span>
-							<span class="rp-ladder-sub">{{ t('app.commerce-reports.pl.shipping') }} {{ fmtBase(plTotals.shipping) }} · {{ t('app.commerce-reports.pl.otherIncome') }} {{ fmtBase(plTotals.otherIncome) }}</span>
-						</div>
-						<span class="rp-ladder-op">=</span>
-						<div class="rp-ladder-step rp-ladder-result"><span class="rp-ladder-label">{{ t('app.commerce-reports.hero.ladder.result') }}</span><span class="rp-ladder-val">{{ fmtBase(plTotals.totalRevenue) }}</span></div>
-					</div>
-					<!-- KPI cards: the tax-inclusive charge, order count, average order value, and the return rate. -->
-					<div class="rp-kpi">
-						<div class="rp-kpi-card"><div class="rp-kpi-label">{{ t('app.commerce-reports.kpi.totalCharged') }}</div><div class="rp-kpi-val">{{ fmtBase(plTotals.totalCharged) }}</div></div>
-						<div class="rp-kpi-card"><div class="rp-kpi-label">{{ t('app.commerce-reports.summary.orders') }}</div><div class="rp-kpi-val">{{ fmtInt(reportTotals.orders) }}</div></div>
-						<div class="rp-kpi-card"><div class="rp-kpi-label">{{ t('app.commerce-reports.summary.aov') }}</div><div class="rp-kpi-val">{{ fmtBase(reportStats.avg) }}</div></div>
-						<div class="rp-kpi-card"><div class="rp-kpi-label">{{ t('app.commerce-reports.kpi.returnRate') }}</div><div class="rp-kpi-val">{{ fmtPct(returnRate) }}</div></div>
-					</div>
-					<div v-if="incompleteOrders > 0" class="ops-summary-warning">
-						<i class="bi bi-exclamation-triangle"></i>
-						{{ t('app.commerce-reports.summary.incomplete', { count: incompleteOrders }) }}
-					</div>
-				</div>
-
-				<!-- Sales | Refunds tabs. EXCLUSIVE: the sales P/L (order date) and the refund cash-out list
-				     (refund date) are different cohorts, so switching REMOVES the other from view — putting
-				     them side by side would invite adding numbers that must not be added. -->
-				<div class="rp-tabs">
-					<button class="rp-tab" :class="{ active: view === 'sales' }" @click="setView('sales')">{{ t('app.commerce-reports.tab.sales') }}</button>
-					<button class="rp-tab" :class="{ active: view === 'refunds' }" @click="setView('refunds')">{{ t('app.commerce-reports.tab.refunds') }}</button>
-				</div>
-
-				<!-- Sales P/L table (order-date basis). One clean left-to-right path: grossSales − discounts
-				     − returns = netSales, + shipping + otherIncome = totalRevenue, + tax = totalCharged.
-				     All-zero columns (discounts / other income) auto-collapse via plColShow. -->
-				<div v-if="view === 'sales'" class="content-list">
+				<!-- Occurrence-date summary (each event on its OWN date): new orders (ordered_at), cancellations
+				     (cancelled_at, full-cancel only), payments (paid_at, successful sale/capture cash in),
+				     refunds (refunded_at). confirmedSales = paymentAmount + refundAmount (the payment basis:
+				     cash in minus cash out; refundAmount is NEGATIVE). The cancelled-count cell drills into the
+				     order browser filtered to that day's full cancels. Returns are NOT a column (returns/*
+				     unwired). -->
+				<div class="content-list">
 					<table class="wt">
 						<thead>
 							<tr>
 								<th class="text-start">{{ t('app.commerce-reports.col.date') }}</th>
-								<th class="text-end">{{ t('app.commerce-reports.col.orders') }}</th>
-								<th class="text-end">{{ t('app.commerce-reports.pl.grossSales') }}</th>
-								<th v-if="plColShow('discounts')" class="text-end">{{ t('app.commerce-reports.pl.discounts') }}</th>
-								<th class="text-end">{{ t('app.commerce-reports.pl.returns') }}</th>
-								<th class="text-end">{{ t('app.commerce-reports.pl.netSales') }}</th>
-								<th class="text-end">{{ t('app.commerce-reports.pl.shipping') }}</th>
-								<th v-if="plColShow('otherIncome')" class="text-end">{{ t('app.commerce-reports.pl.otherIncome') }}</th>
-								<th class="text-end">{{ t('app.commerce-reports.pl.totalRevenue') }}</th>
-								<th class="text-end">{{ t('app.commerce-reports.pl.tax') }}</th>
-								<th class="text-end">{{ t('app.commerce-reports.pl.totalCharged') }}</th>
+								<th class="text-end">{{ t('app.commerce-reports.occ.newOrders') }}</th>
+								<th class="text-end">{{ t('app.commerce-reports.occ.newOrderAmount') }}</th>
+								<th class="text-end">{{ t('app.commerce-reports.occ.cancelled') }}</th>
+								<th class="text-end">{{ t('app.commerce-reports.occ.payments') }}</th>
+								<th class="text-end">{{ t('app.commerce-reports.occ.paymentAmount') }}</th>
+								<th class="text-end">{{ t('app.commerce-reports.occ.refunds') }}</th>
+								<th class="text-end">{{ t('app.commerce-reports.occ.refundAmount') }}</th>
+								<th class="text-end">{{ t('app.commerce-reports.occ.confirmedSales') }}</th>
 							</tr>
 						</thead>
 						<tbody>
-							<tr v-if="reportDaily.length === 0" class="item-empty">
-								<td colspan="11">{{ t('app.commerce-reports.noData') }}</td>
+							<tr v-if="occurrenceDaily.length === 0" class="item-empty">
+								<td colspan="9">{{ t('app.commerce-reports.noData') }}</td>
 							</tr>
-							<tr v-for="(d, i) in reportDaily" :key="i" class="item"
-								:class="{ 'item-selected': selectedRow === d }" @click="selectRow(d)">
+							<tr v-for="(d, i) in occurrenceDaily" :key="i" class="item">
 								<td>{{ fmtDate(d.date) }}</td>
-								<td class="text-end ops-val">{{ fmtInt(d.orders) }}</td>
-								<td class="text-end ops-val">{{ fmtBase(d.pl.grossSales) }}</td>
-								<td v-if="plColShow('discounts')" class="text-end ops-val">{{ fmtBaseNeg(d.pl.discounts) }}</td>
-								<td class="text-end ops-val">{{ fmtBaseNeg(d.pl.returns) }}</td>
-								<td class="text-end ops-val">{{ fmtBase(d.pl.netSales) }}</td>
-								<td class="text-end ops-val">{{ fmtBase(d.pl.shipping) }}</td>
-								<td v-if="plColShow('otherIncome')" class="text-end ops-val">{{ fmtBase(d.pl.otherIncome) }}</td>
-								<td class="text-end ops-val">{{ fmtBase(d.pl.totalRevenue) }}</td>
-								<td class="text-end ops-val">{{ fmtBase(d.pl.tax) }}</td>
-								<td class="text-end ops-val">{{ fmtBase(d.pl.totalCharged) }}</td>
+								<td class="text-end ops-val">{{ fmtInt(d.newOrderCount) }}</td>
+								<td class="text-end ops-val" :class="{ 'rp-neg': isNeg(d.newOrderAmount) }">{{ fmtBase(d.newOrderAmount) }}</td>
+								<td class="text-end ops-val">
+									<a v-if="Number(d.cancelledCount) > 0" href="#" class="rp-drill"
+									   @click.prevent="openCancelledOrders(d)" :title="t('app.commerce-reports.occ.cancelledDrill')">{{ fmtInt(d.cancelledCount) }}</a>
+									<span v-else>{{ fmtInt(d.cancelledCount) }}</span>
+								</td>
+								<td class="text-end ops-val">{{ fmtInt(d.paymentCount) }}</td>
+								<td class="text-end ops-val">{{ fmtBase(d.paymentAmount) }}</td>
+								<td class="text-end ops-val">{{ fmtInt(d.refundCount) }}</td>
+								<td class="text-end ops-val" :class="{ 'rp-neg': isNeg(d.refundAmount) }">{{ fmtBase(d.refundAmount) }}</td>
+								<td class="text-end ops-val" :class="{ 'rp-neg': isNeg(d.confirmedSales) }">{{ fmtBase(d.confirmedSales) }}</td>
 							</tr>
 						</tbody>
-						<tfoot v-if="reportDaily.length > 0">
-							<tr class="rp-total-row">
-								<td class="text-start">{{ t('app.commerce-reports.pl.total') }}</td>
-								<td class="text-end ops-val">{{ fmtInt(reportTotals.orders) }}</td>
-								<td class="text-end ops-val">{{ fmtBase(plTotals.grossSales) }}</td>
-								<td v-if="plColShow('discounts')" class="text-end ops-val">{{ fmtBaseNeg(plTotals.discounts) }}</td>
-								<td class="text-end ops-val">{{ fmtBaseNeg(plTotals.returns) }}</td>
-								<td class="text-end ops-val">{{ fmtBase(plTotals.netSales) }}</td>
-								<td class="text-end ops-val">{{ fmtBase(plTotals.shipping) }}</td>
-								<td v-if="plColShow('otherIncome')" class="text-end ops-val">{{ fmtBase(plTotals.otherIncome) }}</td>
-								<td class="text-end ops-val">{{ fmtBase(plTotals.totalRevenue) }}</td>
-								<td class="text-end ops-val">{{ fmtBase(plTotals.tax) }}</td>
-								<td class="text-end ops-val">{{ fmtBase(plTotals.totalCharged) }}</td>
-							</tr>
-						</tfoot>
-					</table>
-				</div>
-
-				<!-- Refunds note strip: incomplete-data warnings + the crossPeriod legend (the icon's meaning). -->
-				<div v-if="view === 'refunds' && (refundsUnmigrated > 0 || refundsMixedCurrency || refundsHasCrossPeriod)" class="rp-tab-note">
-					<span v-if="refundsUnmigrated > 0" class="rp-warn"><i class="bi bi-exclamation-triangle"></i> {{ t('app.commerce-reports.refunds.unmigrated', { count: refundsUnmigrated }) }}</span>
-					<span v-if="refundsMixedCurrency" class="rp-warn"><i class="bi bi-exclamation-triangle"></i> {{ t('app.commerce-reports.refunds.mixedCurrency') }}</span>
-					<span v-if="refundsHasCrossPeriod"><i class="bi bi-calendar-x rp-crossperiod"></i> {{ t('app.commerce-reports.refunds.crossPeriodLegend') }}</span>
-				</div>
-
-				<!-- Refund cash-out list (refund-date basis). cashOut == goods + tax + shipping −
-				     restockingFee. The crossPeriod column shows an icon (not a raw true/false) on days
-				     whose refunds include an order from outside the window — the signal a monthly close needs. -->
-				<div v-if="view === 'refunds'" class="content-list">
-					<table class="wt">
-						<thead>
-							<tr>
-								<th class="text-start">{{ t('app.commerce-reports.refunds.col.day') }}</th>
-								<th class="text-end">{{ t('app.commerce-reports.refunds.col.count') }}</th>
-								<th class="text-end">{{ t('app.commerce-reports.refunds.col.cashOut') }}</th>
-								<th class="text-end">{{ t('app.commerce-reports.refunds.col.goods') }}</th>
-								<th class="text-end">{{ t('app.commerce-reports.refunds.col.tax') }}</th>
-								<th class="text-end">{{ t('app.commerce-reports.refunds.col.shipping') }}</th>
-								<th class="text-end">{{ t('app.commerce-reports.refunds.col.restockingFee') }}</th>
-								<th class="text-center"></th>
-							</tr>
-						</thead>
-						<tbody>
-							<tr v-if="refundsDaily.length === 0" class="item-empty">
-								<td colspan="8">{{ t('app.commerce-reports.refunds.noData') }}</td>
-							</tr>
-							<tr v-for="(r, i) in refundsDaily" :key="i" class="item">
-								<td>{{ fmtDate(r.refundedDay) }}</td>
-								<td class="text-end ops-val">{{ fmtInt(r.refundCount) }}</td>
-								<td class="text-end ops-val">{{ fmtBase(r.cashOut) }}</td>
-								<td class="text-end ops-val">{{ fmtBase(r.goods) }}</td>
-								<td class="text-end ops-val">{{ fmtBase(r.tax) }}</td>
-								<td class="text-end ops-val">{{ fmtBase(r.shipping) }}</td>
-								<td class="text-end ops-val">{{ fmtBase(r.restockingFeeIncome) }}</td>
-								<td class="text-center"><i v-if="r.crossPeriod" class="bi bi-calendar-x rp-crossperiod" :title="t('app.commerce-reports.refunds.crossPeriod')"></i></td>
-							</tr>
-						</tbody>
-						<tfoot v-if="refundsDaily.length > 0">
-							<tr class="rp-total-row">
-								<td class="text-start">{{ t('app.commerce-reports.pl.total') }}</td>
-								<td class="text-end ops-val">{{ fmtInt(refundsSummary.refundCount) }}</td>
-								<td class="text-end ops-val">{{ fmtBase(refundsSummary.cashOut) }}</td>
-								<td class="text-end ops-val">{{ fmtBase(refundsSummary.goods) }}</td>
-								<td class="text-end ops-val">{{ fmtBase(refundsSummary.tax) }}</td>
-								<td class="text-end ops-val">{{ fmtBase(refundsSummary.shipping) }}</td>
-								<td class="text-end ops-val">{{ fmtBase(refundsSummary.restockingFeeIncome) }}</td>
-								<td></td>
-							</tr>
-						</tfoot>
 					</table>
 				</div>
 			</main>
-
-			<!-- Right detail pane (resizable) — the selected day's breakdown -->
-			<div v-if="detailVisible" class="detail-resize-handle" @mousedown="onDetailResizeStart"></div>
-			<aside v-if="detailVisible" class="ops-detail island p-0" :style="{ width: detailWidth + 'px' }">
-				<div class="detail-panel-header">
-					<span class="detail-panel-title">{{ t('app.commerce-reports.detail.title', undefined, '詳細') }}</span>
-				</div>
-				<div class="detail-panel-content">
-					<div v-if="!selectedRow" class="detail-panel-empty">
-						<i class="bi bi-card-list"></i>
-						<span>{{ t('app.commerce-reports.detail.empty', undefined, '行を選択すると詳細が表示されます。') }}</span>
-					</div>
-					<template v-else>
-						<!-- ① Header. NB baseRevenue (Σ total_price_base) is intentionally NOT shown: it is a
-						     reconciliation KEY, not a P/L metric (it double-counts pre-refund charges) — the
-						     reason it is dropped changed from "redundant" to "it is a recon key, not revenue".
-						     Its lossy portion is surfaced as diagnostics.lossyRevenue instead. -->
-						<div class="detail-section-header">{{ fmtDate(selectedRow.date) }}</div>
-						<div class="detail-section-body">
-							<div class="detail-prop">
-								<div class="detail-prop-label">{{ t('app.commerce-reports.col.orders') }}</div>
-								<div class="detail-prop-value" :class="{ muted: selectedRow.orders == null }">{{ fmtInt(selectedRow.orders) }}</div>
-							</div>
-						</div>
-						<!-- ② Sales (P/L) · tax-exclusive — the day's P/L flow, composed additively. -->
-						<div class="detail-section-header">{{ t('app.commerce-reports.detail.blockPl') }}</div>
-						<div class="detail-section-body">
-							<div class="detail-prop">
-								<div class="detail-prop-label">{{ t('app.commerce-reports.pl.grossSales') }}</div>
-								<div class="detail-prop-value">{{ fmtBase(selectedRow.pl.grossSales) }}</div>
-							</div>
-							<div class="detail-prop">
-								<div class="detail-prop-label">{{ t('app.commerce-reports.pl.discounts') }}</div>
-								<div class="detail-prop-value">{{ fmtBaseNeg(selectedRow.pl.discounts) }}</div>
-							</div>
-							<div class="detail-prop">
-								<div class="detail-prop-label">{{ t('app.commerce-reports.pl.returns') }}</div>
-								<div class="detail-prop-value">{{ fmtBaseNeg(selectedRow.pl.returns) }}</div>
-							</div>
-							<div class="detail-prop detail-prop-sum">
-								<div class="detail-prop-label">{{ t('app.commerce-reports.pl.netSales') }}</div>
-								<div class="detail-prop-value">{{ fmtBase(selectedRow.pl.netSales) }}</div>
-							</div>
-							<div class="detail-prop">
-								<div class="detail-prop-label">{{ t('app.commerce-reports.pl.shipping') }}</div>
-								<div class="detail-prop-value">{{ fmtBase(selectedRow.pl.shipping) }}</div>
-							</div>
-							<div class="detail-prop">
-								<div class="detail-prop-label">{{ t('app.commerce-reports.pl.otherIncome') }}</div>
-								<div class="detail-prop-value">{{ fmtBase(selectedRow.pl.otherIncome) }}</div>
-							</div>
-							<div class="detail-prop detail-prop-indent">
-								<div class="detail-prop-label">{{ t('app.commerce-reports.col.tips') }}</div>
-								<div class="detail-prop-value">{{ fmtBase(selectedRow.pl.tips) }}</div>
-							</div>
-							<div class="detail-prop detail-prop-indent">
-								<div class="detail-prop-label">{{ t('app.commerce-reports.pl.restockingFees') }}</div>
-								<div class="detail-prop-value">{{ fmtBase(selectedRow.pl.restockingFees) }}</div>
-							</div>
-							<div class="detail-prop detail-prop-sum">
-								<div class="detail-prop-label">{{ t('app.commerce-reports.pl.totalRevenue') }}</div>
-								<div class="detail-prop-value">{{ fmtBase(selectedRow.pl.totalRevenue) }}</div>
-							</div>
-						</div>
-						<!-- ③ Held funds (not revenue) — consumption tax + duties, then the tax-inclusive charge. -->
-						<div class="detail-section-header">{{ t('app.commerce-reports.detail.blockHeld') }}</div>
-						<div class="detail-section-body">
-							<div class="detail-prop">
-								<div class="detail-prop-label">{{ t('app.commerce-reports.pl.tax') }}</div>
-								<div class="detail-prop-value">{{ fmtBase(selectedRow.pl.tax) }}</div>
-							</div>
-							<div class="detail-prop">
-								<div class="detail-prop-label">{{ t('app.commerce-reports.col.duties') }}</div>
-								<div class="detail-prop-value">{{ fmtBase(selectedRow.pl.duties) }}</div>
-							</div>
-							<div class="detail-prop detail-prop-sum">
-								<div class="detail-prop-label">{{ t('app.commerce-reports.pl.totalCharged') }}</div>
-								<div class="detail-prop-value">{{ fmtBase(selectedRow.pl.totalCharged) }}</div>
-							</div>
-						</div>
-						<!-- ④ Returns breakdown — goods + tax + shipping of the day's returns (order cohort). -->
-						<div class="detail-section-header">{{ t('app.commerce-reports.detail.blockReturns') }}</div>
-						<div class="detail-section-body">
-							<div class="detail-prop">
-								<div class="detail-prop-label">{{ t('app.commerce-reports.col.returns') }}</div>
-								<div class="detail-prop-value">{{ fmtBase(selectedRow.pl.returns) }}</div>
-							</div>
-							<div class="detail-prop">
-								<div class="detail-prop-label">{{ t('app.commerce-reports.col.returnsTax') }}</div>
-								<div class="detail-prop-value">{{ fmtBase(selectedRow.returnsTax) }}</div>
-							</div>
-							<div class="detail-prop">
-								<div class="detail-prop-label">{{ t('app.commerce-reports.col.returnsShipping') }}</div>
-								<div class="detail-prop-value">{{ fmtBase(selectedRow.returnsShipping) }}</div>
-							</div>
-						</div>
-						<!-- ⑤ Meta -->
-						<div class="detail-section-header">{{ t('app.commerce-reports.detail.blockMeta') }}</div>
-						<div class="detail-section-body">
-							<div class="detail-prop">
-								<div class="detail-prop-label">{{ t('app.commerce-reports.detail.currency') }}</div>
-								<div class="detail-prop-value">{{ baseCurrency || '—' }}</div>
-							</div>
-							<div class="detail-prop">
-								<div class="detail-prop-label">{{ t('app.commerce-reports.detail.basis') }}</div>
-								<div class="detail-prop-value">{{ t('app.commerce-reports.filter.returnsBasis.order') }}</div>
-							</div>
-							<div class="detail-prop">
-								<div class="detail-prop-label">{{ t('app.commerce-reports.population.target') }}</div>
-								<div class="detail-prop-value">{{ populationLabel }}</div>
-							</div>
-						</div>
-					</template>
-				</div>
-			</aside>
+			</div>
 		</div>
 
 		<!-- Status bar: count on the LEFT (CMS convention), the transient state on the RIGHT. -->
 		<div class="status-bar window-drag-region">
 			<div class="status-group">
 				<span v-if="rowCount" class="status-item">{{ t('app.commerce-reports.statusbar.count', { count: rowCount }) }}</span>
-				<!-- Reconciliation: the server's diagnostics counters. All zero → a quiet "OK"; non-zero →
-				     the issues, so a number that could not be placed is never silently dropped. -->
-				<span v-if="diagnosticsOk" class="status-item rp-diag-ok"><i class="bi bi-check-circle"></i> {{ t('app.commerce-reports.diag.ok') }}</span>
-				<span v-else-if="diagnosticsIssues.length" class="status-item rp-diag-warn" :title="diagnosticsIssues.join(' ／ ')"><i class="bi bi-exclamation-triangle"></i> {{ diagnosticsIssues.join(' ／ ') }}</span>
 			</div>
 			<span class="nav-spacer"></span>
 			<div class="status-group">

@@ -1,4 +1,6 @@
-package commerce
+package commerce.migration
+
+import commerce.Jcr
 
 /**
  * Retroactively stamp the dedicated order MIME type on the mirrored order nodes.

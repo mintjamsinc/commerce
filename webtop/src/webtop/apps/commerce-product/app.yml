@@ -1,5 +1,7 @@
 identifier: 3f8b2c17-9d54-4e6a-b1c8-72e0a4d5f9b3
 title: Commerce Product
+category: commerce
+enableStartMenu: false
 icon: assets/icons/icon.svg
 isAdminOnly: true
 # The "product 360" editor: everything about one product in one place — Shopify

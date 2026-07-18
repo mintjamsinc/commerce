@@ -20,6 +20,10 @@
 	--primary-fg:    #ffffff;
 	--success:       light-dark(#059669, #34d399);
 	--success-soft:  light-dark(rgba(5, 150, 105, 0.1), rgba(52, 211, 153, 0.12));
+	--warning:       light-dark(#d97706, #fbbf24);
+	--warning-soft:  light-dark(rgba(217, 119, 6, 0.1), rgba(251, 191, 36, 0.14));
+	--danger:        light-dark(#dc2626, #f87171);
+	--danger-soft:   light-dark(rgba(220, 38, 38, 0.08), rgba(248, 113, 113, 0.14));
 	--row-hover:     light-dark(#f9fafb, #233044);
 	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
 	--radius: 0.5rem;
@@ -144,6 +148,30 @@ body {
 	margin-left: 0.5rem;
 	color: var(--text-muted);
 }
+
+/* Source-state badges (mirror of the Shopify admin's cancelled / refunded /
+ * archived / on-hold chips), so the fulfiller sees the order's real state
+ * without opening Shopify. Same pill idiom as order-review's status-badge. */
+.order-badges {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.375rem;
+	margin-top: 0.625rem;
+}
+
+.status-badge {
+	display: inline-flex;
+	align-items: center;
+	padding: 0.125rem 0.625rem;
+	border-radius: 9999px;
+	font-size: 12px;
+	font-weight: 600;
+	background: var(--surface-soft);
+	color: var(--text-soft);
+}
+
+.status-badge.danger  { background: var(--danger-soft);  color: var(--danger); }
+.status-badge.warning { background: var(--warning-soft); color: var(--warning); }
 
 .card {
 	margin-top: 1.5rem;
@@ -405,6 +433,9 @@ body {
 					<span v-if="createdAtText">{{ createdAtText }}</span>
 					<span v-if="itemCount">{{ itemCountText }}</span>
 				</div>
+				<div v-if="orderBadges.length" class="order-badges">
+					<span v-for="b in orderBadges" :key="b.key" class="status-badge" :class="b.cls">{{ b.label }}</span>
+				</div>
 			</header>
 
 			<!-- Ship to -->
@@ -457,8 +488,10 @@ body {
 			<section class="card">
 				<h2 class="section-title">{{ t('form.commerce.shopify.orderFulfillment.tracking', undefined, 'Tracking') }}</h2>
 				<div class="card-body">
-					<!-- Editable when the current user owns the task -->
-					<div v-if="canEdit" class="fields">
+					<!-- Editable when the current user owns the task (and the order
+					     still needs fulfilling — a cancelled order will be closed
+					     without tracking, so the inputs go read-only) -->
+					<div v-if="canEditTracking" class="fields">
 						<div class="field">
 							<label for="trk-no">{{ t('form.commerce.shopify.orderFulfillment.trackingNumber', undefined, 'Tracking number') }}</label>
 							<input id="trk-no" type="text" v-model="trackingNumber" :disabled="actionPending" :placeholder="t('form.commerce.shopify.orderFulfillment.trackingNumberPlaceholder', undefined, 'e.g. 1Z999AA10123456784')">
@@ -472,7 +505,7 @@ body {
 							<input id="trk-url" type="text" v-model="trackingUrl" :disabled="actionPending" :placeholder="t('form.commerce.shopify.orderFulfillment.trackingUrlPlaceholder', undefined, 'https://…')">
 						</div>
 					</div>
-					<p v-if="canEdit" class="field-hint">{{ t('form.commerce.shopify.orderFulfillment.trackingHint', undefined, 'Tracking is optional. Leave blank to fulfill without tracking details.') }}</p>
+					<p v-if="canEditTracking" class="field-hint">{{ t('form.commerce.shopify.orderFulfillment.trackingHint', undefined, 'Tracking is optional. Leave blank to fulfill without tracking details.') }}</p>
 
 					<!-- Read-only when not the assignee / completed -->
 					<div v-else class="fields">
@@ -546,7 +579,7 @@ body {
 			<div class="action-area">
 				<span v-if="taskCompleted" class="action-notice completed">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7 7a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06L6.25 10.69l6.47-6.47a.75.75 0 0 1 1.06 0z"/></svg>
-					<span>{{ t('form.commerce.shopify.orderFulfillment.completedNotice', undefined, 'This order has been fulfilled.') }}</span>
+					<span>{{ completedNoticeText }}</span>
 				</span>
 				<span v-else-if="!taskAssignee" class="action-notice">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 14.5a5 5 0 0 1 10 0 .5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5z"/></svg>
@@ -555,6 +588,21 @@ body {
 				<span v-else-if="!isAssignedToMe" class="action-notice">
 					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 14.5a5 5 0 0 1 10 0 .5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5z"/></svg>
 					<span>{{ assignedNoticeText }}</span>
+				</span>
+				<!-- Cancelled in Shopify: nothing ships, so the action becomes an
+				     acknowledged close that BYPASSES the fulfillment write-back. -->
+				<button v-else-if="orderCancelled"
+					class="btn btn-primary" type="button"
+					:disabled="actionPending"
+					@click="onCloseWithoutFulfillment">
+					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM4.72 4.72a.75.75 0 0 1 1.06 0L8 6.94l2.22-2.22a.75.75 0 1 1 1.06 1.06L9.06 8l2.22 2.22a.75.75 0 1 1-1.06 1.06L8 9.06l-2.22 2.22a.75.75 0 0 1-1.06-1.06L6.94 8 4.72 5.78a.75.75 0 0 1 0-1.06z"/></svg>
+					<span>{{ t('form.commerce.shopify.orderFulfillment.closeWithoutFulfillment', undefined, 'Close without fulfilling') }}</span>
+				</button>
+				<!-- On hold in Shopify: fulfilling would contradict the hold, so the
+				     primary action is withheld until the hold is released. -->
+				<span v-else-if="onHold" class="action-notice">
+					<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM6.25 5.5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5a.75.75 0 0 1 .75-.75zm3.5 0a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5a.75.75 0 0 1 .75-.75z"/></svg>
+					<span>{{ t('form.commerce.shopify.orderFulfillment.holdNotice', undefined, 'This order is on hold. Fulfillment is unavailable until the hold is released.') }}</span>
 				</span>
 				<button v-else
 					class="btn btn-primary" type="button"
@@ -709,6 +757,64 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.75/
 			taskCompleted() { return !!(this.task && this.task.completed); },
 			isAssignedToMe() { return !!this.taskAssignee && this.taskAssignee === this.currentUserID; },
 			canEdit() { return this.isAssignedToMe && !this.taskCompleted; },
+			// Tracking inputs are pointless once the order is cancelled — the only
+			// remaining action is close-without-fulfillment, which ships nothing.
+			canEditTracking() { return this.canEdit && !this.orderCancelled; },
+
+			// ----------------------------------------------------------
+			// Shopify-side order state (badges / action gating)
+			// ----------------------------------------------------------
+			// The mirror body is re-upserted on every orders/updated delivery, so
+			// cancelled_at / closed_at / financial_status / fulfillment_status are
+			// read straight off the order JSON. The hold flag is the exception:
+			// the order payload never carries it, so the fulfillment_orders
+			// webhooks mirror it onto the node as commerce:fulfillment_hold.
+			orderCancelled() { return !!(this.order && this.order.cancelled_at); },
+			orderArchived() { return !!(this.order && this.order.closed_at); },
+			onHold() { return sdk.getStringProp(this.node, 'commerce:fulfillment_hold') === 'true'; },
+			// Shopify's admin shows "Fulfillment not required" for a cancelled
+			// order whose items never shipped (fulfillment_status stays null, or
+			// "restocked" when the cancel restocked them).
+			fulfillmentNotRequired() {
+				if (!this.orderCancelled) return false;
+				const fs = (this.order && this.order.fulfillment_status) || '';
+				return fs !== 'fulfilled' && fs !== 'partial';
+			},
+			orderBadges() {
+				const badges = [];
+				if (this.orderCancelled) {
+					badges.push({ key: 'cancelled', cls: 'danger', label: this.t('form.commerce.shopify.orderFulfillment.badgeCancelled', undefined, 'Cancelled') });
+				}
+				const fs = (this.order && this.order.financial_status) || '';
+				if (fs === 'refunded') {
+					badges.push({ key: 'refunded', cls: 'danger', label: this.t('form.commerce.shopify.orderFulfillment.badgeRefunded', undefined, 'Refunded') });
+				} else if (fs === 'partially_refunded') {
+					badges.push({ key: 'partially_refunded', cls: 'warning', label: this.t('form.commerce.shopify.orderFulfillment.badgePartiallyRefunded', undefined, 'Partially refunded') });
+				}
+				if (this.fulfillmentNotRequired) {
+					badges.push({ key: 'no_fulfillment', cls: '', label: this.t('form.commerce.shopify.orderFulfillment.badgeFulfillmentNotRequired', undefined, 'Fulfillment not required') });
+				}
+				// A cancel closes the fulfillment orders without emitting
+				// hold_released, so the hold badge is suppressed once cancelled.
+				if (this.onHold && !this.orderCancelled) {
+					badges.push({ key: 'on_hold', cls: 'warning', label: this.t('form.commerce.shopify.orderFulfillment.badgeOnHold', undefined, 'On hold') });
+				}
+				if (this.orderArchived) {
+					badges.push({ key: 'archived', cls: '', label: this.t('form.commerce.shopify.orderFulfillment.badgeArchived', undefined, 'Archived') });
+				}
+				return badges;
+			},
+			// Derived from the node (not duplicated into component state): the
+			// close path writes commerce:fulfillment_decision before completing,
+			// and completeTaskWith re-fetches the node, so this stays truthful.
+			closedWithoutFulfillment() {
+				return sdk.getStringProp(this.node, 'commerce:fulfillment_decision') === 'close';
+			},
+			completedNoticeText() {
+				return this.closedWithoutFulfillment
+					? this.t('form.commerce.shopify.orderFulfillment.closedNotice', undefined, 'This order was cancelled and closed without fulfillment.')
+					: this.t('form.commerce.shopify.orderFulfillment.completedNotice', undefined, 'This order has been fulfilled.');
+			},
 			memoTimestampText() {
 				if (!this.memo || !this.memo.at) return '';
 				return this.formatDate(this.memo.at) || this.memo.at;
@@ -993,28 +1099,101 @@ import { VDOM } from 'https://cdn.jsdelivr.net/npm/@mintjamsinc/ichigojs@0.1.75/
 				}
 			},
 
-			// Persist tracking details to the order node, then complete the task.
-			// Mirrors the inventory threshold form: write the node property first,
-			// then completeTask with no process variables. The Create Fulfillment
-			// service task reads the `fulfillment` property afterwards.
+			// Re-fetch the order node and body so the cancel / hold decision is
+			// made on CURRENT state, not the render-time snapshot (the route
+			// mirrors keep the repository fresh; this pulls that freshness into
+			// the form). Best-effort: readFulfillmentDecision.groovy is the
+			// authoritative server-side gate either way.
+			async refreshOrderState() {
+				try {
+					const [node, text] = await Promise.all([
+						sdk.getNode(this.orderPath),
+						sdk.readNodeText(this.orderPath),
+					]);
+					if (node) this.node = node;
+					if (text) { try { this.order = JSON.parse(text); } catch (_) { /* keep prior body */ } }
+				} catch (_) { /* keep prior snapshot */ }
+			},
+
+			// Shared completion scaffolding for both footer actions: write the
+			// decision/audit properties to the order node first (the flow's
+			// service tasks read them afterwards — mirrors the inventory
+			// threshold form), complete the task with no process variables, then
+			// re-fetch the node so property-derived bindings (completed notice)
+			// reflect what was just written.
+			async completeTaskWith(props) {
+				for (const [name, value] of Object.entries(props)) {
+					await sdk.setNodeProperty(this.orderPath, name, value);
+				}
+				await sdk.completeTask([]);
+				this.task = Object.assign({}, this.task, { completed: true });
+				try {
+					const refreshed = await sdk.getNode(this.orderPath);
+					if (refreshed) this.node = refreshed;
+				} catch (_) { /* cosmetic only */ }
+			},
+
 			async onComplete() {
 				if (this.actionPending) return;
 				if (!this.orderPath) { this.showToast(this.t('form.commerce.shopify.orderFulfillment.fulfillNoPath', undefined, 'Cannot fulfill: order path is unknown.')); return; }
 				this.actionPending = true;
 				try {
+					// The cancel / hold state may have changed since the form
+					// rendered; re-check against fresh state before fulfilling.
+					// On a trip the re-render swaps the footer action and the
+					// badges explain why.
+					await this.refreshOrderState();
+					if (this.orderCancelled || this.onHold) {
+						this.showToast(this.t('form.commerce.shopify.orderFulfillment.staleStateNotice', undefined, "The order's state has changed. Review the updated status."));
+						return;
+					}
 					const fulfillment = {
 						trackingNumber: (this.trackingNumber || '').trim(),
 						trackingCompany: (this.trackingCompany || '').trim(),
 						trackingUrl: (this.trackingUrl || '').trim(),
 						at: new Date().toISOString(),
 					};
-					await sdk.setNodeProperty(this.orderPath, 'fulfillment', JSON.stringify(fulfillment));
-					// Record WHO fulfilled. The recordFulfillment BPMN service task
-					// performs the outbound write but cannot see the completing
-					// operator, so capture it here for the audit's actor.
-					await sdk.setNodeProperty(this.orderPath, 'commerce:fulfilled_by', this.currentUserID || '');
-					await sdk.completeTask([]);
-					this.task = Object.assign({}, this.task, { completed: true });
+					await this.completeTaskWith({
+						// The Create Fulfillment service task reads `fulfillment`.
+						'fulfillment': JSON.stringify(fulfillment),
+						// Explicit decision so the flow's gateway routes to the
+						// write-back, and any 'close' stranded by an earlier
+						// failed completion attempt is overwritten.
+						'commerce:fulfillment_decision': 'fulfill',
+						// Record WHO fulfilled. The recordFulfillment BPMN service
+						// task performs the outbound write but cannot see the
+						// completing operator, so capture it for the audit's actor.
+						'commerce:fulfilled_by': this.currentUserID || '',
+					});
+				} catch (err) {
+					this.showToast(err && err.message ? err.message : String(err));
+				} finally {
+					this.actionPending = false;
+				}
+			},
+
+			// Close a Shopify-cancelled order without fulfilling: record the
+			// decision so the flow's gateway BYPASSES the Shopify fulfillment
+			// write-back, then complete the task.
+			async onCloseWithoutFulfillment() {
+				if (this.actionPending) return;
+				if (!this.orderPath) { this.showToast(this.t('form.commerce.shopify.orderFulfillment.closeNoPath', undefined, 'Cannot close: order path is unknown.')); return; }
+				this.actionPending = true;
+				try {
+					// Closing is only valid for a cancelled order; re-check on
+					// fresh state (defensive — cancellation is terminal, so a
+					// cancelled snapshot can only stay cancelled).
+					await this.refreshOrderState();
+					if (!this.orderCancelled) {
+						this.showToast(this.t('form.commerce.shopify.orderFulfillment.staleStateNotice', undefined, "The order's state has changed. Review the updated status."));
+						return;
+					}
+					await this.completeTaskWith({
+						'commerce:fulfillment_decision': 'close',
+						// Record WHO closed, for the same audit-actor reason as
+						// commerce:fulfilled_by on the fulfill path.
+						'commerce:fulfillment_closed_by': this.currentUserID || '',
+					});
 				} catch (err) {
 					this.showToast(err && err.message ? err.message : String(err));
 				} finally {

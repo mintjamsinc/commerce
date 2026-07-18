@@ -1,6 +1,8 @@
-package commerce
+package commerce.migration
 
 import javax.jcr.query.Query
+
+import commerce.Jcr
 
 /**
  * One-time migration: retype legacy String-typed commerce properties to their

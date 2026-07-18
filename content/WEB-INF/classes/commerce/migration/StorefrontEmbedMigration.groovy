@@ -1,4 +1,6 @@
-package commerce
+package commerce.migration
+
+import commerce.Jcr
 
 /**
  * Storefront-embed migration — retire the fixed storefront SPA and the block-page

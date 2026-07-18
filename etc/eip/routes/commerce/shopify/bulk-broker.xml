@@ -41,6 +41,7 @@
     <!-- Shopify producer lane: start at most one Shopify bulk at a time, and only for a domain
          that is not already awaiting/undergoing CMS ingest (cluster-guarded in-script). -->
     <route id="commerce-shopify-bulk-lane" routeConfigurationId="commerce-shopify-bulk-error-handler">
+        <routeProperty key="mi:history" value="failure"/>
         <from uri="timer:commerce-shopify-bulk-lane?period=30000&amp;delay=120000"/>
         <setHeader name="runAs"><constant>commerce-service-user</constant></setHeader>
         <toD uri="cms:/etc/commerce/scripts/shopify/runBulkLane.groovy"/>
@@ -49,6 +50,7 @@
     <!-- CMS consumer lane: dispatch the download+reconcile for READY jobs, in parallel for
          disjoint domains and serially when they overlap (separate cluster lock in-script). -->
     <route id="commerce-shopify-bulk-cms-lane" routeConfigurationId="commerce-shopify-bulk-error-handler">
+        <routeProperty key="mi:history" value="failure"/>
         <from uri="timer:commerce-shopify-bulk-cms-lane?period=30000&amp;delay=130000"/>
         <setHeader name="runAs"><constant>commerce-service-user</constant></setHeader>
         <toD uri="cms:/etc/commerce/scripts/shopify/runBulkCmsLane.groovy"/>
@@ -112,6 +114,7 @@
 
     <!-- Liveness watchdog: recover a lost finish webhook / release a stuck lane. -->
     <route id="commerce-shopify-bulk-watchdog" routeConfigurationId="commerce-shopify-bulk-error-handler">
+        <routeProperty key="mi:history" value="failure"/>
         <from uri="timer:commerce-shopify-bulk-watchdog?period=300000&amp;delay=300000"/>
         <setHeader name="runAs"><constant>commerce-service-user</constant></setHeader>
         <toD uri="cms:/etc/commerce/scripts/shopify/watchdogBulkJobs.groovy"/>

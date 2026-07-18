@@ -40,6 +40,9 @@
             <setHeader name="health_ok">
                 <constant>false</constant>
             </setHeader>
+            <setHeader name="health_error">
+                <simple>${exception.message}</simple>
+            </setHeader>
             <toD uri="cms:/etc/commerce/scripts/shopify/recordHealth.groovy?inputs=health_*,received_at"/>
         </onException>
     </routeConfiguration>
@@ -97,10 +100,27 @@
                     <jsonpath>$.order_id</jsonpath>
                 </setHeader>
 
-                <!-- Generate file path: /content/commerce/refunds/raw/2026/06/refund_{id}.json -->
-                <setHeader name="refundPath">
-                    <simple>/content/commerce/refunds/raw/${date:now:yyyy}/${date:now:MM}/refund_${header.refund_id}.json</simple>
+                <!-- Generate file path: /content/commerce/refunds/raw/{yyyy}/{MM}/refund_{id}.json,
+                     nested by the REFUND's created_at in UTC (the shared fold rule —
+                     server-timezone independent, matches the backfill mirror placement). -->
+                <setHeader name="raw_store">
+                    <constant>refunds</constant>
                 </setHeader>
+                <setHeader name="raw_name">
+                    <simple>refund_${header.refund_id}.json</simple>
+                </setHeader>
+                <setHeader name="raw_at">
+                    <jsonpath suppressExceptions="true">$.created_at</jsonpath>
+                </setHeader>
+                <toD uri="cms:/etc/commerce/scripts/shopify/deriveRawPath.groovy?inputs=raw_*&amp;outputs=rawPath"/>
+                <setHeader name="refundPath">
+                    <simple>${header.rawPath}</simple>
+                </setHeader>
+
+                <!-- Restore the raw refund JSON (the script call replaced the body). -->
+                <setBody>
+                    <simple>${header.shopify_payload}</simple>
+                </setBody>
 
                 <!-- Save raw JSON to JCR -->
                 <toD uri="cms:store?mimeType=application/json&amp;path=${header.refundPath}"/>
@@ -149,9 +169,9 @@
 
                 <!-- Record webhook as processed (idempotency marker) -->
                 <setBody>
-                    <simple>${date:now:yyyy-MM-dd'T'HH:mm:ss.SSSZ}</simple>
+                    <simple>${date-with-timezone:now:UTC:yyyy-MM-dd'T'HH:mm:ss.SSS'Z'}</simple>
                 </setBody>
-                <toD uri="cms:store?path=/content/commerce/history/webhooks/${date:now:yyyy}/${date:now:MM}/${header.shopify_webhook_id}&amp;mimeType=text/plain"/>
+                <toD uri="cms:store?path=/content/commerce/history/webhooks/${date-with-timezone:now:UTC:yyyy}/${date-with-timezone:now:UTC:MM}/${header.shopify_webhook_id}&amp;mimeType=text/plain"/>
 
                 <!-- Guard against duplicate workflow instances for the same refund,
                      keyed by the refund ID (businessKey). -->

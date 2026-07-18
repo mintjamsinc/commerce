@@ -1,4 +1,8 @@
-package commerce
+package commerce.migration
+
+import commerce.Customers
+import commerce.Gdpr
+import commerce.Jcr
 
 /**
  * Customer store migration — build the first-class customer store and retire

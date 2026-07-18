@@ -1,5 +1,6 @@
 identifier: b2d0f3a5-4c8e-4f29-8b63-7d1a9c2e5f4a
 title: Commerce Operation Log
+category: commerce
 icon: assets/icons/icon.svg
 isAdminOnly: true
 # The commerce operation log: a searchable/filterable audit of every outbound

@@ -1,5 +1,6 @@
 identifier: c3e1a4b6-5d9f-4a3b-9c74-8e2b0d3f6a5b
 title: Commerce Import
+category: commerce
 icon: assets/icons/icon.svg
 isAdminOnly: true
 # The Shopify → CMS import console: trigger the historical Bulk backfill

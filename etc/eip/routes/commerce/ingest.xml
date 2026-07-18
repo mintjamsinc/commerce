@@ -54,6 +54,9 @@
             <setHeader name="health_ok">
                 <constant>false</constant>
             </setHeader>
+            <setHeader name="health_error">
+                <simple>${exception.message}</simple>
+            </setHeader>
             <toD uri="cms:/etc/commerce/scripts/shopify/recordHealth.groovy?inputs=health_*,received_at"/>
         </onException>
     </routeConfiguration>
@@ -118,6 +121,15 @@
                 <simple>${header.event_topic} == 'orders/updated'</simple>
                 <toD uri="direct:shopify-order-updated"/>
             </when>
+            <!-- order_transactions/create captures the PAYMENT (cash-in) axis:
+                 orders/paid fires only on the first full payment, so surcharge
+                 captures and bank transfers marked paid later only surface here.
+                 The route mirrors successful sale/capture transactions into the
+                 payment store (one node per transaction, keyed by paid_at). -->
+            <when>
+                <simple>${header.event_topic} == 'order_transactions/create'</simple>
+                <toD uri="direct:shopify-order-transaction-created"/>
+            </when>
             <when>
                 <simple>${header.event_topic} == 'products/create' || ${header.event_topic} == 'products/update'</simple>
                 <toD uri="direct:shopify-product-update"/>
@@ -129,6 +141,13 @@
             <when>
                 <simple>${header.event_topic} == 'refunds/create'</simple>
                 <toD uri="direct:shopify-refund-created"/>
+            </when>
+            <!-- Fulfillment-hold state changes mirror a hold flag onto the PARENT
+                 ORDER node (the REST order payload itself carries no hold state),
+                 so the Fulfill Order task form can hide its action while held. -->
+            <when>
+                <simple>${header.event_topic} == 'fulfillment_orders/placed_on_hold' || ${header.event_topic} == 'fulfillment_orders/hold_released'</simple>
+                <toD uri="direct:shopify-fulfillment-hold"/>
             </when>
             <when>
                 <simple>${header.event_topic} == 'inventory_levels/update'</simple>

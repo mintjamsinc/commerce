@@ -177,74 +177,119 @@
 							<div class="commerce-lede">{{ t('app.commerce.notifications.lede') }}</div>
 						</div>
 
+						<!-- Channel-set selector: the default set plus one entry per
+						     category. A dot marks the trigger when the selected category
+						     carries its own dedicated set; the list marks such
+						     categories with a secondary line. -->
+						<div class="property-group">
+							<div class="property-row">
+								<label class="property-label">{{ t('app.commerce.notifications.set.label') }}</label>
+								<div class="wt-select">
+									<button type="button" class="wt-select-trigger" @click.stop="openNotifCatMenu($event)">
+										<span class="wt-select-value">{{ notifCatLabel(notifCat) }}<span v-if="notifCat !== 'default' && notif.sets[notifCat]" class="notif-cat-dot ms-1" :title="t('app.commerce.notifications.category.customMark')"></span></span>
+										<i class="bi bi-chevron-down wt-select-chevron"></i>
+									</button>
+								</div>
+							</div>
+						</div>
+
+						<!-- Category tabs choose between the default set and a dedicated one. -->
+						<div v-if="notifCat !== 'default'" class="property-group">
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" :checked="!!notif.sets[notifCat]"
+									@change="setNotifCustom($event.target.checked)">
+								{{ t('app.commerce.notifications.category.useCustom.label') }}
+							</label>
+							<div v-if="!notif.sets[notifCat]" class="commerce-lede">
+								{{ t('app.commerce.notifications.category.usesDefault') }}
+							</div>
+						</div>
+
+						<template v-if="notif.sets[notifCat]">
 						<!-- Slack -->
 						<div class="property-group">
-							<div class="property-group-title">{{ t('app.commerce.notifications.slack.groupTitle') }}</div>
+							<div class="property-group-title notif-channel-title">{{ t('app.commerce.notifications.slack.groupTitle') }}
+								<button v-if="notifCat !== 'default'" type="button" class="notif-copy-btn"
+									:class="{ copied: notifCopied === 'slack' }" @click="copyNotifDefault('slack')"><i class="bi me-1"
+										:class="notifCopied === 'slack' ? 'bi-check-lg' : 'bi-copy'"></i>{{ t('app.commerce.notifications.copyDefault') }}</button>
+							</div>
 							<label class="wt-checkbox-label">
-								<input type="checkbox" class="wt" v-model="notif.slack.enabled">
+								<input type="checkbox" class="wt" v-model="notif.sets[notifCat].slack.enabled">
 								{{ t('app.commerce.notifications.slack.enableLabel') }}
 							</label>
 							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.notifications.incomingWebhookUrl.label') }}<span v-if="notif.slack.enabled"
+								<label class="property-label">{{ t('app.commerce.notifications.incomingWebhookUrl.label') }}<span v-if="notif.sets[notifCat].slack.enabled"
 										class="required-mark" :title="t('app.commerce.field.required')">*</span></label>
-								<input type="text" class="wt w-100" v-model="notif.slack.webhookUrl"
-									:disabled="!notif.slack.enabled"
-									:class="{ 'is-invalid': notif.slack.enabled && !notif.slack.webhookUrl }"
+								<input type="text" class="wt w-100" v-model="notif.sets[notifCat].slack.webhookUrl"
+									:disabled="!notif.sets[notifCat].slack.enabled"
+									:class="{ 'is-invalid': notif.sets[notifCat].slack.enabled && !notif.sets[notifCat].slack.webhookUrl }"
 									placeholder="https://hooks.slack.com/services/...">
 							</div>
 						</div>
 
 						<!-- Discord -->
 						<div class="property-group">
-							<div class="property-group-title">{{ t('app.commerce.notifications.discord.groupTitle') }}</div>
+							<div class="property-group-title notif-channel-title">{{ t('app.commerce.notifications.discord.groupTitle') }}
+								<button v-if="notifCat !== 'default'" type="button" class="notif-copy-btn"
+									:class="{ copied: notifCopied === 'discord' }" @click="copyNotifDefault('discord')"><i class="bi me-1"
+										:class="notifCopied === 'discord' ? 'bi-check-lg' : 'bi-copy'"></i>{{ t('app.commerce.notifications.copyDefault') }}</button>
+							</div>
 							<label class="wt-checkbox-label">
-								<input type="checkbox" class="wt" v-model="notif.discord.enabled">
+								<input type="checkbox" class="wt" v-model="notif.sets[notifCat].discord.enabled">
 								{{ t('app.commerce.notifications.discord.enableLabel') }}
 							</label>
 							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.notifications.incomingWebhookUrl.label') }}<span v-if="notif.discord.enabled"
+								<label class="property-label">{{ t('app.commerce.notifications.incomingWebhookUrl.label') }}<span v-if="notif.sets[notifCat].discord.enabled"
 										class="required-mark" :title="t('app.commerce.field.required')">*</span></label>
-								<input type="text" class="wt w-100" v-model="notif.discord.webhookUrl"
-									:disabled="!notif.discord.enabled"
-									:class="{ 'is-invalid': notif.discord.enabled && !notif.discord.webhookUrl }"
+								<input type="text" class="wt w-100" v-model="notif.sets[notifCat].discord.webhookUrl"
+									:disabled="!notif.sets[notifCat].discord.enabled"
+									:class="{ 'is-invalid': notif.sets[notifCat].discord.enabled && !notif.sets[notifCat].discord.webhookUrl }"
 									placeholder="https://discord.com/api/webhooks/...">
 							</div>
 						</div>
 
 						<!-- Microsoft Teams -->
 						<div class="property-group">
-							<div class="property-group-title">{{ t('app.commerce.notifications.teams.groupTitle') }}</div>
+							<div class="property-group-title notif-channel-title">{{ t('app.commerce.notifications.teams.groupTitle') }}
+								<button v-if="notifCat !== 'default'" type="button" class="notif-copy-btn"
+									:class="{ copied: notifCopied === 'teams' }" @click="copyNotifDefault('teams')"><i class="bi me-1"
+										:class="notifCopied === 'teams' ? 'bi-check-lg' : 'bi-copy'"></i>{{ t('app.commerce.notifications.copyDefault') }}</button>
+							</div>
 							<label class="wt-checkbox-label">
-								<input type="checkbox" class="wt" v-model="notif.teams.enabled">
+								<input type="checkbox" class="wt" v-model="notif.sets[notifCat].teams.enabled">
 								{{ t('app.commerce.notifications.teams.enableLabel') }}
 							</label>
 							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.notifications.incomingWebhookUrl.label') }}<span v-if="notif.teams.enabled"
+								<label class="property-label">{{ t('app.commerce.notifications.incomingWebhookUrl.label') }}<span v-if="notif.sets[notifCat].teams.enabled"
 										class="required-mark" :title="t('app.commerce.field.required')">*</span></label>
-								<input type="text" class="wt w-100" v-model="notif.teams.webhookUrl"
-									:disabled="!notif.teams.enabled"
-									:class="{ 'is-invalid': notif.teams.enabled && !notif.teams.webhookUrl }"
+								<input type="text" class="wt w-100" v-model="notif.sets[notifCat].teams.webhookUrl"
+									:disabled="!notif.sets[notifCat].teams.enabled"
+									:class="{ 'is-invalid': notif.sets[notifCat].teams.enabled && !notif.sets[notifCat].teams.webhookUrl }"
 									placeholder="https://...webhook.office.com/...">
 							</div>
 						</div>
 
 						<!-- LINE -->
 						<div class="property-group">
-							<div class="property-group-title">{{ t('app.commerce.notifications.line.groupTitle') }}</div>
+							<div class="property-group-title notif-channel-title">{{ t('app.commerce.notifications.line.groupTitle') }}
+								<button v-if="notifCat !== 'default'" type="button" class="notif-copy-btn"
+									:class="{ copied: notifCopied === 'line' }" @click="copyNotifDefault('line')"><i class="bi me-1"
+										:class="notifCopied === 'line' ? 'bi-check-lg' : 'bi-copy'"></i>{{ t('app.commerce.notifications.copyDefault') }}</button>
+							</div>
 							<label class="wt-checkbox-label">
-								<input type="checkbox" class="wt" v-model="notif.line.enabled">
+								<input type="checkbox" class="wt" v-model="notif.sets[notifCat].line.enabled">
 								{{ t('app.commerce.notifications.line.enableLabel') }}
 							</label>
 							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.notifications.line.accessToken.label') }}<span v-if="notif.line.enabled"
+								<label class="property-label">{{ t('app.commerce.notifications.line.accessToken.label') }}<span v-if="notif.sets[notifCat].line.enabled"
 										class="required-mark" :title="t('app.commerce.field.required')">*</span></label>
 								<div class="input-group">
 									<input :type="reveal.lineToken ? 'text' : 'password'" autocomplete="off"
-										v-model="notif.line.accessToken" :disabled="!notif.line.enabled"
-										:class="{ 'is-invalid': notif.line.enabled && !notif.line.accessToken }">
+										v-model="notif.sets[notifCat].line.accessToken" :disabled="!notif.sets[notifCat].line.enabled"
+										:class="{ 'is-invalid': notif.sets[notifCat].line.enabled && !notif.sets[notifCat].line.accessToken }">
 									<div class="input-group-actions">
 										<button class="input-group-btn" @click="reveal.lineToken = !reveal.lineToken"
-											:disabled="!notif.line.enabled"
+											:disabled="!notif.sets[notifCat].line.enabled"
 											:title="reveal.lineToken ? t('app.commerce.field.hide') : t('app.commerce.field.show')">
 											<i class="bi" :class="reveal.lineToken ? 'bi-eye' : 'bi-eye-slash'"></i>
 										</button>
@@ -252,80 +297,88 @@
 								</div>
 							</div>
 							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.notifications.line.recipientId.label') }}<span v-if="notif.line.enabled"
+								<label class="property-label">{{ t('app.commerce.notifications.line.recipientId.label') }}<span v-if="notif.sets[notifCat].line.enabled"
 										class="required-mark" :title="t('app.commerce.field.required')">*</span></label>
-								<input type="text" class="wt w-100" v-model="notif.line.to"
-									:disabled="!notif.line.enabled"
-									:class="{ 'is-invalid': notif.line.enabled && !notif.line.to }"
+								<input type="text" class="wt w-100" v-model="notif.sets[notifCat].line.to"
+									:disabled="!notif.sets[notifCat].line.enabled"
+									:class="{ 'is-invalid': notif.sets[notifCat].line.enabled && !notif.sets[notifCat].line.to }"
 									placeholder="user / group / room ID">
 							</div>
 						</div>
 
 						<!-- Generic webhook -->
 						<div class="property-group">
-							<div class="property-group-title">{{ t('app.commerce.notifications.webhook.groupTitle') }}</div>
+							<div class="property-group-title notif-channel-title">{{ t('app.commerce.notifications.webhook.groupTitle') }}
+								<button v-if="notifCat !== 'default'" type="button" class="notif-copy-btn"
+									:class="{ copied: notifCopied === 'webhook' }" @click="copyNotifDefault('webhook')"><i class="bi me-1"
+										:class="notifCopied === 'webhook' ? 'bi-check-lg' : 'bi-copy'"></i>{{ t('app.commerce.notifications.copyDefault') }}</button>
+							</div>
 							<label class="wt-checkbox-label">
-								<input type="checkbox" class="wt" v-model="notif.webhook.enabled">
+								<input type="checkbox" class="wt" v-model="notif.sets[notifCat].webhook.enabled">
 								{{ t('app.commerce.notifications.webhook.enableLabel') }}
 							</label>
 							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.notifications.webhook.url.label') }}<span v-if="notif.webhook.enabled"
+								<label class="property-label">{{ t('app.commerce.notifications.webhook.url.label') }}<span v-if="notif.sets[notifCat].webhook.enabled"
 										class="required-mark" :title="t('app.commerce.field.required')">*</span></label>
-								<input type="text" class="wt w-100" v-model="notif.webhook.url"
-									:disabled="!notif.webhook.enabled"
-									:class="{ 'is-invalid': notif.webhook.enabled && !notif.webhook.url }"
+								<input type="text" class="wt w-100" v-model="notif.sets[notifCat].webhook.url"
+									:disabled="!notif.sets[notifCat].webhook.enabled"
+									:class="{ 'is-invalid': notif.sets[notifCat].webhook.enabled && !notif.sets[notifCat].webhook.url }"
 									placeholder="https://example.com/hook">
 							</div>
 							<div class="property-row">
 								<label class="property-label">{{ t('app.commerce.notifications.webhook.textField.label') }}</label>
-								<input type="text" class="wt w-100" v-model="notif.webhook.textField"
-									:disabled="!notif.webhook.enabled" placeholder="text">
+								<input type="text" class="wt w-100" v-model="notif.sets[notifCat].webhook.textField"
+									:disabled="!notif.sets[notifCat].webhook.enabled" placeholder="text">
 							</div>
 						</div>
 
 						<!-- Email (SMTP) -->
 						<div class="property-group">
-							<div class="property-group-title">{{ t('app.commerce.notifications.email.groupTitle') }}</div>
+							<div class="property-group-title notif-channel-title">{{ t('app.commerce.notifications.email.groupTitle') }}
+								<button v-if="notifCat !== 'default'" type="button" class="notif-copy-btn"
+									:class="{ copied: notifCopied === 'email' }" @click="copyNotifDefault('email')"><i class="bi me-1"
+										:class="notifCopied === 'email' ? 'bi-check-lg' : 'bi-copy'"></i>{{ t('app.commerce.notifications.copyDefault') }}</button>
+							</div>
 							<label class="wt-checkbox-label">
-								<input type="checkbox" class="wt" v-model="notif.email.enabled">
+								<input type="checkbox" class="wt" v-model="notif.sets[notifCat].email.enabled">
 								{{ t('app.commerce.notifications.email.enableLabel') }}
 							</label>
 							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.notifications.email.smtpHost.label') }}<span v-if="notif.email.enabled"
+								<label class="property-label">{{ t('app.commerce.notifications.email.smtpHost.label') }}<span v-if="notif.sets[notifCat].email.enabled"
 										class="required-mark" :title="t('app.commerce.field.required')">*</span></label>
-								<input type="text" class="wt w-100" v-model="notif.email.smtpHost"
-									:disabled="!notif.email.enabled"
-									:class="{ 'is-invalid': notif.email.enabled && !notif.email.smtpHost }"
+								<input type="text" class="wt w-100" v-model="notif.sets[notifCat].email.smtpHost"
+									:disabled="!notif.sets[notifCat].email.enabled"
+									:class="{ 'is-invalid': notif.sets[notifCat].email.enabled && !notif.sets[notifCat].email.smtpHost }"
 									placeholder="smtp.example.com">
 							</div>
 							<div class="property-row">
 								<label class="property-label">{{ t('app.commerce.notifications.email.port.label') }}</label>
-								<input type="number" class="wt w-100" v-model="notif.email.smtpPort"
-									:disabled="!notif.email.enabled" placeholder="587">
+								<input type="number" class="wt w-100" v-model="notif.sets[notifCat].email.smtpPort"
+									:disabled="!notif.sets[notifCat].email.enabled" placeholder="587">
 							</div>
 							<div class="property-row">
 								<label class="property-label">{{ t('app.commerce.notifications.email.security.label') }}</label>
-								<div class="wt-select" :class="{ disabled: !notif.email.enabled }">
-									<button type="button" class="wt-select-trigger" :disabled="!notif.email.enabled" @click.stop="openEmailSecurityMenu($event)">
-										<span class="wt-select-value">{{ emailSecurityLabel(notif.email.security) }}</span>
+								<div class="wt-select" :class="{ disabled: !notif.sets[notifCat].email.enabled }">
+									<button type="button" class="wt-select-trigger" :disabled="!notif.sets[notifCat].email.enabled" @click.stop="openEmailSecurityMenu($event)">
+										<span class="wt-select-value">{{ emailSecurityLabel(notif.sets[notifCat].email.security) }}</span>
 										<i class="bi bi-chevron-down wt-select-chevron"></i>
 									</button>
 								</div>
 							</div>
 							<div class="property-row">
 								<label class="property-label">{{ t('app.commerce.notifications.email.username.label') }}</label>
-								<input type="text" class="wt w-100" v-model="notif.email.username"
-									:disabled="!notif.email.enabled" autocomplete="off">
+								<input type="text" class="wt w-100" v-model="notif.sets[notifCat].email.username"
+									:disabled="!notif.sets[notifCat].email.enabled" autocomplete="off">
 							</div>
 							<div class="property-row">
 								<label class="property-label">{{ t('app.commerce.notifications.email.password.label') }}</label>
 								<div class="input-group">
 									<input :type="reveal.emailPassword ? 'text' : 'password'" autocomplete="off"
-										v-model="notif.email.password" :disabled="!notif.email.enabled">
+										v-model="notif.sets[notifCat].email.password" :disabled="!notif.sets[notifCat].email.enabled">
 									<div class="input-group-actions">
 										<button class="input-group-btn"
 											@click="reveal.emailPassword = !reveal.emailPassword"
-											:disabled="!notif.email.enabled"
+											:disabled="!notif.sets[notifCat].email.enabled"
 											:title="reveal.emailPassword ? t('app.commerce.field.hide') : t('app.commerce.field.show')">
 											<i class="bi" :class="reveal.emailPassword ? 'bi-eye' : 'bi-eye-slash'"></i>
 										</button>
@@ -333,27 +386,28 @@
 								</div>
 							</div>
 							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.notifications.email.from.label') }}<span v-if="notif.email.enabled"
+								<label class="property-label">{{ t('app.commerce.notifications.email.from.label') }}<span v-if="notif.sets[notifCat].email.enabled"
 										class="required-mark" :title="t('app.commerce.field.required')">*</span></label>
-								<input type="text" class="wt w-100" v-model="notif.email.from"
-									:disabled="!notif.email.enabled"
-									:class="{ 'is-invalid': notif.email.enabled && !notif.email.from }"
+								<input type="text" class="wt w-100" v-model="notif.sets[notifCat].email.from"
+									:disabled="!notif.sets[notifCat].email.enabled"
+									:class="{ 'is-invalid': notif.sets[notifCat].email.enabled && !notif.sets[notifCat].email.from }"
 									placeholder="commerce@example.com">
 							</div>
 							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.notifications.email.to.label') }}<span v-if="notif.email.enabled"
+								<label class="property-label">{{ t('app.commerce.notifications.email.to.label') }}<span v-if="notif.sets[notifCat].email.enabled"
 										class="required-mark" :title="t('app.commerce.field.required')">*</span></label>
-								<input type="text" class="wt w-100" v-model="notif.email.to"
-									:disabled="!notif.email.enabled"
-									:class="{ 'is-invalid': notif.email.enabled && !notif.email.to }"
+								<input type="text" class="wt w-100" v-model="notif.sets[notifCat].email.to"
+									:disabled="!notif.sets[notifCat].email.enabled"
+									:class="{ 'is-invalid': notif.sets[notifCat].email.enabled && !notif.sets[notifCat].email.to }"
 									placeholder="ops@example.com, alerts@example.com">
 							</div>
 							<div class="property-row">
 								<label class="property-label">{{ t('app.commerce.notifications.email.subjectPrefix.label') }}</label>
-								<input type="text" class="wt w-100" v-model="notif.email.subjectPrefix"
-									:disabled="!notif.email.enabled" placeholder="[Commerce] ">
+								<input type="text" class="wt w-100" v-model="notif.sets[notifCat].email.subjectPrefix"
+									:disabled="!notif.sets[notifCat].email.enabled" placeholder="[Commerce] ">
 							</div>
 						</div>
+						</template>
 					</template>
 
 					<!-- ========== Health ========== -->
@@ -369,11 +423,6 @@
 								<input type="checkbox" class="wt" v-model="health.enabled">
 								{{ t('app.commerce.health.alerting.enableLabel') }}
 							</label>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.health.cooldown.label') }}</label>
-								<input type="number" class="wt w-100" v-model.number="health.cooldownMinutes"
-									:disabled="!health.enabled" placeholder="30">
-							</div>
 						</div>
 
 						<div class="property-group">
@@ -384,64 +433,28 @@
 								{{ t('app.commerce.health.hmac.enableLabel') }}
 							</label>
 							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.health.hmac.threshold.label') }}</label>
-								<input type="number" class="wt w-100" v-model.number="health.hmacFailures.threshold"
-									:disabled="!health.enabled || !health.hmacFailures.enabled" placeholder="5">
+								<label class="property-label">{{ t('app.commerce.health.hmac.cooldown.label') }}</label>
+								<input type="number" class="wt w-100" v-model.number="health.hmacFailures.cooldownMinutes"
+									:disabled="!health.enabled || !health.hmacFailures.enabled" placeholder="30">
 							</div>
 						</div>
 
 						<div class="property-group">
-							<div class="property-group-title">{{ t('app.commerce.health.apiErrorRate.groupTitle') }}</div>
+							<div class="property-group-title">{{ t('app.commerce.health.apiErrors.groupTitle') }}</div>
 							<label class="wt-checkbox-label">
-								<input type="checkbox" class="wt" v-model="health.apiErrorRate.enabled"
+								<input type="checkbox" class="wt" v-model="health.apiErrors.enabled"
 									:disabled="!health.enabled">
-								{{ t('app.commerce.health.apiErrorRate.enableLabel') }}
+								{{ t('app.commerce.health.apiErrors.enableLabel') }}
 							</label>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.health.apiErrorRate.minSample.label') }}</label>
-								<input type="number" class="wt w-100" v-model.number="health.apiErrorRate.minSample"
-									:disabled="!health.enabled || !health.apiErrorRate.enabled" placeholder="10">
-							</div>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.health.apiErrorRate.threshold.label') }}</label>
-								<input type="number" step="0.05" min="0" max="1" class="wt w-100"
-									v-model.number="health.apiErrorRate.threshold"
-									:disabled="!health.enabled || !health.apiErrorRate.enabled" placeholder="0.2">
-							</div>
 						</div>
 
 						<div class="property-group">
-							<div class="property-group-title">{{ t('app.commerce.health.processingErrorRate.groupTitle') }}</div>
+							<div class="property-group-title">{{ t('app.commerce.health.routeErrors.groupTitle') }}</div>
 							<label class="wt-checkbox-label">
-								<input type="checkbox" class="wt" v-model="health.routeErrorRate.enabled"
+								<input type="checkbox" class="wt" v-model="health.routeErrors.enabled"
 									:disabled="!health.enabled">
-								{{ t('app.commerce.health.processingErrorRate.enableLabel') }}
+								{{ t('app.commerce.health.routeErrors.enableLabel') }}
 							</label>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.health.processingErrorRate.minSample.label') }}</label>
-								<input type="number" class="wt w-100" v-model.number="health.routeErrorRate.minSample"
-									:disabled="!health.enabled || !health.routeErrorRate.enabled" placeholder="10">
-							</div>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.health.processingErrorRate.threshold.label') }}</label>
-								<input type="number" step="0.05" min="0" max="1" class="wt w-100"
-									v-model.number="health.routeErrorRate.threshold"
-									:disabled="!health.enabled || !health.routeErrorRate.enabled" placeholder="0.2">
-							</div>
-						</div>
-
-						<div class="property-group">
-							<div class="property-group-title">{{ t('app.commerce.health.processingLatency.groupTitle') }}</div>
-							<label class="wt-checkbox-label">
-								<input type="checkbox" class="wt" v-model="health.processingLatency.enabled"
-									:disabled="!health.enabled">
-								{{ t('app.commerce.health.processingLatency.enableLabel') }}
-							</label>
-							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.health.processingLatency.maxMs.label') }}</label>
-								<input type="number" class="wt w-100" v-model.number="health.processingLatency.maxMs"
-									:disabled="!health.enabled || !health.processingLatency.enabled" placeholder="30000">
-							</div>
 						</div>
 					</template>
 
@@ -647,10 +660,102 @@
 								<label class="property-label">{{ t('app.commerce.ingestion.replay.backoff.label') }}</label>
 								<input type="number" class="wt w-100" v-model.number="ingest.replay.backoffMinutes" :disabled="!ingest.enabled || !ingest.replay.enabled">
 							</div>
+						</div>
+					</template>
+
+					<!-- ========== Retention (Maintenance) ========== -->
+					<template v-if="section === 'retention'">
+						<div>
+							<h2 class="commerce-h2 mb-2">{{ t('app.commerce.retention.title') }}</h2>
+							<div class="commerce-lede">{{ t('app.commerce.retention.lede') }}</div>
+						</div>
+
+						<!-- Automatic pruning (saved config: retention.yml) -->
+						<div class="property-group">
+							<div class="property-group-title">{{ t('app.commerce.retention.autoprune.groupTitle') }}</div>
+							<label class="wt-checkbox-label">
+								<input type="checkbox" class="wt" v-model="retention.enabled"> {{ t('app.commerce.retention.enableLabel') }}
+							</label>
+							<div class="property-hint">{{ t('app.commerce.retention.hint.forever') }}</div>
 							<div class="property-row">
-								<label class="property-label">{{ t('app.commerce.ingestion.replay.retention.label') }}</label>
-								<input type="number" class="wt w-100" v-model.number="ingest.replay.retentionDays" :disabled="!ingest.enabled">
+								<label class="property-label">{{ t('app.commerce.retention.eventLog.label') }}</label>
+								<input type="number" min="0" class="wt w-100" v-model.number="retention.eventLog" :disabled="!retention.enabled">
 							</div>
+							<div class="property-row">
+								<label class="property-label">{{ t('app.commerce.retention.webhookMarkers.label') }}</label>
+								<input type="number" min="0" class="wt w-100" v-model.number="retention.webhookMarkers" :disabled="!retention.enabled">
+							</div>
+							<div class="property-row">
+								<label class="property-label">{{ t('app.commerce.retention.bulkJobs.label') }}</label>
+								<input type="number" min="0" class="wt w-100" v-model.number="retention.bulkJobs" :disabled="!retention.enabled">
+							</div>
+							<div class="property-row">
+								<label class="property-label">{{ t('app.commerce.retention.reconciliation.label') }}</label>
+								<input type="number" min="0" class="wt w-100" v-model.number="retention.reconciliation" :disabled="!retention.enabled">
+							</div>
+							<div class="property-row">
+								<label class="property-label">{{ t('app.commerce.retention.health.label') }}</label>
+								<input type="number" min="0" class="wt w-100" v-model.number="retention.health" :disabled="!retention.enabled">
+							</div>
+						</div>
+
+						<!-- Manual business-data purge (action panel — NOT saved config) -->
+						<div class="property-group">
+							<div class="property-group-title">{{ t('app.commerce.retention.purge.groupTitle') }}</div>
+							<div class="property-hint">{{ t('app.commerce.retention.purge.lede') }}</div>
+							<div class="property-row">
+								<label class="property-label">{{ t('app.commerce.retention.purge.days.label') }}</label>
+								<input type="number" min="1" class="wt w-100" v-model.number="retentionPurge.days"
+									:disabled="retentionPurge.running || retentionPurge.previewing">
+							</div>
+							<div class="ops-inline-actions">
+								<button class="wt wt-slim" :disabled="retentionPurge.running || retentionPurge.previewing || !purgeDaysValid()"
+									@click="previewPurge">
+									<i class="bi" :class="retentionPurge.previewing ? 'bi-arrow-repeat spin' : 'bi-search'"></i>
+									{{ t('app.commerce.retention.purge.preview') }}
+								</button>
+								<button class="wt wt-danger wt-slim" :disabled="retentionPurge.running || retentionPurge.previewing || !purgeDaysValid()"
+									@click="openPurgeConfirm">
+									<i class="bi" :class="retentionPurge.running ? 'bi-arrow-repeat spin' : 'bi-trash'"></i>
+									{{ retentionPurge.running ? t('app.commerce.retention.purge.running') : t('app.commerce.retention.purge.delete') }}
+								</button>
+							</div>
+							<div class="property-hint" v-if="retentionPurge.preview">
+								{{ t('app.commerce.retention.purge.previewResult', {
+									orders: retentionPurge.preview.orders,
+									payments: retentionPurge.preview.payments,
+									refunds: retentionPurge.preview.refunds,
+									cutoff: retentionPurge.preview.cutoff,
+								}) }}
+							</div>
+							<div class="property-hint status-err" v-if="retentionPurge.error">{{ retentionPurge.error }}</div>
+						</div>
+
+						<!-- Recent purge history (from the endpoint's GET) -->
+						<div class="property-group">
+							<div class="property-group-title">{{ t('app.commerce.retention.purge.history.groupTitle') }}</div>
+							<div v-if="retentionPurge.loadingHistory" class="property-hint">{{ t('app.commerce.webhooks.loading') }}</div>
+							<table class="wt w-100" v-else-if="retentionPurge.history.length">
+								<thead>
+									<tr>
+										<th>{{ t('app.commerce.retention.purge.history.when') }}</th>
+										<th>{{ t('app.commerce.retention.purge.history.who') }}</th>
+										<th>{{ t('app.commerce.retention.purge.history.days') }}</th>
+										<th>{{ t('app.commerce.retention.purge.history.deleted') }}</th>
+										<th>{{ t('app.commerce.retention.purge.history.status') }}</th>
+									</tr>
+								</thead>
+								<tbody>
+									<tr v-for="(h, i) in retentionPurge.history" :key="i">
+										<td class="ops-val">{{ h.at || '—' }}</td>
+										<td class="ops-val">{{ h.actor || '—' }}</td>
+										<td class="ops-val">{{ h.days ?? '—' }}</td>
+										<td class="ops-val">{{ (h.orders ?? 0) }} / {{ (h.payments ?? 0) }} / {{ (h.refunds ?? 0) }}</td>
+										<td><span class="ops-pill" :class="h.status === 'ok' ? 'st-ok' : 'st-report'">{{ h.status || '—' }}</span></td>
+									</tr>
+								</tbody>
+							</table>
+							<div v-else class="property-hint">{{ t('app.commerce.retention.purge.history.empty') }}</div>
 						</div>
 					</template>
 
@@ -931,6 +1036,31 @@
 
 		<!-- Toast -->
 		<div v-if="toast" class="commerce-toast" :class="{ error: toastError }" role="alert">{{ toast }}</div>
+
+		<!-- Business-data purge confirmation (irreversible delete) -->
+		<div v-if="retentionPurge.confirm.visible" class="dialog-overlay">
+			<div class="dialog-frame" style="max-width: 34rem;">
+				<div class="island p-2">
+					<div class="dialog-header">
+						<h3><i class="bi bi-exclamation-triangle-fill me-2"></i>{{ t('app.commerce.retention.purge.confirm.title') }}</h3>
+					</div>
+					<div class="dialog-body">
+						<p class="mt-0">{{ t('app.commerce.retention.purge.confirm.body', { cutoff: retentionPurge.confirm.cutoff }) }}</p>
+						<p>{{ t('app.commerce.retention.purge.confirm.counts', {
+							orders: retentionPurge.confirm.orders,
+							payments: retentionPurge.confirm.payments,
+							refunds: retentionPurge.confirm.refunds,
+						}) }}</p>
+					</div>
+					<div class="dialog-footer flex-wrap">
+						<button class="wt" @click="cancelPurgeConfirm">{{ t('common.cancel') }}</button>
+						<button class="wt wt-danger" @click="confirmPurge">
+							<i class="bi bi-trash me-1"></i>{{ t('app.commerce.retention.purge.confirm.ok') }}
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
 
 		<!-- Close Confirmation Dialog -->
 		<div v-if="closeConfirmDialog.visible" class="dialog-overlay">

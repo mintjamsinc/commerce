@@ -24,6 +24,7 @@
       only periodic reconciliation trigger (not additive to any baseline). Runs as the service user.
     -->
     <route id="commerce-reconcile-scheduler" routeConfigurationId="commerce-reconcile-scheduler-error-handler">
+        <routeProperty key="mi:history" value="failure"/>
         <from uri="timer:commerce-reconcile-scheduler?period=60000&amp;delay=120000"/>
 
         <setHeader name="runAs">

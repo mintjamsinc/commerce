@@ -52,9 +52,11 @@ Beyond the alert, breached tasks get an optional engine-side nudge (`escalation`
 
 ## Alerts
 
-Delivered as a `NotificationMessage` (title "Task SLA") to every enabled channel
-in `notifications.yml`, with the task name, business context (order / product /
-refund id), assignee (or "Unassigned"), age, due date, and process.
+Delivered as a `NotificationMessage` (title "Task SLA") under the `operations`
+notification category — every enabled channel of the channel set configured for
+that category in `notifications.yml` (or of the default set when the category
+has none) — with the task name, business context (order / product / refund id),
+assignee (or "Unassigned"), age, due date, and process.
 
 ## Reading open tasks + SLA status
 

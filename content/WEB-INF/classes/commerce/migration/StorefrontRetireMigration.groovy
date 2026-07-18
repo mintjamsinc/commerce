@@ -1,4 +1,6 @@
-package commerce
+package commerce.migration
+
+import commerce.Jcr
 
 /**
  * Storefront-retire migration — retire the public catalog PROJECTION.

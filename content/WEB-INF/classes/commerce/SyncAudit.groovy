@@ -32,7 +32,8 @@ class SyncAudit {
             // Instant.now().toString(), whose fraction digits drift (0/3/6/9).
             def now = Api.now()
             def ts = System.currentTimeMillis()
-            def ym = new java.text.SimpleDateFormat("yyyy/MM").format(new java.util.Date())
+            // Month fold in UTC — the shared storage fold rule (Api.utcYearMonth).
+            def ym = Api.utcYearMonth(ts).join("/")
             def path = "${SYNC_DIR}/${ym}/sync_${ts}.json".toString()
             // WHO: the human operator / decider. Absent (legacy / true system
             // writes) falls back to "cms"; BPM-service callers pass "workflow".

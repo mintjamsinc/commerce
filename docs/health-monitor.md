@@ -25,7 +25,7 @@ Camel routes  ──(cms:script, runAs service)───────────
 API callers   ──(Health.timeApi on the caller's session)───────────► commerce.Health
                                                                           │
                                               records metrics (JCR) ──────┤
-                                              evaluates thresholds  ──────┤
+                                              evaluates alert rules ──────┤
                                               fires alerts ──► Notifications.dispatch
 ```
 
@@ -44,9 +44,13 @@ volumes).
 
 ```
 /content/commerce/health/
-├── metrics/{yyyy}/{MM}/{yyyy-MM-dd}.json   # daily counters
+├── metrics/{yyyy}/{MM}/{yyyy-MM-dd}.json   # daily counters (UTC days)
 └── state.json                              # per-alert cooldown timestamps
 ```
+
+Daily buckets fold on the **UTC** day — the shared storage fold rule, so the
+metric files line up with the raw mirror folders and never depend on the
+server's timezone.
 
 Daily document shape:
 
@@ -65,22 +69,32 @@ Daily document shape:
 
 Governed by `/etc/commerce/config/health.yml` (managed from **Webtop → Commerce →
 Health**). Metrics are always recorded; this file only controls alerting.
+Alerting is event-driven — each rule reacts to the event that just happened,
+with no daily aggregation, thresholds, or sample-size gating.
 
 | Rule | Fires when | Key settings |
 |---|---|---|
-| `hmacFailures` | today's HMAC failures ≥ `threshold` | `threshold` |
-| `apiErrorRate` | API errors / calls ≥ `threshold` (after `minSample` calls) | `minSample`, `threshold` |
-| `routeErrorRate` | processing errors / processed ≥ `threshold` (after `minSample`) | `minSample`, `threshold` |
-| `processingLatency` | a single webhook exceeds `maxMs` receipt→completion | `maxMs` |
+| `hmacFailures` | a single HMAC verification fails; repeats are suppressed for `cooldownMinutes` (state in `state.json`) | `cooldownMinutes` |
+| `apiErrors` | every Admin API error, notified individually with its error detail | — |
+| `routeErrors` | every route processing error, notified individually with its error detail | — |
 
 `enabled` is the master switch; each rule also has its own `enabled`.
-`cooldownMinutes` debounces repeat alerts of the same kind (state in
-`state.json`). The cooldown is armed before the notification is sent, so a
-notification failure cannot cause an alert storm.
+The HMAC cooldown is armed before the notification is sent, so a notification
+failure cannot cause an alert storm. `apiErrors` / `routeErrors` have no
+cooldown by design: every error carries a distinct detail, so each one is
+delivered.
 
-Alerts are delivered as a `NotificationMessage` (title "Integration health") to
-every enabled channel in `notifications.yml`. The cooldown + dispatch is provided
-by the shared `commerce.Alerts` helper (also used by the task SLA monitor).
+Alerts are delivered as a `NotificationMessage` (title "Integration health")
+under the `operations` notification category — every enabled channel of the
+channel set configured for that category in `notifications.yml`, or of the
+default set when the category has none. The cooldown + dispatch is provided
+by the shared `commerce.Alerts` helper (also used by the task SLA monitor);
+the per-error notifications go through its cooldown-less `send`.
+
+Error details reach the monitor as follows: `Health.timeApi` captures the
+thrown exception's message, and the Camel routes pass `${exception.message}`
+as the `health_error` header to `recordHealth.groovy` from their error
+handlers.
 
 ## Reading the data
 

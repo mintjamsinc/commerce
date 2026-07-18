@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import java.time.Instant
 import java.time.LocalDate
 import java.time.OffsetDateTime
-import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
 /**
@@ -109,7 +109,8 @@ class Events {
             if (existing != null) {
                 attempts = intOr(prop(existing.resource, "commerce:attempts"), 0) + 1
             } else {
-                def now = LocalDate.now(ZoneId.systemDefault())
+                // Month fold in UTC — the shared storage fold rule (server-timezone independent).
+                def now = LocalDate.now(ZoneOffset.UTC)
                 path = "${EVENTS_DIR}/${sanitize(source)}/${now.format(YM)}/${sanitize(eventId)}.json".toString()
             }
 
@@ -239,7 +240,8 @@ class Events {
      */
     static Map findRecent(session, String source, String eventId) {
         if (!source || !eventId) return null
-        def today = LocalDate.now(ZoneId.systemDefault())
+        // Same UTC month fold as the write path, so the O(1) probe stays aligned.
+        def today = LocalDate.now(ZoneOffset.UTC)
         for (int i = 0; i <= 1; i++) {
             def path = "${EVENTS_DIR}/${sanitize(source)}/${today.minusMonths(i).format(YM)}/${sanitize(eventId)}.json".toString()
             def res = Jcr.safeGet(session, path)
@@ -329,13 +331,19 @@ class Events {
         }
     }
 
-    /** Delete processed event-log entries older than retentionMs. Defensive. */
+    /**
+     * Delete event-log entries older than retentionMs, REGARDLESS of status
+     * (processed AND error alike). Retention is a status-independent window: the
+     * log always covers the last N days, so "when did it last succeed / start
+     * failing" stays answerable. By the time an entry ages past retention it is
+     * terminal anyway (replay exhausts maxAttempts × backoff in minutes, far under
+     * any sane retention). Defensive.
+     */
     static int prune(session, log, long retentionMs, long nowMs) {
         int removed = 0
         def victims = []
         eachEvent(session, null) { res ->
             try {
-                if (prop(res, "commerce:status") != "processed") return
                 long t = createdMs(res)
                 if (t > 0 && (nowMs - t) > retentionMs) victims << res.getPath()
             } catch (Exception ignore) {}
@@ -347,7 +355,7 @@ class Events {
             } catch (Exception ignore) {}
         }
         if (removed > 0) {
-            try { session.commit(); log.info("Events.prune: removed ${removed} processed event(s)") }
+            try { session.commit(); log.info("Events.prune: removed ${removed} event(s)") }
             catch (Exception e) { try { session.rollback() } catch (Exception ignore) {} }
         }
         return removed

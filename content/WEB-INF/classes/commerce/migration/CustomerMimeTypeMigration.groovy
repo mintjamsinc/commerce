@@ -1,4 +1,6 @@
-package commerce
+package commerce.migration
+
+import commerce.Jcr
 
 /**
  * Customer MIME type migration — retroactively stamp the dedicated customer

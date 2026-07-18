@@ -1,5 +1,6 @@
 identifier: f7b9d2e4-8c3a-4e6f-b1a5-2d9c7e0f4a83
 title: Commerce Reconcile
+category: commerce
 icon: assets/icons/icon.svg
 isAdminOnly: true
 # The Shopify → CMS reconciliation console: detect drift between the

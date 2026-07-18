@@ -11,9 +11,9 @@
 //                                   products / inventory) over the Bulk job broker. An
 //                                   ORDERS backfill is the whole historical sales import:
 //                                   refunds are fetched for the refund-bearing orders,
-//                                   and the sales-fact seed chains on completion.
-//   • sales-backfill.groovy       — GET-only: the chained sales-fact seed's progress
-//                                   (watch `remaining` drain to 0).
+//                                   and the sales-fact seed chains on completion. The
+//                                   seed drains asynchronously — its live catch-up is
+//                                   surfaced by the "反映待ち" toolbar badge, not a panel.
 //
 // Everything here is operator-triggered and idempotent — nothing runs "behind the
 // operator's back", re-running is safe. Self-contained (ichigo.js runtime only).
@@ -26,11 +26,11 @@ import {
 	translate,
 	formatDate,
 } from '../../composables/use-localization.js';
+import { fetchPendingCount } from '../../composables/use-pending-badge.js';
 
 type AnyInstance = any;
 
 const BACKFILL_SCRIPT = '/content/commerce/endpoints/backfill.groovy';
-const SALES_SEED_SCRIPT = '/content/commerce/endpoints/sales-backfill.groovy';
 // Admin API capability probe: the Bulk backfill fetches from Shopify, so it is gated
 // on the Admin API being configured. sync.groovy GET reports { enabled, shopDomain,
 // apiVersion } — the same probe the editors use.
@@ -67,11 +67,6 @@ const App = {
 			backfill: { type: 'orders', from: '', to: '' },
 			backfillJobs: [] as any[],
 
-			// Sales FACT seed progress (sales-backfill.groovy, GET-only — the seed is
-			// chained off a completed orders backfill; enqueue-only, the single-writer
-			// drainer materializes and `remaining` drains to 0).
-			salesSeed: { status: 'idle', scanned: 0, enqueued: 0, distinctOrders: 0, remaining: 0, startedAt: '', updatedAt: '', finishedAt: '' },
-
 			confirmDialog: { visible: false, title: '', message: '', ok: '', resolve: null as null | ((v: boolean) => void) },
 
 			_base: '' as string,
@@ -79,6 +74,11 @@ const App = {
 			_toastTimer: null as any,
 			// Auto-refresh timer for the backfill job list / seed progress while active.
 			_pollTimer: null as any,
+
+			// "反映待ち" badge: live pending-recompute count. Its OWN continuous poll (not the seed poll,
+			// which stops at remaining=0) so a webhook-triggered backlog after a quiet period still shows.
+			pendingCount: 0,
+			_pendingTimer: null as any,
 
 			// Resizable filter sidebar (mirrors commerce-products / settings app).
 			sidebarVisible: true,
@@ -136,7 +136,7 @@ const App = {
 				await vm.loadSidebarState();
 				await vm.loadSync();
 				await vm.loadBackfill();
-				await vm.loadSalesSeed();
+				vm.startPendingPoll();
 				vm.$nextTick(() => { try { instance.notifyLaunched(); } catch (_) {} });
 			};
 		},
@@ -144,8 +144,21 @@ const App = {
 			if (this._messageListener) window.removeEventListener('message', this._messageListener);
 			if (this._toastTimer) clearTimeout(this._toastTimer);
 			if (this._pollTimer) clearTimeout(this._pollTimer);
+			this.stopPendingPoll();
 			if (this._boundSidebarResizeMove) document.removeEventListener('mousemove', this._boundSidebarResizeMove);
 			if (this._boundSidebarResizeUp) document.removeEventListener('mouseup', this._boundSidebarResizeUp);
+		},
+
+		// ---- "反映待ち" pending badge ----------------------------------------
+		async pollPending() {
+			try { this.pendingCount = await fetchPendingCount(this._base); } catch (_) { /* keep last */ }
+		},
+		startPendingPoll() {
+			this.pollPending();
+			this._pendingTimer = window.setInterval(() => this.pollPending(), 15000);
+		},
+		stopPendingPoll() {
+			if (this._pendingTimer) { clearInterval(this._pendingTimer); this._pendingTimer = null; }
 		},
 
 		// ---- Window controls -------------------------------------------------
@@ -211,7 +224,6 @@ const App = {
 		async refresh() {
 			await this.loadSync();
 			await this.loadBackfill();
-			await this.loadSalesSeed();
 		},
 
 		// ---- Admin API capability --------------------------------------------
@@ -276,18 +288,18 @@ const App = {
 				this.scheduleJobPoll();
 			}
 		},
-		// Keep the job list + seed progress live while anything is running: re-fetch
-		// quietly every few seconds so status columns advance without a manual
-		// refresh, and stop once nothing is active. At most one timer is armed;
-		// loadBackfill()'s finally re-arms it, so the loop self-perpetuates while
-		// active and self-stops when done.
+		// Keep the job list live while a backfill is running: re-fetch quietly every
+		// few seconds so the status columns advance without a manual refresh, and
+		// stop once nothing is active. At most one timer is armed; loadBackfill()'s
+		// finally re-arms it, so the loop self-perpetuates while active and
+		// self-stops when done. (The chained sales-fact seed drains asynchronously
+		// after the orders job completes — its catch-up shows in the "反映待ち"
+		// toolbar badge, which runs its own continuous poll.)
 		scheduleJobPoll() {
 			if (this._pollTimer) { clearTimeout(this._pollTimer); this._pollTimer = null; }
-			const seedActive = this.salesSeed.status === 'running' || (this.salesSeed.remaining || 0) > 0;
-			if (!this.backfillActive() && !seedActive) return;
+			if (!this.backfillActive()) return;
 			this._pollTimer = window.setTimeout(() => {
 				this._pollTimer = null;
-				this.loadSalesSeed(true);
 				this.loadBackfill(true);
 			}, 4000);
 		},
@@ -402,41 +414,6 @@ const App = {
 				case 'inventory': return this.t('app.commerce-import.backfill.entity.inventory');
 				default: return this.t('app.commerce-import.backfill.entity.orders');
 			}
-		},
-
-		// ---- Sales FACT seed progress (chained off the orders backfill) --------
-		// The seed runs automatically when an orders backfill completes: it walks the
-		// ENTIRE order mirror and enqueues every distinct order for the single-writer
-		// fact drainer (enqueue-only; it never writes a fact node). Watch `remaining`
-		// drain to 0 — that is "all facts materialized".
-		async loadSalesSeed(quiet = false) {
-			const quietMode = quiet === true;
-			if (!quietMode) this.busy = true;
-			try {
-				const j = await this.getJson(SALES_SEED_SCRIPT);
-				this.salesSeed = {
-					status: String(j.status || 'idle'),
-					scanned: Number(j.scanned) || 0,
-					enqueued: Number(j.enqueued) || 0,
-					distinctOrders: Number(j.distinctOrders) || 0,
-					remaining: Number(j.remaining) || 0,
-					startedAt: j.startedAt || '',
-					updatedAt: j.updatedAt || '',
-					finishedAt: j.finishedAt || '',
-				};
-			} catch (_) { /* keep */ }
-			finally {
-				if (!quietMode) this.busy = false;
-				this.scheduleJobPoll();
-			}
-		},
-		// Pill class for a seed/backfill status doc ('idle' | 'running' | 'completed'…).
-		seedStatusClass(status: any): string {
-			const v = String(status || '').toLowerCase();
-			if (v === 'completed' || v === 'done') return 'st-processed';
-			if (v === 'running') return 'st-received';
-			if (v === 'failed' || v === 'error') return 'st-failed';
-			return 'st-report';
 		},
 
 		// ---- Confirm dialog --------------------------------------------------

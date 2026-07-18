@@ -40,6 +40,9 @@
             <setHeader name="health_ok">
                 <constant>false</constant>
             </setHeader>
+            <setHeader name="health_error">
+                <simple>${exception.message}</simple>
+            </setHeader>
             <toD uri="cms:/etc/commerce/scripts/shopify/recordHealth.groovy?inputs=health_*,received_at"/>
         </onException>
     </routeConfiguration>
@@ -89,16 +92,35 @@
                     <jsonpath>$.id</jsonpath>
                 </setHeader>
 
-                <!-- Generate file path: /content/commerce/orders/raw/2026/02/order_{id}.json -->
+                <!-- Generate file path: /content/commerce/orders/raw/{yyyy}/{MM}/order_{id}.json,
+                     nested by the ORDER's created_at in UTC (the shared fold rule —
+                     server-timezone independent, matches the bulk backfill placement). -->
                 <setHeader name="order_id">
                     <jsonpath>$.id</jsonpath>
                 </setHeader>
+                <setHeader name="raw_store">
+                    <constant>orders</constant>
+                </setHeader>
+                <setHeader name="raw_name">
+                    <simple>order_${header.order_id}.json</simple>
+                </setHeader>
+                <setHeader name="raw_at">
+                    <jsonpath suppressExceptions="true">$.created_at</jsonpath>
+                </setHeader>
+                <toD uri="cms:/etc/commerce/scripts/shopify/deriveRawPath.groovy?inputs=raw_*&amp;outputs=rawPath"/>
                 <setHeader name="orderPath">
-                    <simple>/content/commerce/orders/raw/${date:now:yyyy}/${date:now:MM}/order_${header.order_id}.json</simple>
+                    <simple>${header.rawPath}</simple>
                 </setHeader>
 
-                <!-- Save raw JSON to JCR -->
-                <toD uri="cms:store?mimeType=application/vnd.mintjams.commerce.order%2Bjson&amp;path=${header.orderPath}"/>
+                <!-- Restore the raw order JSON (the script call replaced the body). -->
+                <setBody>
+                    <simple>${header.shopify_payload}</simple>
+                </setBody>
+
+                <!-- Save raw JSON to JCR. RAW() keeps the literal "+" in the MIME
+                     type: Camel normalizes %2B back to "+" and then form-decodes
+                     the query, so an encoded plus reaches the endpoint as a space. -->
+                <toD uri="cms:store?mimeType=RAW(application/vnd.mintjams.commerce.order+json)&amp;path=${header.orderPath}"/>
 
                 <!-- Parse order metadata and set as JCR properties -->
                 <setHeader name="commerce:order_id">
@@ -181,9 +203,9 @@
 
                 <!-- Record webhook as processed (idempotency marker) -->
                 <setBody>
-                    <simple>${date:now:yyyy-MM-dd'T'HH:mm:ss.SSSZ}</simple>
+                    <simple>${date-with-timezone:now:UTC:yyyy-MM-dd'T'HH:mm:ss.SSS'Z'}</simple>
                 </setBody>
-                <toD uri="cms:store?path=/content/commerce/history/webhooks/${date:now:yyyy}/${date:now:MM}/${header.shopify_webhook_id}&amp;mimeType=text/plain"/>
+                <toD uri="cms:store?path=/content/commerce/history/webhooks/${date-with-timezone:now:UTC:yyyy}/${date-with-timezone:now:UTC:MM}/${header.shopify_webhook_id}&amp;mimeType=text/plain"/>
 
                 <!-- Guard against duplicate workflow instances for the same order.
                      Shopify can re-deliver or emit related order webhooks in quick

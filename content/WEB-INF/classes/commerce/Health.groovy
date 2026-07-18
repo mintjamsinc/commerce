@@ -1,16 +1,15 @@
 package commerce
 
-import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
 /**
  * Integration health monitor for the commerce pipeline.
  *
  * Records lightweight operational metrics to JCR and raises alerts (through the
- * pluggable {@link Notifications} channels) when a configured threshold is
- * breached. Three signal sources feed it:
+ * pluggable {@link Notifications} channels) as events happen. Three signal
+ * sources feed it:
  *   • webhook receipt  — counts of received / hmac_failure / unhandled / dispatch_error
  *                        (from the public webhook endpoint, via the health route)
  *   • route processing — success / error and processing latency
@@ -18,11 +17,18 @@ import java.time.format.DateTimeFormatter
  *   • Admin API calls  — success / error and call latency (recorded by callers
  *                        wrapping {@link #timeApi})
  *
+ * Alerting is event-driven, not aggregate-driven: a single HMAC verification
+ * failure alerts (debounced by the rule's cooldown), and every Admin API /
+ * route processing error is notified individually with its error detail.
+ *
  * Storage (best-effort, never blocks the caller):
  *   /content/commerce/health/metrics/{yyyy}/{MM}/{yyyy-MM-dd}.json  — daily counters
  *   /content/commerce/health/state.json                            — alert cooldowns
- * Config: /etc/commerce/config/health.yml (thresholds); alerts reuse
- *   /etc/commerce/config/notifications.yml (channels).
+ * Daily buckets fold on the UTC day — the shared storage fold rule, so metric
+ * files line up with the raw mirror folders and never depend on the server's
+ * timezone.
+ * Config: /etc/commerce/config/health.yml (alert rules); alerts reuse
+ *   /etc/commerce/config/notifications.yml (the operations category's channels).
  *
  * Metrics are intentionally best-effort: a recording failure is swallowed and
  * logged, so monitoring can never break the business process it observes. Counter
@@ -44,7 +50,8 @@ class Health {
 
     /**
      * Increment a simple counter, e.g. count(session, log, "webhook", "hmac_failure").
-     * After recording, the relevant alert rule (if any) is evaluated.
+     * An HMAC verification failure alerts immediately (debounced by the rule's
+     * cooldown); other counters only record.
      */
     static void count(session, log, String group, String metric, int by = 1) {
         try {
@@ -52,7 +59,9 @@ class Health {
                 def g = ((Map) day.computeIfAbsent(group, { [:] }))
                 g[metric] = ((g[metric] ?: 0) as long) + by
             }
-            evaluate(session, log, group, metric, null, null)
+            if (group == "webhook" && metric == "hmac_failure") {
+                alertHmacFailure(session, log)
+            }
         } catch (Exception e) {
             warn(log, "count(${group}.${metric}) failed: ${e.message}")
         }
@@ -62,9 +71,10 @@ class Health {
      * Record the outcome of an operation under a named bucket, e.g.
      * outcome(session, log, "route", "orders/paid", true, 1234). Increments
      * {@code <name>.success}/{@code <name>.error} and, when {@code latencyMs} is
-     * given, updates the latency aggregate (sum / count / max).
+     * given, updates the latency aggregate (sum / count / max). An error outcome
+     * is notified individually, carrying {@code error} as the detail.
      */
-    static void outcome(session, log, String group, String name, boolean ok, Long latencyMs = null) {
+    static void outcome(session, log, String group, String name, boolean ok, Long latencyMs = null, String error = null) {
         try {
             update(session, log) { Map day ->
                 def g = ((Map) day.computeIfAbsent(group, { [:] }))
@@ -79,7 +89,9 @@ class Health {
                     }
                 }
             }
-            evaluate(session, log, group, name, ok, latencyMs)
+            if (!ok) {
+                alertError(session, log, group, name, error)
+            }
         } catch (Exception e) {
             warn(log, "outcome(${group}.${name}) failed: ${e.message}")
         }
@@ -88,7 +100,8 @@ class Health {
     /**
      * Time a (Admin API) call, record its outcome+latency under group "api", and
      * return the call's result. The original exception, if any, propagates so the
-     * caller's error handling is unchanged.
+     * caller's error handling is unchanged; its message becomes the error detail
+     * of the failure notification.
      *
      * Recording commits health nodes on {@code session}, so call this only at a
      * point where {@code session} has no uncommitted business changes (the API
@@ -97,13 +110,13 @@ class Health {
      */
     static Object timeApi(session, log, String label, Closure call) {
         long t0 = System.currentTimeMillis()
-        boolean ok = false
         try {
             def result = call.call()
-            ok = true
+            outcome(session, log, "api", label, true, System.currentTimeMillis() - t0)
             return result
-        } finally {
-            outcome(session, log, "api", label, ok, System.currentTimeMillis() - t0)
+        } catch (Throwable t) {
+            outcome(session, log, "api", label, false, System.currentTimeMillis() - t0, t.message)
+            throw t
         }
     }
 
@@ -117,7 +130,7 @@ class Health {
      *   }
      */
     static Map snapshot(session, int days = 7) {
-        def today = LocalDate.now(ZoneId.systemDefault())
+        def today = LocalDate.now(ZoneOffset.UTC)
         def webhook = [:]
         def route = [:]
         def api = [:]
@@ -145,81 +158,58 @@ class Health {
 
     // ============================================================== alerting
 
-    private static void evaluate(session, log, String group, String name, Boolean ok, Long latencyMs) {
+    /**
+     * Alert on a single HMAC verification failure. One failure is enough to
+     * notify; repeats are suppressed for the rule's cooldownMinutes.
+     */
+    private static void alertHmacFailure(session, log) {
+        def rule = enabledRule(session, "hmacFailures")
+        if (rule == null) {
+            return
+        }
+        long cooldownMs = num(rule.cooldownMinutes, 30) * 60_000L
+        Alerts.fire(session, log, STATE_PATH, "hmacFailures", cooldownMs,
+            message("🔐", "HMAC verification failure",
+                ["Action": "Check the webhook shared secret in shopify.yml and Shopify Admin."]))
+    }
+
+    /**
+     * Notify an Admin API / route processing error individually, carrying the
+     * error detail. Every error is reported — no cooldown, no aggregation.
+     */
+    private static void alertError(session, log, String group, String name, String error) {
+        def detail = (error == null || error.trim().isEmpty()) ? "(no message)" : error
+        if (group == "api" && enabledRule(session, "apiErrors") != null) {
+            Alerts.send(session, log,
+                message("📉", "Shopify Admin API error",
+                    ["Call": name, "Error": detail]))
+        }
+        if (group == "route" && enabledRule(session, "routeErrors") != null) {
+            Alerts.send(session, log,
+                message("⚙", "Webhook processing error",
+                    ["Topic": name, "Error": detail]))
+        }
+    }
+
+    /**
+     * The rule's config map when the master switch and the rule are both
+     * enabled, else null (missing config or rule section means no alerting).
+     */
+    private static Map enabledRule(session, String key) {
         Map cfg
         try {
             cfg = loadConfig(session)
         } catch (Exception e) {
-            return
+            return null
         }
         if (cfg == null || !truthy(cfg.enabled, true)) {
-            return
+            return null
         }
-        def today = loadDay(session, LocalDate.now(ZoneId.systemDefault()))
-
-        if (group == "webhook" && name == "hmac_failure") {
-            def rule = cfg.hmacFailures
-            if (rule != null && truthy(rule.enabled, true)) {
-                long count = num(((Map) (today.webhook ?: [:])).hmac_failure)
-                long threshold = num(rule.threshold, 5)
-                if (count >= threshold) {
-                    maybeAlert(session, log, cfg, "hmacFailures",
-                        message("🔐", "HMAC verification failures",
-                            ["Failures today": count, "Threshold": threshold,
-                             "Action": "Check the webhook shared secret in shopify.yml and Shopify Admin."]))
-                }
-            }
+        def rule = cfg[key]
+        if (!(rule instanceof Map) || !truthy(((Map) rule).enabled, true)) {
+            return null
         }
-
-        if (group == "api") {
-            def rule = cfg.apiErrorRate
-            if (rule != null && truthy(rule.enabled, true)) {
-                def agg = sumGroup((Map) today.api)
-                long total = agg.success + agg.error
-                double rate = total > 0 ? (agg.error / (double) total) : 0
-                long minSample = num(rule.minSample, 10)
-                double threshold = dbl(rule.threshold, 0.2d)
-                if (total >= minSample && rate >= threshold) {
-                    maybeAlert(session, log, cfg, "apiErrorRate",
-                        message("📉", "Shopify Admin API error rate high",
-                            ["Errors": agg.error, "Calls": total,
-                             "Error rate": pct(rate), "Threshold": pct(threshold)]))
-                }
-            }
-        }
-
-        if (group == "route") {
-            def rateRule = cfg.routeErrorRate
-            if (rateRule != null && truthy(rateRule.enabled, true)) {
-                def agg = sumGroup((Map) today.route)
-                long total = agg.success + agg.error
-                double rate = total > 0 ? (agg.error / (double) total) : 0
-                long minSample = num(rateRule.minSample, 10)
-                double threshold = dbl(rateRule.threshold, 0.2d)
-                if (total >= minSample && rate >= threshold) {
-                    maybeAlert(session, log, cfg, "routeErrorRate",
-                        message("⚙", "Webhook processing error rate high",
-                            ["Errors": agg.error, "Processed": total,
-                             "Error rate": pct(rate), "Threshold": pct(threshold)]))
-                }
-            }
-            def latRule = cfg.processingLatency
-            if (latRule != null && truthy(latRule.enabled, true) && latencyMs != null) {
-                long maxMs = num(latRule.maxMs, 30000)
-                if (latencyMs > maxMs) {
-                    maybeAlert(session, log, cfg, "processingLatency:" + name,
-                        message("🐢", "Slow webhook processing",
-                            ["Topic": name, "Latency": latencyMs + " ms",
-                             "Threshold": maxMs + " ms"]))
-                }
-            }
-        }
-    }
-
-    /** Fire the alert unless the same key fired within the configured cooldown. */
-    private static void maybeAlert(session, log, Map cfg, String key, NotificationMessage message) {
-        long cooldownMs = num(cfg.cooldownMinutes, 30) * 60_000L
-        Alerts.fire(session, log, STATE_PATH, key, cooldownMs, message)
+        return (Map) rule
     }
 
     private static NotificationMessage message(String icon, String headline, Map fields) {
@@ -235,7 +225,7 @@ class Health {
 
     /** Read-modify-write today's metrics doc with an optimistic retry loop. */
     private static void update(session, log, Closure mutator) {
-        def date = LocalDate.now(ZoneId.systemDefault())
+        def date = LocalDate.now(ZoneOffset.UTC)
         def path = dayPath(date)
         Exception lastError = null
         for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
@@ -304,27 +294,10 @@ class Health {
         }
     }
 
-    private static Map sumGroup(Map group) {
-        long success = 0, error = 0
-        group?.each { name, b ->
-            if (b instanceof Map) {
-                success += num(b.success)
-                error += num(b.error)
-            }
-        }
-        return [success: success, error: error]
-    }
-
     private static long num(v, long dflt = 0) {
         if (v == null) return dflt
         if (v instanceof Number) return ((Number) v).longValue()
         try { return Long.parseLong(v.toString().trim()) } catch (Exception e) { return dflt }
-    }
-
-    private static double dbl(v, double dflt) {
-        if (v == null) return dflt
-        if (v instanceof Number) return ((Number) v).doubleValue()
-        try { return Double.parseDouble(v.toString().trim()) } catch (Exception e) { return dflt }
     }
 
     private static boolean truthy(v, boolean dflt) {
@@ -334,10 +307,6 @@ class Health {
 
     private static double round(double v) {
         return Math.round(v * 1000) / 1000.0d
-    }
-
-    private static String pct(double v) {
-        return (Math.round(v * 1000) / 10.0d) + "%"
     }
 
     private static void warn(log, String msg) {

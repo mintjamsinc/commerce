@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<camel>
+
+    <!-- Swallow batch failures: retention housekeeping must never surface errors. -->
+    <routeConfiguration id="commerce-housekeeping-error-handler">
+        <onException>
+            <exception>java.lang.Exception</exception>
+            <handled>
+                <constant>true</constant>
+            </handled>
+            <log message="commerce-housekeeping error: ${exception.message}"
+                 loggingLevel="WARN"/>
+        </onException>
+    </routeConfiguration>
+
+    <!--
+      Data-retention housekeeping. Fires hourly (after a 3-minute warm-up) and runs
+      the pruning task as the service user: it reads retention.yml and deletes
+      records older than each store's configured window (event log, webhook markers,
+      bulk jobs, reconciliation reports, health metrics). Business data is never
+      touched here. The task is cluster-leased, so only one node runs per tick.
+    -->
+    <route id="commerce-housekeeping" routeConfigurationId="commerce-housekeeping-error-handler">
+        <routeProperty key="mi:history" value="failure"/>
+        <from uri="timer:commerce-housekeeping?period=3600000&amp;delay=180000"/>
+
+        <setHeader name="runAs">
+            <constant>commerce-service-user</constant>
+        </setHeader>
+
+        <toD uri="cms:/etc/commerce/scripts/houseKeeping.groovy"/>
+    </route>
+
+</camel>

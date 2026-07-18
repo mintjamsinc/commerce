@@ -1,4 +1,4 @@
-package commerce
+package commerce.migration
 
 import javax.jcr.query.Query
 
@@ -32,7 +32,7 @@ import javax.jcr.query.Query
  * Re-running is a no-op. Only the allow-listed names are touched, so unrelated
  * properties ({@code pim}, {@code metafields}, {@code jcr:*}, {@code mi:*} and the
  * already-namespaced {@code commerce:*}) are never modified. Lives under
- * /content/WEB-INF/classes; use via {@code import commerce.NamespaceMigration}.
+ * /content/WEB-INF/classes; use via {@code import commerce.migration.NamespaceMigration}.
  */
 class NamespaceMigration {
 

@@ -21,6 +21,9 @@
             <setHeader name="health_ok">
                 <constant>false</constant>
             </setHeader>
+            <setHeader name="health_error">
+                <simple>${exception.message}</simple>
+            </setHeader>
             <toD uri="cms:/etc/commerce/scripts/shopify/recordHealth.groovy?inputs=health_*,received_at"/>
         </onException>
     </routeConfiguration>

@@ -4,40 +4,27 @@
 #
 # Metrics are ALWAYS recorded (webhook receipts / HMAC failures, route
 # processing success/error + latency, Admin API success/error + latency) under
-# /content/commerce/health/metrics/. This file only governs ALERTING: when a
-# threshold is breached, an alert is sent through the enabled notification
-# channels (the same Slack/Discord/Teams/LINE/webhook/email plumbing).
+# /content/commerce/health/metrics/. This file only governs ALERTING: alerts
+# are sent through the enabled notification channels (the same
+# Slack/Discord/Teams/LINE/webhook/email plumbing).
 #
 # A rule is ON unless enabled is false. Each leaf is a scalar.
 
 # Master switch for alerting (set false to record metrics without alerting).
 enabled: true
 
-# Minimum minutes between repeat alerts of the same kind (debounce).
-cooldownMinutes: 30
-
-# Burst of failed HMAC verifications today (wrong/rotated webhook secret, or an
-# unauthorized caller). Alert once today's count reaches the threshold.
+# Failed HMAC verification (wrong/rotated webhook secret, or an unauthorized
+# caller). A single failure alerts; repeats are suppressed for cooldownMinutes.
 hmacFailures:
   enabled: false
-  threshold: 5
+  cooldownMinutes: 30
 
-# Shopify Admin API error rate today. Needs at least minSample calls before it
-# evaluates, then alerts when errors / calls >= threshold (0.2 = 20%).
-apiErrorRate:
+# Shopify Admin API errors. Every error is notified individually with its
+# error detail.
+apiErrors:
   enabled: false
-  minSample: 10
-  threshold: 0.2
 
-# Webhook processing error rate today (routes moving payloads to the error
-# folder). Same minSample / threshold semantics as apiErrorRate.
-routeErrorRate:
+# Webhook processing errors (routes moving payloads to the error folder).
+# Every error is notified individually with its error detail.
+routeErrors:
   enabled: false
-  minSample: 10
-  threshold: 0.2
-
-# Slow webhook processing: alert when a single webhook takes longer than maxMs
-# from HTTP receipt to route completion (a sign of queue backlog or slow steps).
-processingLatency:
-  enabled: false
-  maxMs: 30000

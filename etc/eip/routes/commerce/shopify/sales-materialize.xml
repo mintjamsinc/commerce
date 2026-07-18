@@ -28,6 +28,7 @@
       cluster.tryLock lease inside the drainer. This timer is the backstop; the direct kick is the fast path.
     -->
     <route id="commerce-sales-materialize" routeConfigurationId="commerce-sales-materialize-error-handler">
+        <routeProperty key="mi:history" value="failure"/>
         <from uri="timer:commerce-sales-materialize?period=30000&amp;delay=60000"/>
 
         <setHeader name="runAs">
@@ -45,6 +46,7 @@
       coalesces a burst of kicks into a single drain; the timer above stays as a backstop.
     -->
     <route id="commerce-sales-materialize-kick" routeConfigurationId="commerce-sales-materialize-error-handler">
+        <routeProperty key="mi:history" value="failure"/>
         <from uri="direct:commerce-sales-materialize"/>
 
         <choice>

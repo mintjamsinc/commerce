@@ -1,5 +1,6 @@
 identifier: d4f2b5c7-6e0a-4b4c-8d85-9f3c1e4a7b6c
 title: Commerce Events
+category: commerce
 icon: assets/icons/icon.svg
 isAdminOnly: true
 # The Shopify → CMS event log console: inspect ingested webhook/event records by

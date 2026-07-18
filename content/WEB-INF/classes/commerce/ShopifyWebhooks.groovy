@@ -42,6 +42,7 @@ class ShopifyWebhooks {
     static final List<String> OPERATIONAL_TOPICS = [
         "orders/paid",
         "orders/updated",
+        "order_transactions/create",
         "products/create",
         "products/update",
         "products/delete",
@@ -51,6 +52,13 @@ class ShopifyWebhooks {
         "customers/disable",
         "customers/delete",
         "refunds/create",
+        // Fulfillment-hold state changes: mirrored onto the parent order so the
+        // Fulfill Order task can gate its action on the hold. Creating these
+        // subscriptions requires a fulfillment-order read scope (e.g.
+        // read_merchant_managed_fulfillment_orders); sync() records a per-topic
+        // "error" row when the app is missing it, without aborting the rest.
+        "fulfillment_orders/placed_on_hold",
+        "fulfillment_orders/hold_released",
         "inventory_levels/update",
         "locations/create",
         "locations/update",

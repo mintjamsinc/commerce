@@ -12,7 +12,7 @@
 // /content/public, so the CGI enforces authentication and ACLs; the caller needs
 // write access to /content/commerce (commerce-operators / administrators).
 
-import commerce.NamespaceMigration
+import commerce.migration.NamespaceMigration
 import com.fasterxml.jackson.databind.ObjectMapper
 
 def mapper = new ObjectMapper()

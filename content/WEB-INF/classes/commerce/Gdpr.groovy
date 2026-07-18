@@ -3,6 +3,8 @@ package commerce
 import com.fasterxml.jackson.databind.ObjectMapper
 import javax.jcr.query.Query
 
+import commerce.migration.Migrations
+
 /**
  * GDPR compliance engine (mandatory: the platform stores PII the
  * moment an order is ingested). Handles Shopify's three compliance topics:
@@ -204,7 +206,8 @@ class Gdpr {
             }
         }
 
-        def now = java.time.LocalDate.now(java.time.ZoneId.systemDefault())
+        // Month fold in UTC — the shared storage fold rule (server-timezone independent).
+        def now = java.time.LocalDate.now(java.time.ZoneOffset.UTC)
         def ym = now.format(java.time.format.DateTimeFormatter.ofPattern("yyyy/MM"))
         def name = "request_${sanitize(requestId ?: customerId ?: (email ?: 'unknown'))}_${System.currentTimeMillis()}.json"
         def path = "${REQUESTS_DIR}/${ym}/${name}".toString()

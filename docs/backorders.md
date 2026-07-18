@@ -80,12 +80,14 @@ engine state.
 | `notify.onCreated` | notify operators (one summary per order) when items go on backorder |
 | `notify.onReady` | notify when a backorder has stock and a release task is raised |
 
-Notifications use the shared channels in `notifications.yml`
+Notifications go out under the `backorders` category — the channel set
+configured for it in `notifications.yml`, or the default set when none is
 ([notification-channels.md](notification-channels.md)).
 
 ## Storage & visibility
 
 Records live at `/content/commerce/backorders/{yyyy}/{MM}/backorder_{orderId}_{lineItemId}.json`
+(UTC month folders — the shared storage fold rule)
 ([jcr-structure.md](jcr-structure.md)). The Commerce **Dashboard** Backorders card
 shows lines awaiting stock, ready-to-release count and total units awaited; the
 admin endpoint exposes the book directly:

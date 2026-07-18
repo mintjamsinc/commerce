@@ -1,16 +1,15 @@
 package commerce
 
 import java.time.LocalDate
-import java.time.ZoneId
 
 /**
- * Read-only aggregations for the Commerce dashboard: sales and inventory KPIs.
+ * Read-only aggregations for the Commerce dashboard: inventory and fulfillment KPIs
+ * (the sales-trend figures come from {@link commerce.SalesQuery#occurrenceSummary},
+ * assembled by the dashboard endpoint).
  *
- * Sales figures come from the index-backed sales facts via
- * {@link commerce.SalesQuery} (facet accumulate — uncapped, exact, single
- * source of truth). The lifecycle byStatus breakdown is a facet COUNT over the
- * typed {@code commerce:status} prop of the raw order store (the facts carry
- * the Shopify financial status, not the internal lifecycle status).
+ * The fulfillment backlog is a facet COUNT over the typed {@code commerce:status}
+ * prop of the raw order store (the internal lifecycle status, not the Shopify
+ * financial status).
  *
  * Defensive: a read error on one resource is skipped, never thrown — a dashboard
  * must degrade gracefully rather than fail wholesale.
@@ -46,64 +45,32 @@ class Dashboard {
     }
 
     /**
-     * Sales snapshot over the last {@code days} days by ORDERED_AT (business date):
-     * order count, revenue per currency (native), the base-currency rollup and the
-     * component/metric breakdown — all from the index-backed sales facts
-     * ({@link commerce.SalesQuery#salesRange}, uncapped, exact), with the lifecycle
-     * byStatus breakdown counted over the raw order store's typed props.
-     *
-     * Pass {@code range} when the caller already aggregated the same window (the
-     * dashboard endpoint shares ONE salesRange between this card and the trend
-     * chart) — it saves a full facet pass.
+     * Start-of-day epoch ms of the N-day dashboard window in the given zone (the
+     * viewer's timezone, passed by the endpoint; UTC when the client sent none —
+     * never the server default).
      */
-    static Map salesSummary(session, int days = 30, Map range = null) {
+    static long windowStartMs(int days, zone) {
         int window = Math.max(days, 1)
-        def today = LocalDate.now(ZoneId.systemDefault())
-        long cutoff = windowStartMs(days)
-        long now = System.currentTimeMillis()
-        if (range == null) {
-            def opts = SalesQuery.defaults(SalesQuery.config(session)); opts.daily = false
-            range = SalesQuery.salesRange(session, cutoff, now, opts)
-        }
-        return [
-            from        : today.minusDays(window - 1).toString(),
-            to          : today.toString(),
-            days        : window,
-            orders      : range?.totals?.orders ?: 0L,
-            revenue     : range?.totals?.revenue ?: [],
-            baseRevenue : range?.totals?.baseRevenue ?: 0,
-            baseCurrency: range?.totals?.baseCurrency,
-            metrics     : range?.totals?.metrics ?: [:],
-            byStatus    : statusBreakdown(session, cutoff, now),
-        ]
-    }
-
-    /** Start-of-day epoch ms of the N-day dashboard window (server zone) — shared with the endpoint. */
-    static long windowStartMs(int days) {
-        int window = Math.max(days, 1)
-        return LocalDate.now(ZoneId.systemDefault()).minusDays(window - 1)
-            .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        return LocalDate.now(zone).minusDays(window - 1)
+            .atStartOfDay(zone).toInstant().toEpochMilli()
     }
 
     /**
-     * Lifecycle status counts (commerce:status) over the window — the byStatus widget.
-     * A single index-backed facet COUNT over the raw order store, keyed on the same
-     * ordered_at business date the money aggregates use (no folder walk). NB: this
+     * Fulfillment backlog: orders currently waiting to be picked, packed and shipped
+     * ({@code commerce:status = fulfillment_pending} — the order workflow's "Fulfill
+     * Order" stage). Counted over the WHOLE order store, not a date window: an old
+     * order still waiting is exactly the one the card must not hide. A single
+     * index-backed facet COUNT over the typed status prop (no folder walk). NB: this
      * counts raw NODES — an order that (rarely) has a node in two month folders
-     * (e.g. when a re-file lands right at a month boundary) counts twice here
-     * while the fact-based order count stays deduped; acceptable for a status
-     * widget.
+     * counts twice; acceptable for a backlog widget.
      */
-    private static Map statusBreakdown(session, long fromMs, long toMs) {
-        def stmt = "/jcr:root${ORDERS_RAW}//element(*, nt:file)" +
-                   "[${SalesQuery.rangePredicate('commerce:ordered_at', fromMs, toMs)}]" +
+    static Map fulfillmentSummary(session) {
+        def stmt = "/jcr:root${ORDERS_RAW}//element(*, nt:file)[@commerce:status]" +
                    " facet accumulate ${SalesQuery.countExpr('commerce:status')}".toString()
         def fr = SalesQuery.facets(session, stmt)
-        def byStatus = [:]
-        SalesQuery.groupNumbers(fr, SalesQuery.countDim("commerce:status")).each { label, n ->
-            byStatus[label] = n.longValue()
-        }
-        return byStatus
+        def by = SalesQuery.groupNumbers(fr, SalesQuery.countDim("commerce:status"))
+        long pending = (by["fulfillment_pending"]?.longValue()) ?: 0L
+        return [pending: pending]
     }
 
     // --- Helpers ---------------------------------------------------------------

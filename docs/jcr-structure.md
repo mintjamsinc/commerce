@@ -2,6 +2,19 @@
 
 Runtime paths created dynamically by Camel routes. Not stored in this repository.
 
+**Month/day folder rule (`{yyyy}/{MM}` and daily files): always UTC.** Business
+stores (orders / payments / refunds / sales facts) fold on the entity's own
+business timestamp (order `created_at`, transaction `processed_at`, refund
+`created_at`) converted to UTC — Shopify emits shop-local offsets, which are
+converted, never read as-is (`commerce.Api.utcYearMonth`). Operational stores
+with no business date (webhook idempotency markers, event log, audits, health
+daily metrics) fold on the UTC arrival time. Placement is purely physical:
+every read path resolves by query/typed property, never by walking the date
+folders. The on-screen BUSINESS day rows (sales report / dashboard trend) are
+computed at query time — `range()` facet buckets on the absolute Date props,
+day boundaries in the requesting user's timezone — so no day-string props are
+baked and no server-timezone dependency remains anywhere.
+
 ## Order Storage
 
 ```
@@ -24,6 +37,25 @@ Runtime paths created dynamically by Camel routes. Not stored in this repository
 │           └── refund_{id}.json      # Raw Shopify JSON (refunds/create)
 └── error/                            # Refunds that failed processing
     └── refund_{id}.json              # Moved here on error
+```
+
+## Payment Storage
+
+One node per successful cash-in transaction (`sale`/`capture`, status `success`)
+— the payment (cash-in) axis of the occurrence-date sales report. Written by the
+`order_transactions/create` webhook route and mirrored for historical orders by
+the orders backfill (`commerce.PaymentMirror`). Non-cash-in kinds
+(authorization / void) are never stored, and `kind=refund` is excluded because
+refund cash-out is anchored by the refund store.
+
+```
+/content/commerce/payments/
+├── raw/                              # Successfully received payment transactions
+│   └── {yyyy}/
+│       └── {MM}/
+│           └── transaction_{id}.json # REST transaction body (order_transactions/create shape)
+└── error/                            # Transactions that failed processing
+    └── transaction_{id}.json         # Moved here on error
 ```
 
 ## Node Properties
@@ -91,6 +123,26 @@ Each refund file carries the following JCR properties:
 | `commerce:stackTrace` | String | Stack trace (on failure) |
 | `internal_memo` | String | JSON memo authored by a reviewer in the Refund Review form (`{id,name,at,content}`) |
 
+### Payment properties
+
+Each payment transaction file carries the following JCR properties (stamped by
+the shared prop writer `commerce.PaymentMirror.applyProps`, so the webhook and
+bulk paths can never drift):
+
+| Property | Type | Description |
+|---|---|---|
+| `commerce:transaction_id` | String | Shopify transaction ID (node-name identity) |
+| `commerce:order_id` | String | Shopify order ID the payment belongs to |
+| `commerce:status` | String | Processing status: `received` / `error` |
+| `commerce:kind` | String | Transaction kind (`sale` / `capture`) |
+| `commerce:gateway` | String | Payment gateway (e.g. `shopify_payments`, `gift_card`, `manual`) — kept as a dimension so gateway-level filtering never needs a re-ingest |
+| `commerce:currency` | String | Transaction currency code |
+| `commerce:payment_amount` | Decimal | Cash received, native (presentment) currency |
+| `commerce:payment_amount_base` | Decimal | Cash received in the shop (base) currency. Shopify's own `shop_money` when present (bulk-sourced); native stands in on a single-currency shop; OMITTED for a known cross-currency transaction without `shop_money` (never a fake base) |
+| `commerce:paid_at` | Date | When the money moved (`processed_at`, falling back to `created_at`) — the occurrence-date range axis |
+| `commerce:errorMessage` | String | Error message (on failure) |
+| `commerce:stackTrace` | String | Stack trace (on failure) |
+
 ### Product properties
 
 Each product file (`/content/commerce/products/product_{id}.json`) carries:
@@ -125,7 +177,7 @@ trailing `*` keeps the full, namespaced name).
 > carry the legacy names. Run the one-time migration to bring them in line:
 > `GET …/endpoints/migrate-namespace.groovy` (dry run, reports what would change)
 > then `POST …/endpoints/migrate-namespace.groovy` (applies it). It is idempotent
-> and type-preserving — see `commerce.NamespaceMigration`.
+> and type-preserving — see `commerce.migration.NamespaceMigration`.
 
 ## Configuration
 
@@ -133,8 +185,8 @@ trailing `*` keeps the full, namespaced name).
 /etc/commerce/
 ├── config/
 │   ├── shopify.yml                   # Shopify API settings
-│   ├── notifications.yml             # Notification channels (Slack/Discord/Teams/LINE/webhook/email)
-│   ├── health.yml                    # Integration health monitor alert thresholds
+│   ├── notifications.yml             # Notification destinations: default channel set (Slack/Discord/Teams/LINE/webhook/email) + optional per-category sets
+│   ├── health.yml                    # Integration health monitor alert rules
 │   ├── sla.yml                       # Task SLA escalation rules
 │   ├── inventory-alert.yml           # Inventory alert sweep behaviour
 │   ├── planning.yml                  # Planning defaults (fixed reorder threshold)
@@ -215,7 +267,7 @@ existing records are kept read-only for audit. New replenishment is recorded as
 
 ## Migration Markers
 
-Boot-time one-shot migrations (commerce.Migrations): one marker per applied
+Boot-time one-shot migrations (commerce.migration.Migrations): one marker per applied
 migration — the permanent "already ran" guard + audit record.
 
 ```
@@ -417,7 +469,8 @@ Cooldown state for task SLA escalations. See [task-sla.md](task-sla.md).
 
 The webhook receiver is a backend adapter: it verifies Shopify's HMAC and forwards
 **every** topic to the source-agnostic ingest core (`direct:commerce-ingest`). Topics
-with a dedicated workflow — `orders/paid`, `products/*`, `refunds/create`,
+with a dedicated workflow — `orders/paid`, `orders/updated`,
+`order_transactions/create` (the payment store), `products/*`, `refunds/create`,
 `inventory_levels/update`, `locations/*`, `customers/*` (the customer store) and
 the GDPR compliance topics (`customers/redact`, `customers/data_request`,
 `shop/redact`) — are handled by their routes; every other topic
@@ -443,7 +496,7 @@ HTTP access:
 - `POST /bin/cms.cgi/{workspace}/content/commerce/endpoints/sync.groovy   {"action":"media","op":"add","productId":1,"originalSource":"https://…"}`
 - `GET  /bin/cms.cgi/{workspace}/content/commerce/endpoints/reconcile.groovy`
 - `POST /bin/cms.cgi/{workspace}/content/commerce/endpoints/reconcile.groovy`
-- `GET  /bin/cms.cgi/{workspace}/content/commerce/endpoints/reports.groovy?type=sales&days=30&format=csv`
+- `GET  /bin/cms.cgi/{workspace}/content/commerce/endpoints/reports.groovy?type=occurrence&days=30&format=csv`
 - `GET  /bin/cms.cgi/{workspace}/content/commerce/endpoints/crm.groovy?view=browse`
 - `GET  /bin/cms.cgi/{workspace}/content/commerce/endpoints/crm.groovy?view=customer&customerId=123`
 - `GET  /bin/cms.cgi/{workspace}/content/commerce/endpoints/dashboard.groovy?days=7&salesDays=30`

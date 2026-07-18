@@ -16,7 +16,9 @@ direct:commerce-ingest                       (etc/eip/routes/commerce/ingest.xml
    ├─ logEvent         → event log entry (raw payload, status=received, attempts++)
    ├─ derive shopify_* headers for the bespoke handlers
    ├─ dispatch by topic:
-   │     bespoke  → direct:shopify-order-paid / -product-update / -product-delete
+   │     bespoke  → direct:shopify-order-paid / -order-updated
+   │                / -order-transaction-created                     (payment store)
+   │                / -product-update / -product-delete
    │                / -refund-created / -inventory-level / -location
    │                / -customer-update / -customer-delete            (customer store)
    │                / -customer-redact / -customer-data-request / -shop-redact  (GDPR)
@@ -78,9 +80,9 @@ re-run.
 
 - **Automatic** — the `commerce-replay` timer (every 5 min) re-dispatches events
   whose status is `error`, up to `replay.maxAttempts` passes, after a
-  `replay.backoffMinutes` backoff, then prunes `processed` events older than
-  `replay.retentionDays`. (`etc/eip/routes/commerce/replay.xml` →
-  `replayEvents.groovy`.)
+  `replay.backoffMinutes` backoff. (`etc/eip/routes/commerce/replay.xml` →
+  `replayEvents.groovy`.) Event-log retention/pruning is a separate concern — see
+  [retention.md](retention.md).
 - **Manual** — `POST` to the events endpoint replays a single event
   (`{source,eventId}`) or every event matching a filter
   (`{status,topic,source,from,to}` — `from`/`to` are ISO-8601 instants; defaults to `status:error`).
@@ -113,11 +115,13 @@ Both live outside `/content/public`, so the CGI enforces authentication and ACLs
 
 | Key | Meaning |
 |---|---|
-| `enabled` | master switch for the replay/housekeeping batch (live ingest is always on) |
+| `enabled` | master switch for the replay batch (live ingest is always on) |
 | `replay.enabled` | turn automatic replay on/off |
 | `replay.maxAttempts` | stop retrying an event after this many ingest passes |
 | `replay.backoffMinutes` | minimum wait since the last attempt |
-| `replay.retentionDays` | prune `processed` event-log entries older than this |
+
+Event-log **retention** (how long entries are kept) is configured separately in
+`retention.yml` and applied by the housekeeping batch — see [retention.md](retention.md).
 
 ## Storage
 

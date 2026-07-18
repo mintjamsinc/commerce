@@ -1,4 +1,13 @@
-// Record a refund at the end of refund-review-flow.bpmn.
+// Record a refund in refund-review-flow.bpmn, right after screening and BEFORE
+// the review gate: the occurrence sales report aggregates the props stamped here
+// (commerce:refund_amount_base and friends), and the review rules flag
+// exactly the refunds that matter most to it (fullRefund / highRefundValue — e.g.
+// every full-cancellation refund), so a refund parked at the manual review task
+// must already be report-visible. The review is audit-only and reverses nothing,
+// so there is nothing to record after it. This also keeps the webhook path
+// symmetric with the backfill path (RefundMirror.storeRefund stamps the same
+// props at store time). Idempotent: re-running restamps the same fact values and
+// the order-summary increment is guarded by commerce:order_updated.
 //
 // Two responsibilities:
 //   1. Persist the computed refund facts on the refund resource (amount,
@@ -80,10 +89,9 @@ try {
         if (v instanceof Boolean) refundResource.setProperty(k.toString(), (boolean) v)
         else if (v != null) refundResource.setProperty(k.toString(), (BigDecimal) v)
     }
-    // Cash-out (refunds block) dimensions: the refund day (facet axis) + the parent order's ordered_at
-    // (so the report can flag a refund whose order fell outside the window — crossPeriod).
-    def refundedMs = Api.epochMs(refund.created_at)
-    if (refundedMs != null) refundResource.setProperty("commerce:refunded_day", SalesReconcile.dayOf(refundedMs))
+    // Cash-out (refunds block) dimension: the parent order's ordered_at (so the report can
+    // flag a refund whose order fell outside the window — crossPeriod). The refund's own date
+    // axis is commerce:refunded_at alone (query-time day bucketing).
     def orderedAt = RefundMirror.orderedAtOf(repositorySession, refund.order_id)
     if (orderedAt != null) refundResource.setProperty("commerce:refund_ordered_at", new java.util.Date(orderedAt))
     def rc = recon.reconcile

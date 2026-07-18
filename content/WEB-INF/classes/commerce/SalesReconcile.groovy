@@ -5,8 +5,7 @@ import java.math.BigDecimal
 /**
  * PURE reconciliation guards for the sales facts — the request side (A) and the refund side (A′). No
  * repository / script bindings; pass parsed order / refund bodies (REST maps). This is the reviewable,
- * testable piece: the drainer WARNS on a ring (it must never drop a fact), the report SURFACES the
- * residual as a diagnostic (a report must not 500), and the self-tests THROW.
+ * testable piece: the drainer WARNS on a ring (it must never drop a fact) and keeps writing.
  *
  * A  (request side): the parsed components must reconcile to the amount actually charged —
  *     |gross − discounts + tax + shipping + tips + duties − total_price| within tolerance. This is the
@@ -141,9 +140,4 @@ class SalesReconcile {
         return new BigDecimal(v.toString())
     }
 
-    /** yyyy-MM-dd of an epoch-ms instant in the server zone (matches the order-grain ordered_day format). */
-    static String dayOf(Long ms) {
-        if (ms == null) return null
-        return java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString()
-    }
 }

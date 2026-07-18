@@ -1,5 +1,6 @@
 identifier: e5a3c6f8-7b1d-4e2a-9c04-1f6b8d3e5a7c
 title: Commerce Orders
+category: commerce
 icon: assets/icons/icon.svg
 isAdminOnly: true
 # The order facet browser: a read-only search / drill-down over the mirrored

@@ -266,6 +266,17 @@
 }
 
 /* Live indicator in the nav bar. */
+/* "反映待ち" toolbar badge — sales figures still catching up (async fact drainer backlog). */
+.wt-pending-badge {
+	display: inline-flex; align-items: center; gap: 0.3rem;
+	margin-left: 0.4rem; padding: 0.1rem 0.5rem;
+	font-size: 0.75rem; line-height: 1.6; white-space: nowrap;
+	border: 1px solid var(--warning-color, #d98a00); border-radius: 999px;
+	background: color-mix(in srgb, var(--warning-color, #d98a00) 14%, transparent);
+	color: var(--warning-color, #d98a00); cursor: pointer;
+}
+.wt-pending-badge:hover { background: color-mix(in srgb, var(--warning-color, #d98a00) 24%, transparent); }
+
 .dash-live {
 	display: inline-flex;
 	align-items: center;

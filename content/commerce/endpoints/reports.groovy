@@ -1,25 +1,23 @@
 // Reports & audit export endpoint (admin).
 //
-//   GET ?type=sales&days=30[&format=json|csv]
-//   GET ?type=sales&from=<ISO-8601>&to=<ISO-8601>[&format=json|csv]
-//        — the full sales report from the index-backed sales facts (commerce.SalesQuery,
-//          facet accumulate — uncapped, exact): daily series + native per-currency revenue +
-//          base-currency rollup + the raw component breakdown (gross / discounts /
-//          returns / tax / shipping / tips / duties) and the synthesized metrics
-//          (grossSales / netSales / totalSales) — the operator picks which figure to read.
+//   GET ?type=occurrence&days=30[&tz=<IANA zone>][&format=json|csv]
+//   GET ?type=occurrence&from=<ISO-8601>&to=<ISO-8601>[&tz=<IANA zone>][&format=json|csv]
+//        — the occurrence-date summary from the index-backed sales facts + the refund
+//          and payment stores (commerce.SalesQuery.occurrenceSummary, facet accumulate —
+//          uncapped, exact): new orders (ordered_at) / full cancels (cancelled_at) /
+//          payments (paid_at, cash in) / refunds (refunded_at), each counted on its OWN
+//          event date; confirmedSales = paymentAmount + refundAmount (the payment basis:
+//          cash in minus cash out; refundAmount is NEGATIVE). No population params — the
+//          report counts every event on its date.
 //          `from`/`to` are ISO-8601 instants (the client sends new Date(...).toISOString())
 //          and take precedence over `days`.
-//          Population / axis params (all optional; sales.yml supplies the defaults):
-//            financialStatus=paid,partially_refunded,…  includeCancelled=true|false
-//            returnsBasis=order|refund                  groupBy=product|customer&top=N
-//            compare=1 (period-over-period)
 //   GET ?type=operations[&actor=][&from=<ISO-8601>][&to=<ISO-8601>][&status=ok|failed|dryrun][&format=json|csv]
 //        — the outbound CMS → Shopify write audit trail (commerce.Reports).
 //
 // CSV is offered for spreadsheet export; JSON is the default. Lives OUTSIDE
 // /content/public, so the CGI enforces authentication and ACLs.
 //
-//   GET /bin/cms.cgi/{workspace}/content/commerce/endpoints/reports.groovy?type=sales&days=30&format=csv
+//   GET /bin/cms.cgi/{workspace}/content/commerce/endpoints/reports.groovy?type=occurrence&days=30&format=csv
 
 import commerce.Reports
 import commerce.SalesQuery
@@ -30,18 +28,22 @@ if (request.getMethod() != "GET") {
     return
 }
 
-def type = (request.getParameter("type") ?: "sales").trim().toLowerCase()
+def type = (request.getParameter("type") ?: "occurrence").trim().toLowerCase()
 def format = (request.getParameter("format") ?: "json").trim().toLowerCase()
 int days = paramInt("days", 30, 1, 365)
 
 try {
-    if (type == "sales") {
-        // Explicit date range (operator-picked) wins over the rolling window. from/to arrive as ISO-8601
-        // instants (platform wire convention; the client resolves the datetime-local wall-clock in the
-        // effective timezone). Absent → the rolling `days` window ending now.
+    if (type == "occurrence") {
+        // The occurrence-date summary (new orders / cancellations / refunds, each counted on its OWN
+        // event date). Explicit from/to instants (operator-picked) win over the rolling `days` window.
+        // No population params — this report counts every event on its date. The `tz` param (IANA id,
+        // sent by the client from the user's Preferences timezone) drives the day-bucket boundaries
+        // AND the default-window day arithmetic; absent/invalid falls back to UTC, never the server
+        // default, so the report is server-timezone independent.
         Long fromMs = instantMs("from")
         Long toMs = instantMs("to")
-        def zone = java.time.ZoneId.systemDefault()
+        String tz = blankToNull(request.getParameter("tz"))
+        def zone = SalesQuery.zoneOf(tz)
         long hi, lo
         String label
         if (fromMs != null || toMs != null) {
@@ -51,42 +53,16 @@ try {
             if (lo > hi) { long t = lo; lo = hi; hi = t }
             def fromD = java.time.Instant.ofEpochMilli(lo).atZone(zone).toLocalDate()
             def toD = java.time.Instant.ofEpochMilli(hi).atZone(zone).toLocalDate()
-            label = "sales_${fromD}_${toD}.csv".toString()
+            label = "occurrence_${fromD}_${toD}.csv".toString()
         } else {
             hi = System.currentTimeMillis()
             lo = hi - (long) Math.max(days, 0) * 86_400_000L
-            label = "sales_${days}d.csv".toString()
+            label = "occurrence_${days}d.csv".toString()
         }
 
-        // Operator-chosen population / metric axes (all optional; sales.yml supplies the defaults).
-        // Every sales read is the index-backed facet aggregation over the sales facts (commerce.SalesQuery).
-        def cfg = SalesQuery.config(repositorySession)
-        def overrides = [
-            financialStatus : blankToNull(request.getParameter("financialStatus")),
-            includeCancelled: request.getParameter("includeCancelled"),
-            returnsBasis    : blankToNull(request.getParameter("returnsBasis")),
-        ]
-        String groupBy = blankToNull(request.getParameter("groupBy"))
-        boolean compare = isTrue("compare")
-        int top = paramInt("top", 20, 1, 500)
-
-        def opts = SalesQuery.resolveOpts(cfg, overrides)
-        def report = SalesQuery.salesRange(repositorySession, lo, hi, opts)
-        if (groupBy == "product") report.topProducts = SalesQuery.topProducts(repositorySession, lo, hi, top, opts)
-        if (groupBy == "customer") report.byCustomer = SalesQuery.byCustomer(repositorySession, lo, hi, top, opts)
-        // The current window is already aggregated above — pop() reuses it (one facet pass saved).
-        if (compare) report.pop = SalesQuery.pop(repositorySession, lo, hi, opts, report)
-
+        def report = SalesQuery.occurrenceSummary(repositorySession, lo, hi, tz)
         if (format == "csv") {
-            // The CSV follows the on-screen tab: the sales P/L (order date) or the refund cash-out
-            // (refund date). Each carries its OWN basis in the comment line; taxMode rides the sales CSV
-            // only (the refund list is cash, so a tax mode would only mislead).
-            if (blankToNull(request.getParameter("csvView")) == "refunds") {
-                sendCsv(label.replace("sales_", "refunds_"), refundsCsv(report))
-            } else {
-                String taxMode = (blankToNull(request.getParameter("taxMode")) == "incl") ? "incl" : "excl"
-                sendCsv(label, salesCsv(report, taxMode))
-            }
+            sendCsv(label, occurrenceCsv(report))
         } else {
             sendJson(report)
         }
@@ -129,7 +105,7 @@ try {
 
     response.setStatus(400)
     response.setHeader("Content-Type", "application/json")
-    response.getWriter().write('{"error":"unknown type (use sales|operations)"}')
+    response.getWriter().write('{"error":"unknown type (use occurrence|operations)"}')
 } catch (Exception e) {
     log.error("reports endpoint error: ${e.message}", e)
     response.setStatus(500)
@@ -164,57 +140,23 @@ String csv(v) {
 
 String blankToNull(String s) { (s == null || s.trim().isEmpty()) ? null : s.trim() }
 
-// True when a boolean-ish query param is 1/true/yes.
-boolean isTrue(String name) {
-    def v = request.getParameter(name)
-    if (v == null) return false
-    def s = v.trim().toLowerCase()
-    return s == "1" || s == "true" || s == "yes"
-}
-
-// The sales daily CSV — 1:1 with the on-screen P/L table (the `pl` block, order-date basis): one row per
-// day plus a totals row, the same columns the screen shows. Line 1 is a self-describing comment (period /
-// population / basis / tax mode) so an exported file records the aggregation conditions it was cut under.
-// The tax-exclusive P/L carries `tax` as its own column, so the tax mode only records which headline the
-// operator was reading — the columns are identical either way.
-String salesCsv(Map report, String taxMode) {
+// The occurrence-date CSV — 1:1 with the on-screen 発生日サマリ tab: one row per day plus a totals row.
+// Line 1 records the period and the occurrence-date basis so an exported file is self-describing.
+// paymentAmount is POSITIVE (cash in); refundAmount is NEGATIVE (cash out);
+// confirmedSales = paymentAmount + refundAmount.
+String occurrenceCsv(Map report) {
     def sb = new StringBuilder()
-    def pop = (report.population ?: "").toString().replace("\n", " ").replace("\r", " ")
-    sb.append("# period=${report.from ?: ''}..${report.to ?: ''}; population=${pop}; basis=order; taxMode=${taxMode}\n".toString())
+    sb.append("# period=${report.from ?: ''}..${report.to ?: ''}; basis=occurrence; baseCurrency=${report.baseCurrency ?: ''}\n".toString())
 
-    def plCols = ["grossSales", "discounts", "returns", "netSales", "shipping", "otherIncome", "totalRevenue", "tax", "totalCharged"]
-    sb.append((["date", "orders"] + plCols).join(",")).append("\n")
+    def cols = ["newOrderCount", "newOrderAmount", "cancelledCount", "paymentCount", "paymentAmount", "refundCount", "refundAmount", "confirmedSales"]
+    sb.append((["date"] + cols).join(",")).append("\n")
 
     (report.daily ?: []).each { row ->
-        def pl = row.pl ?: [:]
-        def cells = [row.date, row.orders] + plCols.collect { pl[it] }
+        def cells = [row.date] + cols.collect { row[it] }
         sb.append(cells.collect { csv(it) }.join(",")).append("\n")
     }
-    // Totals row (matches the on-screen totals row).
-    def tpl = report.totals?.pl ?: [:]
-    def totalCells = ["total", report.totals?.orders] + plCols.collect { tpl[it] }
-    sb.append(totalCells.collect { csv(it) }.join(",")).append("\n")
-    return sb.toString()
-}
-
-// The refund cash-out CSV — 1:1 with the on-screen Refunds tab (the `refunds` block, refund-date basis):
-// one row per refund day plus a totals row. Line 1 records period / population / basis=refund (NO taxMode
-// — this is cash, not a P/L). `crossPeriod` rides as its own column: the monthly-close reader needs to
-// know, from the exported file alone, that a day includes a refund for an order outside the window.
-String refundsCsv(Map report) {
-    def sb = new StringBuilder()
-    def pop = (report.population ?: "").toString().replace("\n", " ").replace("\r", " ")
-    sb.append("# period=${report.from ?: ''}..${report.to ?: ''}; population=${pop}; basis=refund\n".toString())
-
-    def cols = ["cashOut", "goods", "tax", "shipping", "restockingFeeIncome"]
-    sb.append((["refundedDay", "refundCount"] + cols + ["crossPeriod"]).join(",")).append("\n")
-
-    (report.refunds?.daily ?: []).each { row ->
-        def cells = [row.refundedDay, row.refundCount] + cols.collect { row[it] } + [row.crossPeriod]
-        sb.append(cells.collect { csv(it) }.join(",")).append("\n")
-    }
-    def t = report.totals?.refunds ?: [:]
-    def totalCells = ["total", t.refundCount] + cols.collect { t[it] } + [""]
+    def t = report.totals ?: [:]
+    def totalCells = ["total"] + cols.collect { t[it] }
     sb.append(totalCells.collect { csv(it) }.join(",")).append("\n")
     return sb.toString()
 }
@@ -228,7 +170,7 @@ int paramInt(String name, int dflt, int lo, int hi) {
 }
 
 // ISO-8601 instant parameter → epoch ms, or null when absent/invalid (used by the
-// sales date range; the client sends new Date(...).toISOString()).
+// occurrence date range; the client sends new Date(...).toISOString()).
 Long instantMs(String name) {
     def v = request.getParameter(name)
     if (v == null || v.trim().isEmpty()) return null

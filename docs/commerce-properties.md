@@ -118,14 +118,14 @@ Core fields: `order-paid.xml` (headers → `commerce:*`, typed via transforms). 
 | `commerce:currency` | String | Native currency (JPY/USD…) | order-paid.xml |
 | `commerce:base_currency` | String | Shop currency of `total_price_base` | order-paid.xml |
 | `commerce:order_number` | **Long** | Human-readable number | order-paid.xml |
-| `commerce:ordered_at` | **Date** | Shopify order `created_at` — the primary date/period index axis for sales aggregation (facet range/timeseries, PoP windows; order-cohort basis). The order's true business date, NOT the paid month the node is foldered under. Survives GDPR redaction. | order-paid.xml, order-updated.xml, `importBulkResult.groovy` |
+| `commerce:ordered_at` | **Date** | Shopify order `created_at` — the primary date/period index axis for sales aggregation (facet range/timeseries, PoP windows; order-cohort basis). The order's true business date; the node is foldered by its UTC month (the shared fold rule), but consumers aggregate on the property, never the path. Survives GDPR redaction. | order-paid.xml, order-updated.xml, `importBulkResult.groovy` |
 | `commerce:status` | String | `received`/`review_pending`/`approved`/`fulfillment_pending`/`fulfilled`/`cancelled`/`error` | order-paid.xml, workflow scripts |
 | `commerce:source_status` | String | Shopify `financial_status`; becomes `partially_refunded`/`refunded` after refunds | order-paid.xml, `recordRefund.groovy` |
 | `commerce:review_decision` | String | Order Review outcome: `approved` / `rejected` | order-review form |
 | `commerce:cancel_reason` | String | Operator's rejection reason (required on reject; sent to Shopify as the staff note) | order-review form |
 | `commerce:cancel_writeback` | String | Shopify Order Cancel outcome: `ok`/`failed`/`skipped` | `cancelOrder.groovy` |
 | `commerce:cancel_error` | String | Cancel write-back error detail | `cancelOrder.groovy` |
-| `commerce:cancelled_at` | **Date** | Cancelled in Shopify (on success) | `cancelOrder.groovy` |
+| `commerce:cancelled_at` | **Date** | Cancelled in Shopify (reject-flow success, or mirrored from `$.cancelled_at` on admin-side cancels; terminal, never cleared) | `cancelOrder.groovy`, order-updated.xml |
 | `commerce:tracking_number` | String | Tracking number entered by fulfiller | `recordFulfillment.groovy` |
 | `commerce:tracking_company` | String | Carrier | `recordFulfillment.groovy` |
 | `commerce:fulfilled_at` | **Date** | Fulfilled timestamp | `recordFulfillment.groovy` |
@@ -133,6 +133,12 @@ Core fields: `order-paid.xml` (headers → `commerce:*`, typed via transforms). 
 | `commerce:fulfillment_writeback_at` | **Date** | WHEN the write-back outcome was recorded (lifecycle rule) | `recordFulfillment.groovy` |
 | `commerce:fulfillment_id` | String | Shopify fulfillment id, numeric (on success; legacy rows may hold the GID) | `recordFulfillment.groovy` |
 | `commerce:fulfillment_error` | String | Write-back error detail (on failure) | `recordFulfillment.groovy` |
+| `commerce:fulfillment_decision` | String | Fulfill Order outcome: `fulfill` / `close` (`close` = cancelled order closed without a Shopify write-back) | order-fulfillment form |
+| `commerce:fulfilled_by` | String | Who completed the fulfillment (audit actor for the write-back) | order-fulfillment form |
+| `commerce:fulfillment_closed_by` | String | Who closed without fulfilling (audit actor for the close branch) | order-fulfillment form |
+| `commerce:fulfillment_hold` | **Boolean** | Fulfillment-hold mirror — true while ANY fulfillment order of this order is on hold | `setFulfillmentHold.groovy` |
+| `commerce:fulfillment_hold_fo_ids` | String(JSON) | Held fulfillment-order ids (numeric strings) backing the derived flag | `setFulfillmentHold.groovy` |
+| `commerce:fulfillment_hold_updated_at` | **Date** | WHEN the hold mirror last changed (lifecycle rule) | `setFulfillmentHold.groovy` |
 | `commerce:refunded_amount` | **Decimal** | Cumulative refunded across all refunds | `recordRefund.groovy` |
 | `commerce:refund_count` | **Long** | Number of refunds against this order | `recordRefund.groovy` |
 | `commerce:gdpr_redacted` | **Boolean** | PII anonymized (GDPR redact idempotency guard) | `commerce.Gdpr` |
@@ -160,6 +166,26 @@ Core: `refund-created.xml`. Amounts: `recordRefund.groovy`.
 | `commerce:gdpr_redacted` / `commerce:redacted_at` | **Boolean** / **Date** | GDPR redaction markers |
 | `internal_memo` | String(JSON) | Reviewer memo from the Refund Review form |
 
+## Payments — `/content/commerce/payments/raw/{yyyy}/{MM}/transaction_{id}.json`
+
+Core: `order-transaction-created.xml`. Derived facts: `recordPayment.groovy` (webhook) /
+`PaymentMirror.storeTransaction` (orders backfill) — both through the shared prop writer
+`PaymentMirror.applyProps`, so the two paths cannot drift. Only successful cash-in
+transactions (`sale`/`capture`, `Payments.isCashIn`) are stored; `kind=refund` never is
+(refund cash-out is anchored by the refund store).
+
+| Property | Type | Meaning |
+|---|---|---|
+| `commerce:transaction_id` | String | Shopify transaction ID (node-name identity) |
+| `commerce:order_id` | String | Order the payment belongs to |
+| `commerce:paid_at` | **Date** | When the money moved (`processed_at` → `created_at` fallback) — the occurrence-date range axis for the report's payment columns |
+| `commerce:status` | String | `received`/`error` |
+| `commerce:kind` | String | `sale`/`capture` |
+| `commerce:gateway` | String | Payment gateway (e.g. `shopify_payments`, `gift_card`, `manual`) — a dimension for later gateway-level filtering |
+| `commerce:payment_amount` | **Decimal** | Cash received (native currency) |
+| `commerce:payment_amount_base` | **Decimal** | Cash received in the SHOP (base) currency: `shop_money` when present, native on a single-currency shop, OMITTED on a known cross-currency txn without `shop_money` (never a fake base) |
+| `commerce:currency` | String | Transaction currency |
+
 ## Sales facts — `/content/commerce/sales/{orders,lines}/index/{yyyy}/{MM}/…`
 
 Derived, index-backed sales facts materialized by the SINGLE cluster-guarded drainer
@@ -171,7 +197,7 @@ decomposition components are OMITTED when `commerce:components_complete` is fals
 order recorded before the fact-writer began persisting the full money decomposition) so a facet SUM
 never counts a fake 0 — only `total_price(_base)` + dimensions survive ("not decomposable"). Writer for all: `commerce.SalesFacts` (single writer). Reader: `commerce.SalesQuery`.
 
-**Order grain** — `/content/commerce/sales/orders/index/{yyyy}/{MM}/order_{id}.json` (foldered by `ordered_at`; one node per order id):
+**Order grain** — `/content/commerce/sales/orders/index/{yyyy}/{MM}/order_{id}.json` (foldered by `ordered_at`'s UTC month; one node per order id):
 
 | Property | Type | Meaning |
 |---|---|---|
@@ -182,7 +208,6 @@ never counts a fake 0 — only `total_price(_base)` + dimensions survive ("not d
 | `commerce:source_status` | String | Shopify `financial_status` — the population axis |
 | `commerce:cancelled` | **Boolean** | Cancelled (population axis) |
 | `commerce:ordered_at` | **Date** | Order `created_at` — the period/range/PoP axis (order-cohort) |
-| `commerce:ordered_day` / `commerce:ordered_month` | String | `yyyy-MM-dd` / `yyyy-MM` (server zone) grouping keys for the timeseries |
 | `commerce:gross`(`_base`) | **Decimal** | Σ line price×qty (native / base). Decomposition; omitted when incomplete |
 | `commerce:discounts`(`_base`) | **Decimal** | Σ line discount_allocations. Decomposition |
 | `commerce:tax`(`_base`) | **Decimal** | Order tax. Decomposition |
@@ -204,7 +229,7 @@ never counts a fake 0 — only `total_price(_base)` + dimensions survive ("not d
 |---|---|---|
 | `commerce:order_id` / `commerce:line_id` | String | Keys |
 | `commerce:product_id` / `commerce:variant_id` / `commerce:sku` | String | Product axes (topProducts groups on real `product_id` — resolves the legacy sku\|title collision) |
-| `commerce:customer_id` / `commerce:currency` / `commerce:source_status` / `commerce:cancelled` / `commerce:ordered_day` | (denorm) | Denormalized order dimensions |
+| `commerce:customer_id` / `commerce:currency` / `commerce:source_status` / `commerce:cancelled` | (denorm) | Denormalized order dimensions |
 | `commerce:ordered_at` | **Date** | Denormalized order date (range axis) |
 | `commerce:quantity` / `commerce:returned_quantity` | **Long** | Ordered / returned units (returned counted even for restock-only / zero-money refunds) |
 | `commerce:gross`(`_base`) / `commerce:discounts`(`_base`) / `commerce:tax`(`_base`) / `commerce:returns`(`_base`) | **Decimal** | Line components. Omitted when the order is incomplete |

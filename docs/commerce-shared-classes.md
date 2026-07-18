@@ -61,6 +61,7 @@ as millisecond-precision UTC ISO-8601 (`Api.now()` — never
 | Method | Purpose |
 |---|---|
 | `String now()` / `String instant(v)` / `Long epochMs(v)` / `Date date(v)` | The wire timestamp format (`yyyy-MM-dd'T'HH:mm:ss.SSS'Z'`) — or a `java.util.Date` for typed JCR Date properties — from any Calendar/Date/Number/ISO input. |
+| `List utcYearMonth(v)` | `["yyyy", "MM"]` of a timestamp in UTC — THE folder rule for every month-nested store (raw mirrors, sales-fact index, markers, audits). Embedded offsets convert to UTC; absent/unparseable falls back to now. |
 | `Number num(v[, dflt])` / `Long count(v)` | Clean JSON numbers (strips `.0` — zero-decimal-currency safe). |
 | `Map money(currency, amount)` / `List moneyList(map)` | The wire money shapes. |
 | `String gid(type, id)` / `String legacyId(id)` | GID canonicalization (idempotent, token passthrough) / numeric peel (INTERNAL ONLY). The only place `gid://` strings are built. |
@@ -113,6 +114,19 @@ Interpret a parsed Shopify refund payload. Pure.
 | `String currency(refund)` | Upper-cased transaction currency, or null. |
 | `boolean isRestocked(lineItem)` | False when `restock_type` is `no_restock`/`none`/absent. |
 
+### `commerce.Payments`
+Interpret a parsed Shopify order transaction (payment) payload. Pure. The
+cash-in judgment is the ONE definition both the webhook route and the bulk
+import gate on.
+
+| Method | Purpose |
+|---|---|
+| `boolean isCashIn(txn)` | True for a successful `sale`/`capture` (money actually received); `authorization`/`void`/`refund` and failures are not payments. |
+| `BigDecimal amount(txn)` | Native cash amount, or null. |
+| `BigDecimal amountBase(txn, shopCurrency)` | Base amount: `amount_set.shop_money` when present, native on a currency match / unknown currency (single-currency shop), null on a KNOWN cross-currency without shop_money (never a fake base). |
+| `String currency(txn)` | Upper-cased transaction currency, or null. |
+| `Long paidAtMs(txn)` | `processed_at` falling back to `created_at`, epoch ms. |
+
 ### `commerce.Orders`
 Locate and read the original order. `findResource` needs the session.
 
@@ -123,19 +137,25 @@ Locate and read the original order. `findResource` needs the session.
 
 ### `commerce.Notifications`
 Pluggable, multi-channel notification dispatch. A caller builds **one**
-channel-agnostic `NotificationMessage` and hands it here with the parsed
-`/etc/commerce/config/notifications.yml`. Dispatch walks the channel registry and,
-for every section that is present and enabled, lets the matching channel render +
-deliver. Adding a channel is additive (subclass `NotificationChannel`, add it to
-`registry()`) — the dispatch signature and every caller stay unchanged.
-Defensive: each channel runs in its own try/catch and failures are only logged.
+channel-agnostic `NotificationMessage`, declares its notification **category**
+(a `CAT_*` constant), and hands both here with the parsed
+`/etc/commerce/config/notifications.yml`. Dispatch first picks the channel set —
+the category's own set when one is defined under `categories`, otherwise the
+`default` set (never merged) — then walks the channel registry and, for every
+section that is present and enabled in that set, lets the matching channel
+render + deliver. Adding a channel is additive (subclass `NotificationChannel`,
+add it to `registry()`) — the dispatch signature and every caller stay
+unchanged. Defensive: each channel runs in its own try/catch and failures are
+only logged.
 
 | Method | Purpose |
 |---|---|
+| `CAT_INVENTORY` … `CAT_OPERATIONS`, `CATEGORIES` | The fixed category vocabulary (inventory / orders / refunds / fulfillment / backorders / compliance / operations). |
 | `List<NotificationChannel> registry()` | The known channels (Slack, Discord, Teams, LINE, webhook, email), fresh per call. |
 | `boolean isEnabled(channel)` | A channel section is on unless `enabled: false`. |
 | `String taskVar(task, String name)` | Safely read a DelegateTask variable as String, or null. |
-| `void dispatch(log, String source, config, NotificationMessage message)` | Render + deliver to each enabled/configured channel. `source` is the calling script name (log prefix). |
+| `Map channelSet(config, String category, log, source)` | The channel set used for a category: `categories.<category>` if present, else `default`; unknown category → default + warn. |
+| `void dispatch(log, String source, config, NotificationMessage message, String category)` | Render + deliver to each enabled/configured channel of the category's set. `source` is the calling script name (log prefix). |
 
 ### `commerce.NotificationMessage`
 Channel-agnostic message model + builder. Separates **what** a workflow says from
@@ -289,35 +309,38 @@ row. Pure. Used with `BulkJobs` by the broker.
 | `List<String> domainsForType(String type)` | The domains a type touches; `[]` (wildcard) for an unknown/mis-typed type. |
 
 ### `commerce.Health`
-Integration health monitor: records operational metrics to JCR and raises alerts
-(through {@link commerce.Notifications}) when a threshold in `health.yml` is
-breached. Best-effort — a recording failure is swallowed, never thrown. See
-[health-monitor.md](health-monitor.md).
+Integration health monitor: records operational metrics to JCR and raises
+event-driven alerts (through {@link commerce.Notifications}) per the rules in
+`health.yml` — one HMAC failure alerts (debounced by the rule's cooldown), and
+every Admin API / route processing error is notified individually with its
+error detail. Best-effort — a recording failure is swallowed, never thrown.
+See [health-monitor.md](health-monitor.md).
 
 | Method | Purpose |
 |---|---|
-| `void count(session, log, group, metric, by = 1)` | Increment a counter (e.g. `webhook`.`hmac_failure`) and evaluate its alert rule. |
-| `void outcome(session, log, group, name, ok, latencyMs = null)` | Record success/error (+ latency) for a bucket (e.g. `route`.`orders/paid`) and evaluate. |
-| `Object timeApi(session, log, label, Closure call)` | Time a call, record its `api` outcome+latency, return its result; the original exception propagates. Call only when `session` has no uncommitted business changes. |
+| `void count(session, log, group, metric, by = 1)` | Increment a counter (e.g. `webhook`.`hmac_failure`); an HMAC failure alerts immediately (cooldown-debounced). |
+| `void outcome(session, log, group, name, ok, latencyMs = null, error = null)` | Record success/error (+ latency) for a bucket (e.g. `route`.`orders/paid`); an error outcome is notified with `error` as the detail. |
+| `Object timeApi(session, log, label, Closure call)` | Time a call, record its `api` outcome+latency, return its result; the original exception propagates and its message becomes the notification's error detail. Call only when `session` has no uncommitted business changes. |
 | `Map snapshot(session, days = 7)` | Aggregate the last N days into a snapshot with per-bucket `error_rate` / `latency_avg`. |
 
 ### `commerce.Dashboard`
-Read-only sales and inventory aggregations for the Commerce dashboard. Sales money
-figures come from the sales facts (`commerce.SalesQuery`, uncapped); the lifecycle
-byStatus breakdown is a facet COUNT over the raw order store's typed props (no folder
-walk). Defensive — a read error is skipped, not thrown. See
-[commerce-dashboard.md](commerce-dashboard.md).
+Read-only inventory and fulfillment aggregations for the Commerce dashboard (the
+sales-trend figures come from `SalesQuery.occurrenceSummary`, assembled by the
+dashboard endpoint). The fulfillment backlog is a facet COUNT over the raw order
+store's typed `commerce:status` prop (no folder walk). Defensive — a read error
+is skipped, not thrown. See [commerce-dashboard.md](commerce-dashboard.md).
 
 | Method | Purpose |
 |---|---|
 | `Map inventorySummary(session)` | Total products + breakdown by `commerce:status` (+ a low-stock count = products in `review_pending`). |
-| `Map salesSummary(session, days = 30)` | Orders / native revenue / base rollup / metrics over the last N days by `ordered_at` (SalesQuery.salesRange) + the lifecycle byStatus facet count. |
+| `Map fulfillmentSummary(session)` | Orders currently in `fulfillment_pending` (whole book — an old order still waiting must not be hidden by a window). |
+| `long windowStartMs(days, zone)` | Start-of-day epoch ms of the N-day dashboard window in the viewer's timezone (UTC when the client sent none; shared with the endpoint's trend query). |
 
 ### Sales facts (`commerce.Sales` / `SalesFacts` / `SalesQuery` / `SalesFactBackfill` / `RefundMirror`)
 
 The sales re-implementation. Raw components are stored as
-typed, index-backed facts and every metric is composed at READ TIME by server-side `facet accumulate` — no
-pre-selected "sales" number (operator sovereignty). A single cluster-guarded drainer is the only fact
+typed, index-backed facts and every metric is composed at READ TIME by server-side `facet accumulate`. A
+single cluster-guarded drainer is the only fact
 writer; all other paths (including the backfill chain) only ENQUEUE. See `docs/commerce-properties.md`
 (Sales facts) and `docs/clustering.md` (the guarded tasks).
 
@@ -337,17 +360,17 @@ inventory-total materialize). Defensive JCR; `pickBody` is pure.
 
 **`commerce.SalesQuery`** — the index-backed READER: composes metrics from the facts via
 `facet accumulate`, delegating the SUM to the platform (single pass, no 5000 cap). Defensive (degrades to
-zeros). The dimension-text helpers (`sumDim`/`statsDim`/`pctDim`…) are the one place the facet dimension
+zeros). The dimension-text helpers (`sumDim`/`countDim`…) are the one place the facet dimension
 strings are formed (prop name == dimension text).
 
 | Method | Purpose |
 |---|---|
-| `Map config(session)` / `Map defaults(cfg)` / `Map resolveOpts(cfg, overrides)` | sales.yml — the population/returns-basis defaults, merged with per-request overrides. |
-| `Map salesRange(session, fromMs, toMs, opts)` | Full report: component sums (base) + native by currency + net/total synthesis + daily timeseries + stats/percentiles. `daily:false` opt skips the timeseries. |
-| `List topProducts(...)` / `List byCustomer(...)` | Top-N by base gross (real product_id) / by base total (customer_id). |
+| `Map config(session)` / `Map defaults(cfg)` | Built-in population defaults for the browse-sort axes (financialStatus=all, cancelled excluded). `config` reads an OPTIONAL override file if present (sales.yml retired). |
+| `Map occurrenceSummary(session, fromMs, toMs, tz = null)` | Occurrence-date summary: new orders (`ordered_at`) / full cancels (`cancelled_at`) / payments (`paid_at`) / refunds (`refunded_at`), each on its own event date. Day rows are query-time `range()` buckets on the Date props, boundaries in the caller's IANA `tz` (UTC when absent — never the server default); `confirmedSales = paymentAmount + refundAmount` (the payment basis; refundAmount NEGATIVE). Backs the reports endpoint and the dashboard trend hero. |
+| `ZoneId zoneOf(tz)` / `List dayBuckets(fromMs, toMs, zone)` / `String rangeExprs(prop, buckets)` | The query-time day axis: IANA id → zone (UTC fallback), the per-local-day `[label, lo, hi]` buckets (capped at `MAX_DAY_BUCKETS`), and their `range()` facet declarations. |
+| `List topProducts(...)` | Top-N products by base gross (real product_id axis). |
 | `Map salesByProduct(session, fromMs, toMs, opts)` | product_id → { quantity, gross, discounts, returns, net } in ONE grouped pass (line grain) — backs the product browse's sales sorts. |
 | `Map spendByCustomer(session, fromMs, toMs, opts)` | customer_id → { orders, totalPrice, gross, discounts, returns, net } in ONE grouped pass (order grain) — backs the CRM spend sort + min-spend period filter. |
-| `Map pop(session, fromMs, toMs, opts)` | Period-over-period (current vs preceding equal window). |
 | `String populationPredicate(opts)` | financialStatus / includeCancelled → XPath predicate. |
 | `String baseCurrencyOf(session, fromMs, toMs, opts)` | The window's base currency (first order fact; best-effort). |
 
@@ -373,6 +396,24 @@ reset). No review-flow / no order-summary mutation / idempotent.
 | `Object findRefundResource(session, refundId)` | Name-based existence query across the month-nested refund store. |
 | `void storeRefund(session, rest, existing)` | Stage one refund body + the webhook-parity typed props (caller commits). |
 
+**`commerce.PaymentMirror`** — the payment (order transaction) MIRROR writer for the payment raw store
+(`/content/commerce/payments/raw`), used by BOTH ingest paths: the `order_transactions/create` webhook
+route (`recordPayment.groovy` applies `applyProps` to the route-stored node) and the orders backfill
+import (`importBulkResult.groovy` mirrors the transactions that rode the export — `Order.transactions`
+is a plain LIST field, so unlike the refund detail it needs NO per-order foreground fetch).
+`toRestTransaction` (PURE) maps a GraphQL OrderTransaction node to the REST transaction body; only
+successful cash-in transactions (`commerce.Payments.isCashIn`) are stored, one node per transaction,
+keyed by `paid_at` — the occurrence report's payment axis. Already-mirrored transactions are
+skipped (a webhook-delivered node's lifecycle is never reset). Idempotent.
+
+| Method | Purpose |
+|---|---|
+| `Map toRestTransaction(gqlTxnNode, orderId)` | PURE GraphQL→REST transaction body mapper. |
+| `Object findTransactionResource(session, transactionId)` | Name-based existence query across the month-nested payment store. |
+| `void storeTransaction(session, rest, existing, shopCurrency)` | Stage one transaction body + typed props (caller commits). |
+| `boolean applyProps(res, rest, shopCurrency)` | The SHARED typed-prop writer (amounts, base decision, paid_at); false = base unavailable. |
+| `String shopCurrencyOf(session, orderId)` | The parent order's shop (base) currency from its mirror body, or null. |
+
 ### `commerce.TaskSla`
 Task SLA evaluation: decides when an open human task has breached a rule
 (`overdue` / `unclaimed` / `open`, per `sla.yml`) and should be escalated. Pure
@@ -389,12 +430,15 @@ task+rule via {@link commerce.Alerts}. See [task-sla.md](task-sla.md).
 ### `commerce.Alerts`
 Shared alert dispatch with per-key cooldown, used by the operational monitors
 (health, task SLA). Centralises the debounce and delivery through
-{@link commerce.Notifications}; the cooldown is armed before sending so a delivery
+{@link commerce.Notifications} (under the `operations` category; the config is
+read with `api.util.YAML` since the channel sets nest below SimpleYaml's
+two-level structure); the cooldown is armed before sending so a delivery
 failure cannot cause a storm. Defensive — never throws.
 
 | Method | Purpose |
 |---|---|
 | `boolean fire(session, log, statePath, key, cooldownMs, message)` | Send an alert for `key` unless it fired within `cooldownMs`; returns whether it was sent. |
+| `boolean send(session, log, message)` | Send an alert immediately, no cooldown — for monitors that notify on every occurrence. |
 | `void pruneState(session, log, statePath, Closure keep)` | Drop cooldown entries whose key fails `keep(key)`. |
 
 ### `commerce.Jcr`
@@ -404,15 +448,19 @@ file with mkdir-p, parse/serialize), shared by the operational features.
 | Method | Purpose |
 |---|---|
 | `getOrCreateFile(session, path)` | Resolve/create a file and its parent folders. |
+| `void commitJson(session, path, doc)` | Upsert a small JSON doc + commit, retrying the transient races of a hot marker path (lost same-path create race, row-lock wait against a concurrent removal); rethrows the last failure. |
 | `Map readMap(session, path)` / `safeGet(session, path)` | Read+parse a JSON doc to a Map (empty if absent) / resolve a resource or null. |
 | `String toJson(value)` / `Map parseMap(json)` | Serialize / parse JSON. |
 
 ### `commerce.SimpleYaml`
 Dependency-free reader for the controlled two-level config files (top-level
-scalars + one nested level), the server-side counterpart of the Webtop app's
-`parseSimpleYaml`. Lets classes under WEB-INF/classes read config without the
-script `YAML` binding. Coercion: true/false → Boolean, integers → Long, decimals
-→ Double, quoted strings unquoted.
+scalars + one nested level, e.g. planning.yml, health.yml), the server-side
+counterpart of the Webtop app's `parseSimpleYaml`. Lets classes under
+WEB-INF/classes read config without the script `YAML` binding. Coercion:
+true/false → Boolean, integers → Long, decimals → Double, quoted strings
+unquoted. For files nested deeper than two levels (notifications.yml with its
+per-category channel sets), use `api.util.YAML.parse` instead — the full
+snakeyaml-engine parser that also backs the script `YAML` binding.
 
 | Method | Purpose |
 |---|---|
@@ -556,7 +604,7 @@ status-update failure never breaks the workflow). See
 | `Object pathVariable(context, task, execution, String name)` | Resolve a path variable: `inputs` attribute → task var → execution var. |
 | `void write(session, log, String source, String path, String status, String elementId = null)` | Set `commerce:status`, commit; logs `<source>: <path> commerce:status -> <status>[ (element <id>)]`. Errors are rolled back, logged, swallowed. |
 
-### `commerce.NamespaceMigration`
+### `commerce.migration.NamespaceMigration`
 One-time data migration that renames legacy, non-namespaced commerce metadata
 (`product_id`, `title`, `status`, …) on the mirrored product / order / refund nodes
 to the canonical `commerce:` namespace. Needed for data ingested before the Shopify

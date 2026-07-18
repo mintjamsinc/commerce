@@ -21,6 +21,7 @@
       escalations are debounced per task in commerce.TaskSla.
     -->
     <route id="commerce-task-sla" routeConfigurationId="commerce-task-sla-error-handler">
+        <routeProperty key="mi:history" value="failure"/>
         <from uri="timer:commerce-task-sla?period=900000&amp;delay=120000"/>
 
         <setHeader name="runAs">

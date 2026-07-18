@@ -1,4 +1,7 @@
-package commerce
+package commerce.migration
+
+import commerce.Api
+import commerce.Jcr
 
 /**
  * Boot-time one-shot migration framework.
@@ -27,7 +30,7 @@ package commerce
  * Individual migrations live in their own classes (CustomersMigration, …); this
  * class owns the ordered registry and the marker bookkeeping only.
  *
- * Lives under /content/WEB-INF/classes; use via {@code import commerce.Migrations}.
+ * Lives under /content/WEB-INF/classes; use via {@code import commerce.migration.Migrations}.
  */
 class Migrations {
 
@@ -52,6 +55,13 @@ class Migrations {
             [id: "m010-refund-recon-prop", run: { s, l -> RefundReconMigration.run(s, l) }],
             [id: "m011-restocking-fee",   run: { s, l -> RestockingFeeMigration.run(s, l) }],
             [id: "m012-refund-cashout",   run: { s, l -> RefundCashOutMigration.run(s, l) }],
+            // Re-run of m007/m002 under new ids: the ingest routes used to pass the
+            // MIME type as a %2B-encoded URI parameter, which Camel double-decodes
+            // into a space ("...order json"). Nodes ingested after the original
+            // migrations ran carry that corrupted type; the runs are idempotent and
+            // restamp anything that differs from the canonical "+json" type.
+            [id: "m013-order-mimetype-restamp",   run: { s, l -> OrderMimeTypeMigration.run(s, l) }],
+            [id: "m014-product-mimetype-restamp", run: { s, l -> ProductMimeTypeMigration.run(s, l) }],
         ]
     }
 

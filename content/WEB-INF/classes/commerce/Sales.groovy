@@ -130,14 +130,18 @@ class Sales {
         // ---- dimensions (shared by order + line grain) --------------------------
         def orderId = Api.legacyId(order.id)
         Long orderedAtMs = Api.epochMs(order.created_at)
-        def day = dayOf(orderedAtMs)
-        def month = monthOf(orderedAtMs)
         def customerId = Api.legacyId(order.customer?.id)
         def currency = str(order.currency)
         def baseCurrency = str(order.total_price_set?.shop_money?.currency_code)
         def sourceStatus = str(order.financial_status)
         // str() treats blank as null, so a "" cancelled_at is not mis-read as cancelled.
         Boolean cancelled = (str(order.cancelled_at) != null)
+        // Cancellation OCCURRENCE-date instant (order-level, full-cancel only — Shopify sets
+        // cancelled_at only on a full cancel). The occurrence-date sales report buckets
+        // cancellations on this Date prop at query time (its own date axis, distinct from
+        // ordered_at — an order placed one month and cancelled the next counts in the cancel
+        // month), and the order browser drills into them via the node's commerce:cancelled_at.
+        Long cancelledAtMs = cancelled ? Api.epochMs(order.cancelled_at) : null
 
         // ---- order-grain props --------------------------------------------------
         def op = new LinkedHashMap()
@@ -148,8 +152,6 @@ class Sales {
         putIf(op, 'commerce:base_currency', baseCurrency)
         putIf(op, 'commerce:source_status', sourceStatus)
         op['commerce:cancelled'] = cancelled
-        putIf(op, 'commerce:ordered_day', day)
-        putIf(op, 'commerce:ordered_month', month)
         // Money components (always present, ZERO when absent, so facet SUM stays additive; the drainer
         // nulls the decomposed components when components_complete=false — "not decomposable").
         op['commerce:gross'] = grossN;             op['commerce:gross_base'] = grossB
@@ -169,6 +171,7 @@ class Sales {
 
         def odp = new LinkedHashMap()
         if (orderedAtMs != null) odp['commerce:ordered_at'] = orderedAtMs
+        if (cancelledAtMs != null) odp['commerce:cancelled_at'] = cancelledAtMs
 
         // ---- line-grain facts ---------------------------------------------------
         def lines = []
@@ -200,7 +203,6 @@ class Sales {
             putIf(lp, 'commerce:currency', currency)
             putIf(lp, 'commerce:source_status', sourceStatus)
             lp['commerce:cancelled'] = cancelled
-            putIf(lp, 'commerce:ordered_day', day)
             lp['commerce:quantity'] = (Money.toNumber(li?.quantity) ?: BigDecimal.ZERO).toBigInteger().longValue()
             lp['commerce:gross'] = lgN;        lp['commerce:gross_base'] = lgB
             lp['commerce:discounts'] = ldN;    lp['commerce:discounts_base'] = ldB
@@ -334,21 +336,4 @@ class Sales {
         if (v != null) m.put(k, v)
     }
 
-    /** 'yyyy-MM-dd' of an epoch-ms instant in the SERVER zone (ZoneId.systemDefault()) — the SAME day
-     *  basis the rest of the server uses (Dashboard / Health / Events all bucket on systemDefault),
-     *  so the sales day/month buckets agree with them and with the shop's operating day rather than
-     *  splitting on a different zone. The instant itself (commerce:ordered_at) stays absolute for
-     *  range filtering. Null when absent. */
-    private static String dayOf(Long ms) {
-        if (ms == null) return null
-        return java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault())
-            .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd"))
-    }
-
-    /** 'yyyy-MM' of an epoch-ms instant in the server zone (month grouping key). Null when absent. */
-    private static String monthOf(Long ms) {
-        if (ms == null) return null
-        return java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault())
-            .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM"))
-    }
 }

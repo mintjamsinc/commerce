@@ -29,8 +29,12 @@ Groovy endpoint ──→ order-paid route ──→ JCR (store + normalize)
                                           ▼
                                   Fulfill Order task → notify
                                           │  operator records tracking, marks fulfilled
-                                          ▼
-                          Create Fulfillment (Shopify write-back, gated) → fulfilled
+                                          │  (order cancelled in Shopify? → close instead)
+                              ┌───────────┴─────────────┐
+                              │ fulfill                 │ close
+                              ▼                         ▼
+          Create Fulfillment (Shopify         cancelled (no Shopify
+          write-back, gated) → fulfilled      write-back)
 ```
 
 ## Stage 1 — Screening
@@ -93,6 +97,39 @@ is raised for the warehouse and announced to every enabled notification channel
      Shopify. When the Admin API is not yet configured, the write-back is `skipped`
      and the fulfillment is CMS-side only.
 
+### Shopify-side state on the Fulfill Order form
+
+The form header mirrors the order's Shopify-side state as badges — **Cancelled**,
+**Refunded** / **Partially refunded**, **Fulfillment not required**, **Archived**,
+**On hold** — read from the order mirror (refreshed on every `orders/updated`
+delivery) and from the fulfillment-hold flag (`commerce:fulfillment_hold`,
+mirrored by the `fulfillment_orders/placed_on_hold` / `hold_released` webhooks).
+The badges change what the assignee can do:
+
+- **On hold**: the *Mark as fulfilled* button is withheld (a notice explains why)
+  until the hold is released in Shopify.
+- **Cancelled**: the action becomes **Close without fulfilling**. Completing it
+  records `commerce:fulfillment_decision = close`, and the flow's gateway then
+  **bypasses** the Create Fulfillment write-back and ends the workflow with
+  `commerce:status = cancelled`.
+
+## Cancellation while the workflow is running
+
+A Shopify-side cancellation (admin cancel, or our own reject-flow cancel echoing
+back) arrives via `orders/updated` with `cancelled_at` set. The route's reconcile
+step (`reconcileOrderCancellation.groovy`) then:
+
+- **cancels the order's open backorders** (a cancel without a refund would
+  otherwise leave them waiting on stock forever), and
+- **terminates the running `order-review-flow` instance** when its open user
+  task(s) are all **unassigned**, marking the order `cancelled` — nobody has
+  picked the work up, so there is nothing to hand back;
+- **leaves the instance running when a task is assigned**: the operator sees the
+  cancelled badge on the form and confirms the close themselves (see above).
+
+This is the one deliberate exception to the `orders/updated` mirror-only rule,
+and it only ever *closes* the lifecycle, never advances it.
+
 ## Configuration
 
 1. **Order screening rules** — edit `/etc/commerce/config/order-review.yml`
@@ -104,14 +141,23 @@ is raised for the warehouse and announced to every enabled notification channel
    By default the write-back does **not** ask Shopify to email the customer;
    set `adminApi.notifyCustomer: true` to opt into Shopify's shipping-notification
    email.
-3. **Notifications** — both order tasks post to the same destinations as the
-   inventory alert tool: every enabled channel in the shared registry (Slack,
-   Discord, Teams, LINE, generic webhook, email). Configure them in the Webtop
-   **Commerce** app under *Notifications*, or directly in
-   `/etc/commerce/config/notifications.yml`. All channels ship disabled, so
-   enable at least one to receive notices (tasks are still raised either way).
-4. **Shopify webhook** — ensure the `orders/paid` topic points at the webhook
-   endpoint.
+3. **Notifications** — the review task notifies under the `orders` category and
+   the fulfillment task under `fulfillment`: each goes to every enabled channel
+   of the channel set configured for its category (or of the default set when
+   the category has none) — Slack, Discord, Teams, LINE, generic webhook, email.
+   Configure them in the Webtop **Commerce** app under *Notifications*, or
+   directly in `/etc/commerce/config/notifications.yml`. All channels ship
+   disabled, so enable at least one to receive notices (tasks are still raised
+   either way).
+4. **Shopify webhooks** — ensure the `orders/paid` and `orders/updated` topics
+   point at the webhook endpoint. For the hold badge / gating, also subscribe
+   `fulfillment_orders/placed_on_hold` and `fulfillment_orders/hold_released`
+   (the Settings one-click sync registers all of them; these two additionally
+   require a fulfillment-order read scope such as
+   `read_merchant_managed_fulfillment_orders`). The hold topics deliver a slim
+   payload without the parent order id, so mirroring the hold also requires the
+   **Admin API** to be configured (the handler resolves the parent order via
+   GraphQL); without it, hold events are logged and skipped.
 
 ## Status
 
@@ -127,6 +173,7 @@ The order moves along the integration processing lifecycle
 | `approved` | Review cleared (auto or manual); queued for fulfillment. |
 | `fulfillment_pending` | A Fulfill Order task is open. |
 | `fulfilled` | Order fulfilled; tracking recorded (and written back to Shopify when enabled). Terminal. |
+| `cancelled` | Workflow ended without fulfillment: review reject, close-without-fulfilling, or auto-termination after a Shopify-side cancel. Terminal. |
 | `error` | Processing failed; see `commerce:errorMessage` / `commerce:stackTrace`. |
 
 ## Files
@@ -138,7 +185,10 @@ The order moves along the integration processing lifecycle
 | Screening rules | `etc/commerce/config/order-review.yml` |
 | Screening script | `etc/commerce/scripts/shopify/screenOrder.groovy` |
 | Status updates | `etc/commerce/scripts/shopify/setOrderWorkflowStatus.groovy` |
+| Fulfillment decision (fulfill / close) | `etc/commerce/scripts/shopify/readFulfillmentDecision.groovy` |
 | Fulfillment write-back | `etc/commerce/scripts/shopify/recordFulfillment.groovy` |
+| Cancellation reconcile (auto-terminate) | `etc/commerce/scripts/shopify/reconcileOrderCancellation.groovy` |
+| Fulfillment-hold mirror | `etc/eip/routes/commerce/shopify/fulfillment-hold.xml`, `etc/commerce/scripts/shopify/setFulfillmentHold.groovy` |
 | Review notification | `etc/commerce/scripts/shopify/notifyOrderTaskCreated.groovy` |
 | Fulfillment notification | `etc/commerce/scripts/shopify/notifyFulfillmentTaskCreated.groovy` |
 | Order Review form | `content/commerce/forms/shopify/order-review.html` |

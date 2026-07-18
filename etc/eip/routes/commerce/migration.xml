@@ -18,7 +18,7 @@
       Boot-time one-shot migrations. Fires ONCE per
       boot (repeatCount=1), two minutes after the routes come up so the repository
       and cluster services are warm, and runs the ordered migration registry
-      (commerce.Migrations) as the service user. Each migration is additionally
+      (commerce.migration.Migrations) as the service user. Each migration is additionally
       guarded by a permanent JCR marker (/content/commerce/migrations/{id}.json),
       so a redeploy re-fires this timer but applied migrations are skipped; a
       cluster.tryLock in the script keeps it to one node.

@@ -36,7 +36,9 @@ separate paths.
      moment stock crosses below the threshold — the **fixed reorder point** —
      (ok → low). While it stays below
      (low → low), it does not re-file. After recovery (low → ok), it can fire again.
-5. When the task is created, a notification is sent to every enabled channel.
+5. When the task is created, a notification is sent to the configured
+   notification channels (the `inventory` category's channel set, or the default
+   set — see 2-3).
 6. The person in charge opens the task in Webtop's **Tasks** app to review and respond.
 
 **Backstop (nothing missed)**
@@ -110,8 +112,11 @@ Edit `etc/commerce/config/notifications.yml` (**a separate file from the Shopify
 credentials**). The supported channels are **Slack / Discord / Teams / LINE /
 Email / generic webhook** (6 total). **All are disabled (`enabled: false`) out of
 the box**, so enable the channels you want and set their destinations (Incoming
-Webhook URL / token / SMTP, etc.) — at least one. A single task-created event is
-delivered to every enabled channel.
+Webhook URL / token / SMTP, etc.) — at least one. Inventory-alert tasks notify
+under the `inventory` category: a single task-created event is delivered to
+every enabled channel of the `default` set, or — to separate stock alerts from
+other notices — of a dedicated set configured for `inventory` under
+`categories:` (see [notification-channels.md](notification-channels.md)).
 
 ### 2-4. Threshold Policy (optional)
 - The threshold is a **fixed per-variant reorder point** — a stock count the

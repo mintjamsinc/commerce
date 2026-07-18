@@ -12,6 +12,7 @@
 //                        "unhandled" | "dispatch_error")  -> increments a counter
 //   health_name        : outcome bucket (e.g. a webhook topic) -> records success/error
 //   health_ok          : "true"/"false" outcome flag (for health_name)
+//   health_error       : error detail for a failed outcome (notified per error)
 //   health_latency_ms  : explicit latency in ms (for health_name)
 //   received_at        : ISO instant set by the webhook endpoint; when present and
 //                        health_latency_ms is absent, latency = now - received_at
@@ -56,7 +57,8 @@ try {
             }
         }
 
-        Health.outcome(repositorySession, log, group, name, ok, latencyMs)
+        def error = hv("health_error")?.toString()
+        Health.outcome(repositorySession, log, group, name, ok, latencyMs, error)
     }
 } catch (Exception e) {
     try { log.warn("recordHealth: ${e.message}") } catch (Exception ignore) {}

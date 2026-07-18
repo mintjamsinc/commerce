@@ -1,5 +1,7 @@
 identifier: f6b4d7a9-8c2e-4f3b-a015-2a7c9e4f6b8d
 title: Commerce Order
+category: commerce
+enableStartMenu: false
 icon: assets/icons/icon.svg
 isAdminOnly: true
 # The order editor: everything about one order in one place. Displays the Shopify

@@ -2,6 +2,8 @@
 	"app.commerce-dashboard.title": "コマースダッシュボード",
 
 	"app.commerce-dashboard.toolbar.refresh": "更新",
+	"app.commerce-dashboard.pending.label": "注文データ反映中 {count}件",
+	"app.commerce-dashboard.pending.title": "注文データを反映しています（残り {count} 件）。クリックして今すぐ更新。",
 	"app.commerce-dashboard.toolbar.salesWindow": "売上集計期間",
 	"app.commerce-dashboard.toolbar.daysShort": "{days}日",
 
@@ -14,8 +16,8 @@
 	"app.commerce-dashboard.action.retry": "再試行",
 
 	"app.commerce-dashboard.card.salesTrend": "売上トレンド",
+	"app.commerce-dashboard.card.fulfillment": "発送",
 	"app.commerce-dashboard.card.topProducts": "売れ筋商品",
-	"app.commerce-dashboard.card.sales": "売上",
 	"app.commerce-dashboard.card.inventory": "在庫",
 	"app.commerce-dashboard.card.locations": "ロケーション",
 	"app.commerce-dashboard.card.reorders": "在庫・発注レビュー",
@@ -27,19 +29,19 @@
 	"app.commerce-dashboard.card.reconciliation": "差分照合",
 	"app.commerce-dashboard.card.outboundSync": "送信同期",
 
-	"app.commerce-dashboard.kpi.revenue": "売上高 / {days}日",
-	"app.commerce-dashboard.kpi.orders": "注文数",
+	"app.commerce-dashboard.kpi.revenue": "確定売上 / {days}日",
+	"app.commerce-dashboard.kpi.orders": "新規注文件数",
 	"app.commerce-dashboard.kpi.aov": "平均注文単価",
 
 	"app.commerce-dashboard.salesTrend.grossTip": "総売上（gross）",
 	"app.commerce-dashboard.salesTrend.empty": "この期間の売上はありません。",
 	"app.commerce-dashboard.salesTrend.noProducts": "商品がまだありません",
 
-	"app.commerce-dashboard.unit.ordersDays": "件 / {days}日",
 	"app.commerce-dashboard.unit.products": "商品",
 	"app.commerce-dashboard.unit.locations": "拠点",
 	"app.commerce-dashboard.unit.toApprove": "件のレビュー対応中",
 	"app.commerce-dashboard.unit.awaitingStock": "件が入荷待ち",
+	"app.commerce-dashboard.unit.awaitingFulfillment": "件が発送待ち",
 	"app.commerce-dashboard.unit.customers": "人",
 	"app.commerce-dashboard.unit.open": "件が未完了",
 	"app.commerce-dashboard.unit.webhooksDays": "Webhook / {days}日",
@@ -74,6 +76,7 @@
 	"app.commerce-dashboard.row.dryRun": "ドライラン",
 
 	"app.commerce-dashboard.events.openTitle": "失敗イベントをオペレーションで開く",
+	"app.commerce-dashboard.fulfillment.openTitle": "発送待ちの注文を注文一覧で開く",
 	"app.commerce-dashboard.reconciliation.openTitle": "差分照合をオペレーションで開く",
 	"app.commerce-dashboard.outboundSync.openTitle": "送信同期をオペレーションで開く",
 
@@ -81,6 +84,5 @@
 
 	"app.commerce-dashboard.statusbar.refreshing": "更新中…",
 	"app.commerce-dashboard.statusbar.updated": "更新: {time}",
-	"app.commerce-dashboard.statusbar.ready": "準備完了",
-	"app.commerce-dashboard.row.baseRevenue": "合計（{currency}）"
+	"app.commerce-dashboard.statusbar.ready": "準備完了"
 }

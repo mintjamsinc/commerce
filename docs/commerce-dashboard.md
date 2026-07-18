@@ -6,8 +6,8 @@ data produced by the rest of the platform into KPI cards:
 
 | Card | Shows | Source |
 |---|---|---|
-| **Sales trend** (hero) | revenue / orders / AOV over the selected window, a daily revenue sparkline, and the TOP5 products by base gross (net/gross + units, titled from the product mirror) | `commerce.SalesQuery.salesRange` + `topProducts` (sales facts) |
-| **Sales** | orders and revenue per currency over the window, by processing status | `commerce.Dashboard.salesSummary` (sales facts + a status facet count) |
+| **Sales trend** (hero) | confirmed sales / new-order count / AOV over the selected window (occurrence-date basis — the same figures the Commerce Reports app shows), a daily confirmed-sales sparkline, and the TOP5 products by base gross (net/gross + units, titled from the product mirror) | `commerce.SalesQuery.occurrenceSummary` + `topProducts` (sales facts + refund store) |
+| **Fulfillment** | orders currently awaiting pick/pack/ship (whole book, not window-scoped), drilling into the order browser | `commerce.Dashboard.fulfillmentSummary` (a status facet count) |
 | **Inventory** | total products, low-stock (review_pending), by status | `commerce.Dashboard.inventorySummary` (product resources) |
 | **Reorders** | purchase orders awaiting approval + recently ordered | replenishment workflow |
 | **Locations** | location count, tracked items, out-at-location pairs | `commerce.Locations` |
@@ -53,8 +53,8 @@ Commerce Dashboard (Webtop app, iframe)
    ▼
 /bin/cms.cgi/{workspace}/content/commerce/endpoints/dashboard.groovy
    │  assembles, each section degrading independently:
-   ├─ commerce.Dashboard.salesSummary / inventorySummary   (sales facts / product resources)
-   ├─ commerce.SalesQuery.salesRange / topProducts          (index-backed facet aggregation)
+   ├─ commerce.Dashboard.fulfillmentSummary / inventorySummary (status facet / product resources)
+   ├─ commerce.SalesQuery.occurrenceSummary / topProducts   (index-backed facet aggregation)
    ├─ commerce.Health.snapshot                              (health metrics)
    └─ BPMN engine + commerce.TaskSla.status                 (open tasks by SLA status)
 ```

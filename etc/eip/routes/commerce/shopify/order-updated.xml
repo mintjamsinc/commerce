@@ -24,6 +24,9 @@
             <setHeader name="health_ok">
                 <constant>false</constant>
             </setHeader>
+            <setHeader name="health_error">
+                <simple>${exception.message}</simple>
+            </setHeader>
             <toD uri="cms:/etc/commerce/scripts/shopify/recordHealth.groovy?inputs=health_*,received_at"/>
         </onException>
     </routeConfiguration>
@@ -41,6 +44,12 @@
       the integration processing lifecycle (received → … → fulfilled/cancelled),
       owned by the review/fulfil/cancel workflow, is left completely untouched.
       Idempotent: a duplicate delivery simply rewrites the same body.
+
+      ONE deliberate exception: a Shopify-side cancellation (cancelled_at present)
+      makes the remaining workflow moot, so the reconcile step at the end may
+      CLOSE the lifecycle (terminate an unclaimed order-review-flow instance and
+      cancel open backorders) — never advance it. See
+      reconcileOrderCancellation.groovy for the full policy.
     -->
     <route id="shopify-order-updated" routeConfigurationId="shopify-order-updated-error-handler">
         <from uri="direct:shopify-order-updated"/>
@@ -77,20 +86,27 @@
         <setHeader name="order_id">
             <jsonpath>$.id</jsonpath>
         </setHeader>
+        <setHeader name="order_created_at">
+            <jsonpath suppressExceptions="true">$.created_at</jsonpath>
+        </setHeader>
 
         <!-- Resolve the EXISTING mirror node path (the order store is nested by the
-             PAID month, so a date:now-derived path would create a duplicate node
-             for an order updated in a later month). Falls back to the current-month
-             path only for a brand-new order never captured by orders/paid. -->
-        <toD uri="cms:/etc/commerce/scripts/resolveOrderPath.groovy?inputs=order_id&amp;outputs=orderPath"/>
+             order's created_at month in UTC, so a now-derived path would create a
+             duplicate node for an order updated in a later month). Falls back to the
+             created_at-month path only for a brand-new order never captured by
+             orders/paid. -->
+        <toD uri="cms:/etc/commerce/scripts/resolveOrderPath.groovy?inputs=order_id,order_created_at&amp;outputs=orderPath"/>
 
         <!-- Restore the raw order JSON as the body for the store below. -->
         <setBody>
             <simple>${header.order_payload}</simple>
         </setBody>
 
-        <!-- Save raw JSON to JCR (order MIME so the node keeps launching the editor) -->
-        <toD uri="cms:store?mimeType=application/vnd.mintjams.commerce.order%2Bjson&amp;path=${header.orderPath}"/>
+        <!-- Save raw JSON to JCR (order MIME so the node keeps launching the
+             editor). RAW() keeps the literal "+" in the MIME type: Camel
+             normalizes %2B back to "+" and then form-decodes the query, so an
+             encoded plus reaches the endpoint as a space. -->
+        <toD uri="cms:store?mimeType=RAW(application/vnd.mintjams.commerce.order+json)&amp;path=${header.orderPath}"/>
 
         <!-- Refresh the mirror-derived core props from the updated payload. These
              mirror Shopify's own state; commerce:status (our processing lifecycle)
@@ -137,12 +153,31 @@
         <setHeader name="commerce:source_status">
             <jsonpath>$.financial_status</jsonpath>
         </setHeader>
+        <!-- Cancellation timestamp (terminal, order-level): Shopify sets cancelled_at
+             only on a FULL cancel, and a cancel also emits orders/updated, so this
+             mirror refresh is where we capture it. Persisted as the occurrence-date
+             axis the sales report facet-counts cancellations by (and the order browser
+             drills into). Absent for a live order — suppressExceptions omits it, matching
+             the sparse customer_id idiom — and terminal, so it is never cleared. Same Date
+             property cancelOrder.groovy writes on our own reject-flow cancels; now captured
+             for admin-side cancellations too. -->
+        <setHeader name="commerce:cancelled_at">
+            <jsonpath suppressExceptions="true">$.cancelled_at</jsonpath>
+        </setHeader>
+        <!-- Plain-named copy for the reconcile gate below: simple-language header
+             access is awkward with a ':' in the name, and this one is a routing
+             signal, not a persisted commerce:* property (setProperties only
+             includes commerce:*). Absent for a live order. -->
+        <setHeader name="order_cancelled_at">
+            <jsonpath suppressExceptions="true">$.cancelled_at</jsonpath>
+        </setHeader>
 
         <!-- Normalize property types (money is Decimal, counters are Long) -->
         <toD uri="transform:toDecimal?targets=commerce:total_price,commerce:total_price_base"/>
         <toD uri="transform:toLong?targets=commerce:order_number"/>
-        <!-- ordered_at as a real Date so xs:dateTime range/order-by works. -->
-        <toD uri="transform:toDate?targets=commerce:ordered_at"/>
+        <!-- ordered_at / cancelled_at as real Dates so xs:dateTime range/order-by works.
+             cancelled_at is absent for a live order; the transform no-ops a missing target. -->
+        <toD uri="transform:toDate?targets=commerce:ordered_at,commerce:cancelled_at"/>
         <!-- Shopify entity ids are String (equality/lookup only, never
              range-queried, and can exceed a UI-safe integer). The jsonpath $.id
              yields a JSON number, so coerce it to String before persist. customer_id
@@ -156,6 +191,20 @@
         <!-- Enqueue the order for a sales-fact recompute so an edit re-materializes the fact
              (components / source_status / denormalized dims stay converged). -->
         <toD uri="cms:/etc/commerce/scripts/markSalesPending.groovy?inputs=order_id"/>
+
+        <!-- Reconcile the processing workflow with a Shopify-side cancellation
+             (the one exception to mirror-only, and it only ever CLOSES the
+             lifecycle): cancel open backorders and terminate an unclaimed
+             order-review-flow instance. Gated on cancelled_at so the hot path
+             (every note/tag/fulfillment edit re-emits orders/updated) skips the
+             script entirely for live orders; a claimed task is left for the
+             operator to close through the form. Defensive. -->
+        <choice>
+            <when>
+                <simple>${header.order_cancelled_at} != null</simple>
+                <toD uri="cms:/etc/commerce/scripts/shopify/reconcileOrderCancellation.groovy?inputs=orderPath,order_id,order_cancelled_at"/>
+            </when>
+        </choice>
 
         <log message="Order ${header.order_id} mirror refreshed at ${header.orderPath} (${header.shopify_topic})"
              loggingLevel="INFO"/>

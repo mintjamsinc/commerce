@@ -1,7 +1,7 @@
 // Boot-time one-shot migration runner.
 //
 // Invoked once per boot by the commerce-migrate timer route (repeatCount=1, as
-// the service user). Delegates to commerce.Migrations: an ordered registry of
+// the service user). Delegates to commerce.migration.Migrations: an ordered registry of
 // idempotent migrations, each guarded by a permanent JCR marker
 // (/content/commerce/migrations/{id}.json) so it runs exactly once per
 // repository. Each migration follows migrate → verify → hard delete; on a
@@ -9,7 +9,7 @@
 //
 // Best-effort: a failure is logged, never thrown.
 
-import commerce.Migrations
+import commerce.migration.Migrations
 
 // Cluster guard: the boot timer fires on every node; only the node that wins
 // this lease runs the registry, the others skip (their markers are shared via

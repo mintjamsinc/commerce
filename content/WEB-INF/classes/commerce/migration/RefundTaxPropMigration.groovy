@@ -1,7 +1,10 @@
-package commerce
+package commerce.migration
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import javax.jcr.query.Query
+
+import commerce.Refunds
+import commerce.SalesFacts
 
 /**
  * One-time migration: stamp {@code commerce:refund_tax_base} onto refund raw nodes that predate the
@@ -10,7 +13,7 @@ import javax.jcr.query.Query
  * what the webhook/backfill writers stamp today. Nodes that already carry the property, or whose body
  * carries no tax amounts, are skipped. Idempotent and defensive: one bad node never stops the run.
  *
- * Lives under /content/WEB-INF/classes; registered in {@link commerce.Migrations}.
+ * Lives under /content/WEB-INF/classes; registered in {@link commerce.migration.Migrations}.
  */
 class RefundTaxPropMigration {
 

@@ -21,6 +21,7 @@ import {
 	formatNumber,
 	formatDate,
 } from '../../composables/use-localization.js';
+import { fetchPendingCount } from '../../composables/use-pending-badge.js';
 
 // Type-only: the shell passes a fully-featured ApplicationInstance at launch.
 type AnyInstance = any;
@@ -35,6 +36,9 @@ const OPS_APPS: Record<string, string> = {
 	reconcile: 'f7b9d2e4-8c3a-4e6f-b1a5-2d9c7e0f4a83', // commerce-reconcile (discrepancy reconciliation — split out of commerce-import)
 	events: 'd4f2b5c7-6e0a-4b4c-8d85-9f3c1e4a7b6c',    // commerce-events
 };
+// The Commerce Orders facet browser — the fulfillment card drills into it with a
+// { status } filter (the browser applies deep-link filters before its first load).
+const ORDERS_APP_ID = 'e5a3c6f8-7b1d-4e2a-9c04-1f6b8d3e5a7c';
 const WATCH_PATH = '/content/commerce';
 const POLL_INTERVAL_MS = 60000;
 const WATCH_DEBOUNCE_MS = 800;
@@ -99,28 +103,18 @@ const App = {
 			_watchUnsub: null as null | (() => void),
 			_pollTimer: null as any,
 			_debounceTimer: null as any,
+
+			// "反映待ち" badge: live count of orders whose sales facts are still recomputing.
+			pendingCount: 0,
+			_pendingTimer: null as any,
 			_messageListener: null as any,
 		};
 	},
 
 	computed: {
-		sales(): any {
-			const s = (this.snapshot && this.snapshot.sales) || {};
-			// revenue is the standard wire money array [{ currency, amount }]
-			// (commerce.Api) — the same shape the reports endpoint returns.
-			const rev = Array.isArray(s.revenue) ? s.revenue : [];
-			const revenueRows = rev.map((e: any) => ({ label: e.currency, value: this.fmtAmount(e.amount), base: false }));
-			// Base-currency rollup (C1): the one cross-currency total, shown first.
-			if (s.baseRevenue != null) {
-				const baseLabel = this.t('app.commerce-dashboard.row.baseRevenue', { currency: s.baseCurrency || '' }, `Total (${s.baseCurrency || 'base'})`);
-				revenueRows.unshift({ label: baseLabel, value: this.fmtAmount(s.baseRevenue), base: true });
-			}
-			return {
-				orders: Number(s.orders) || 0,
-				days: Number(s.days) || 0,
-				revenueRows,
-				statusRows: statusRows(s.byStatus),
-			};
+		fulfillment(): any {
+			const f = (this.snapshot && this.snapshot.fulfillment) || {};
+			return { pending: Number(f.pending) || 0 };
 		},
 		inventory(): any {
 			const inv = (this.snapshot && this.snapshot.inventory) || {};
@@ -177,7 +171,9 @@ const App = {
 				line = coords.map((c) => `${c[0].toFixed(1)},${c[1].toFixed(1)}`).join(' ');
 				area = `${coords[0][0].toFixed(1)},${H} ${line} ${coords[n - 1][0].toFixed(1)},${H}`;
 			}
-			const cur = s.primaryCurrency || '';
+			// Every figure in the occurrence-based trend is base-currency (there is no
+			// per-currency axis in the occurrence summary).
+			const cur = s.baseCurrency || '';
 			return {
 				days: Number(s.days) || 0,
 				currency: cur,
@@ -314,6 +310,7 @@ const App = {
 				await vm.resolveBase();
 				await vm.load();
 				vm.setupRealtime();
+				vm.startPendingPoll();
 
 				vm.$nextTick(() => { try { instance.notifyLaunched(); } catch (_) {} });
 			};
@@ -324,6 +321,19 @@ const App = {
 			if (this._watchUnsub) { try { this._watchUnsub(); } catch (_) {} this._watchUnsub = null; }
 			if (this._pollTimer) clearInterval(this._pollTimer);
 			if (this._debounceTimer) clearTimeout(this._debounceTimer);
+			this.stopPendingPoll();
+		},
+
+		// ---- "反映待ち" pending badge ----------------------------------------
+		async pollPending() {
+			try { this.pendingCount = await fetchPendingCount(this._base); } catch (_) { /* keep last */ }
+		},
+		startPendingPoll() {
+			this.pollPending();
+			this._pendingTimer = window.setInterval(() => this.pollPending(), 15000);
+		},
+		stopPendingPoll() {
+			if (this._pendingTimer) { clearInterval(this._pendingTimer); this._pendingTimer = null; }
 		},
 
 		// ---- Window controls -------------------------------------------------
@@ -348,6 +358,14 @@ const App = {
 			if (!appId) return;
 			try {
 				window.parent?.postMessage({ type: 'open-app', appId, options: options || {} }, window.location.origin);
+			} catch (_) { /* parent unavailable */ }
+		},
+
+		// Drill-down: the Commerce Orders browser pre-filtered to a lifecycle status
+		// (the fulfillment card opens the pick/pack/ship queue).
+		openOrders(status: string) {
+			try {
+				window.parent?.postMessage({ type: 'open-app', appId: ORDERS_APP_ID, options: { status } }, window.location.origin);
 			} catch (_) { /* parent unavailable */ }
 		},
 
@@ -401,7 +419,10 @@ const App = {
 
 		async fetchSnapshot(): Promise<any> {
 			if (!this._base) throw new Error('Could not resolve the workspace for the dashboard endpoint.');
-			const url = `${this._base}${DASHBOARD_SCRIPT}?salesDays=${this.salesDays}`;
+			// The viewer's timezone (Preferences) drives the endpoint's day-window
+			// arithmetic, so the dashboard windows follow the user, not the server.
+			const tz = this.localization.timeZone ? `&tz=${encodeURIComponent(this.localization.timeZone)}` : '';
+			const url = `${this._base}${DASHBOARD_SCRIPT}?salesDays=${this.salesDays}${tz}`;
 			const res = await fetch(url, {
 				method: 'GET',
 				headers: { 'Accept': 'application/json' },

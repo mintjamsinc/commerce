@@ -1,9 +1,10 @@
-// Automatic replay of failed events + event-log housekeeping.
+// Automatic replay of failed events.
 //
 // Invoked periodically by the commerce-replay timer route (as the service user).
 // Re-dispatches events that ended in "error" — up to a bounded number of attempts,
-// after a backoff — back through the ingest core, then prunes old processed events.
-// Manual, on-demand replay goes through the same path from the events endpoint.
+// after a backoff — back through the ingest core. Manual, on-demand replay goes
+// through the same path from the events endpoint. Event-log retention/pruning is
+// a separate concern handled by the housekeeping batch (houseKeeping.groovy).
 //
 // Re-dispatch carries replay=true so the backend handlers reprocess the event
 // instead of skipping it as a duplicate (their idempotency guard honours the flag).
@@ -38,7 +39,6 @@ try {
 
         int maxAttempts = intOr(replay.maxAttempts, 5)
         long backoffMs = longOr(replay.backoffMinutes, 15L) * 60_000L
-        long retentionMs = longOr(replay.retentionDays, 30L) * 86_400_000L
         long now = System.currentTimeMillis()
 
         if (replayEnabled) {
@@ -68,11 +68,8 @@ try {
                 log.info("replayEvents: re-dispatched ${sent} failed event(s)")
             }
         }
-
-        // Housekeeping: drop processed events past the retention window.
-        if (retentionMs > 0) {
-            Events.prune(repositorySession, log, retentionMs, now)
-        }
+        // Event-log retention/pruning has moved to the housekeeping batch
+        // (houseKeeping.groovy, driven by retention.yml). This task only replays.
     } catch (Exception e) {
         try { log.warn("replayEvents: ${e.message}") } catch (Exception ignore) {}
     }

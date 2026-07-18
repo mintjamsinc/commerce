@@ -1,5 +1,6 @@
 identifier: 9b2f7c84-6a1d-4e35-bf90-2c7e8d5a1f63
 title: Commerce Dashboard
+category: commerce
 icon: assets/icons/icon.svg
 isAdminOnly: true
 actions:

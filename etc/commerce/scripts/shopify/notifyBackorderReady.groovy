@@ -4,7 +4,7 @@
 // Attached as a Camunda "create" task listener via CmsDelegate. The awaited stock
 // for a backordered order line has arrived, so an operator is asked to release it
 // to fulfilment. Reads the backorder record (backorderPath) for the item/quantity
-// and dispatches a channel-agnostic message to every enabled channel (see
+// and dispatches a channel-agnostic message under the "backorders" category (see
 // commerce.Notifications). A notification failure never breaks the workflow.
 
 import commerce.Notifications
@@ -92,4 +92,4 @@ message
     .field("Customer", customerEmail)
     .footer(taskName, assignee)
 
-Notifications.dispatch(log, "notifyBackorderReady", config, message)
+Notifications.dispatch(log, "notifyBackorderReady", config, message, Notifications.CAT_BACKORDERS)

@@ -16,14 +16,26 @@ Shopify (refunds/create)
    ▼
 webhook.groovy ──→ refund-created route ──→ JCR (store refund) ──→ refund-review-flow
                                                                       │  screen refund
+                                                                      │  record refund
+                                                                      │  (facts + order's refund summary)
                                                        ┌──────────────┴──────────────┐
                                                        │ No rule matched              │ Rule matched
-                                                       ▼                              ▼
-                                                       └────→ record refund ←── Refund Review task → notify
-                                                                  │  update order's refund summary
-                                                                  ▼
-                                                              resolved
+                                                       │                              ▼
+                                                       │                Refund Review task → notify
+                                                       └──────────────┬──────────────┘
+                                                                      ▼
+                                                                  resolved
 ```
+
+Recording runs **before** the review gate on purpose: the occurrence sales
+report aggregates the props Record Refund stamps (`commerce:refunded_at` /
+`commerce:refund_amount_base`), and the review rules flag exactly the refunds
+that matter most to it (`fullRefund` / `highRefundValue` — e.g. every
+full-cancellation refund). If recording waited for the review task, those
+refunds would be invisible to the report until an operator worked the task.
+The review is audit-only and reverses nothing, so there is nothing to record
+after it; this also matches the backfill path, which stamps the same props at
+store time (`RefundMirror.storeRefund`).
 
 ## Stage 1 — Screening
 
@@ -45,7 +57,23 @@ blocking the flow.
 The refunded amount is computed by summing the refund's successful `refund`
 transactions; the currency is taken from those transactions.
 
-## Stage 2 — Refund Review (only when flagged)
+## Stage 2 — Recording
+
+Recording runs right after screening, **before** any review parking (see the
+flow note above), so every refund — including one still waiting in an
+operator's task list — is recorded:
+
+- It persists the computed facts on the refund resource: `commerce:refund_amount`,
+  `commerce:currency`, `commerce:restocked`, `commerce:line_item_count` and the
+  refund note.
+- It updates the **original order** (best-effort, when locatable by its
+  `order_{id}.json` node): adds to `commerce:refunded_amount`, bumps
+  `commerce:refund_count`, and sets the order's `commerce:source_status` to
+  `refunded` (when the cumulative refund covers the order total) or
+  `partially_refunded`. A guard property on the refund (`commerce:order_updated`)
+  ensures the order summary is applied at most once.
+
+## Stage 3 — Refund Review (only when flagged)
 
 Operators work these in the Webtop **Tasks** app:
 
@@ -60,31 +88,17 @@ Operators work these in the Webtop **Tasks** app:
    audit trail.
 4. Click **Acknowledge refund** to complete the review.
 
-## Stage 3 — Recording
-
-Whether the refund was auto-acknowledged or reviewed, the workflow runs **Record
-Refund** before finishing:
-
-- It persists the computed facts on the refund resource: `commerce:refund_amount`,
-  `commerce:currency`, `commerce:restocked`, `commerce:line_item_count` and the
-  refund note.
-- It updates the **original order** (best-effort, when locatable by its
-  `order_{id}.json` node): adds to `commerce:refunded_amount`, bumps
-  `commerce:refund_count`, and sets the order's `commerce:source_status` to
-  `refunded` (when the cumulative refund covers the order total) or
-  `partially_refunded`. A guard property on the refund (`commerce:order_updated`)
-  ensures the order summary is applied at most once.
-
 The refund's own `commerce:status` ends at `resolved`.
 
 ## Configuration
 
 1. **Refund screening rules** — edit `/etc/commerce/config/refund-review.yml`
    (see the table above).
-2. **Notifications** — the Refund Review task posts to the same destinations as
-   the order and inventory tools: every enabled channel in the shared registry
-   (Slack, Discord, Teams, LINE, generic webhook, email). Configure them in the
-   Webtop **Commerce** app under *Notifications*, or directly in
+2. **Notifications** — the Refund Review task notifies under the `refunds`
+   category: every enabled channel of the channel set configured for that
+   category (or of the default set when the category has none) — Slack, Discord,
+   Teams, LINE, generic webhook, email. Configure them in the Webtop **Commerce**
+   app under *Notifications*, or directly in
    `/etc/commerce/config/notifications.yml`. All channels ship disabled, so
    enable at least one to receive notices (tasks are still raised either way).
 3. **Shopify webhook** — subscribe the `refunds/create` topic to the shared

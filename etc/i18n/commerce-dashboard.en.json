@@ -2,6 +2,8 @@
 	"app.commerce-dashboard.title": "Commerce Dashboard",
 
 	"app.commerce-dashboard.toolbar.refresh": "Refresh",
+	"app.commerce-dashboard.pending.label": "Syncing order data: {count}",
+	"app.commerce-dashboard.pending.title": "Order data is syncing ({count} remaining). Click to refresh now.",
 	"app.commerce-dashboard.toolbar.salesWindow": "Sales window",
 	"app.commerce-dashboard.toolbar.daysShort": "{days}d",
 
@@ -14,8 +16,8 @@
 	"app.commerce-dashboard.action.retry": "Retry",
 
 	"app.commerce-dashboard.card.salesTrend": "Sales trend",
+	"app.commerce-dashboard.card.fulfillment": "Fulfillment",
 	"app.commerce-dashboard.card.topProducts": "Top products",
-	"app.commerce-dashboard.card.sales": "Sales",
 	"app.commerce-dashboard.card.inventory": "Inventory",
 	"app.commerce-dashboard.card.locations": "Locations",
 	"app.commerce-dashboard.card.reorders": "Inventory & reorder reviews",
@@ -27,19 +29,19 @@
 	"app.commerce-dashboard.card.reconciliation": "Reconciliation",
 	"app.commerce-dashboard.card.outboundSync": "Outbound sync",
 
-	"app.commerce-dashboard.kpi.revenue": "Revenue / {days}d",
-	"app.commerce-dashboard.kpi.orders": "Orders",
+	"app.commerce-dashboard.kpi.revenue": "Confirmed sales / {days}d",
+	"app.commerce-dashboard.kpi.orders": "New orders",
 	"app.commerce-dashboard.kpi.aov": "Avg order value",
 
 	"app.commerce-dashboard.salesTrend.grossTip": "Gross sales",
 	"app.commerce-dashboard.salesTrend.empty": "No sales in this window.",
 	"app.commerce-dashboard.salesTrend.noProducts": "No products yet",
 
-	"app.commerce-dashboard.unit.ordersDays": "orders / {days}d",
 	"app.commerce-dashboard.unit.products": "products",
 	"app.commerce-dashboard.unit.locations": "locations",
 	"app.commerce-dashboard.unit.toApprove": "open reviews",
 	"app.commerce-dashboard.unit.awaitingStock": "awaiting stock",
+	"app.commerce-dashboard.unit.awaitingFulfillment": "awaiting fulfillment",
 	"app.commerce-dashboard.unit.customers": "customers",
 	"app.commerce-dashboard.unit.open": "open",
 	"app.commerce-dashboard.unit.webhooksDays": "webhooks / {days}d",
@@ -74,6 +76,7 @@
 	"app.commerce-dashboard.row.dryRun": "Dry-run",
 
 	"app.commerce-dashboard.events.openTitle": "Open failed events in Operations",
+	"app.commerce-dashboard.fulfillment.openTitle": "Open orders awaiting fulfillment",
 	"app.commerce-dashboard.reconciliation.openTitle": "Open reconciliation in Operations",
 	"app.commerce-dashboard.outboundSync.openTitle": "Open outbound sync in Operations",
 
@@ -81,6 +84,5 @@
 
 	"app.commerce-dashboard.statusbar.refreshing": "Refreshing…",
 	"app.commerce-dashboard.statusbar.updated": "Updated {time}",
-	"app.commerce-dashboard.statusbar.ready": "Ready",
-	"app.commerce-dashboard.row.baseRevenue": "Total ({currency})"
+	"app.commerce-dashboard.statusbar.ready": "Ready"
 }

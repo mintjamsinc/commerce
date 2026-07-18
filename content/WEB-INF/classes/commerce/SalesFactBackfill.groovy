@@ -1,5 +1,7 @@
 package commerce
 
+import commerce.migration.OrderMimeTypeMigration
+
 /**
  * One-time, operator-triggered, resumable historical sales-fact SEED. Walks the ENTIRE order mirror
  * and ENQUEUES every distinct order for a

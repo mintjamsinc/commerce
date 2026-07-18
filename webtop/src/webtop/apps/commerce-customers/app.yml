@@ -1,5 +1,6 @@
 identifier: 9e43ab8f-64c4-48f4-b8b5-521c40699e6d
 title: Commerce Customers
+category: commerce
 icon: assets/icons/icon.svg
 isAdminOnly: true
 # The customer facet browser: a read-only search / drill-down over the mirrored

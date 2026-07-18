@@ -448,9 +448,9 @@ query {
             if (v instanceof Boolean) res.setProperty(k.toString(), (boolean) v)
             else if (v != null) res.setProperty(k.toString(), (BigDecimal) v)
         }
-        // Cash-out (refunds block) dimensions: the refund day (facet axis) and the parent order's
-        // ordered_at (so the report can flag a refund whose order fell outside the window — crossPeriod).
-        if (ms != null) res.setProperty("commerce:refunded_day", SalesReconcile.dayOf(ms))
+        // Cash-out (refunds block) dimension: the parent order's ordered_at (so the report can
+        // flag a refund whose order fell outside the window — crossPeriod). The refund's own
+        // date axis is commerce:refunded_at alone (query-time day bucketing).
         def orderedAt = orderedAtOf(session, rest.order_id)
         if (orderedAt != null) res.setProperty("commerce:refund_ordered_at", new java.util.Date(orderedAt))
         def note = rest.note?.toString()
@@ -461,16 +461,11 @@ query {
 
     // --- Helpers (defensive) -----------------------------------------------------
 
-    // [yyyy, MM] of an epoch-ms instant in the server zone (matches SalesFacts/Sales month bucketing);
-    // falls back to now when the timestamp is absent. Folder placement only — reads recurse by order_id.
+    // [yyyy, MM] of an epoch-ms instant in UTC (the shared fold rule, Api.utcYearMonth —
+    // matches SalesFacts month bucketing); falls back to now when the timestamp is
+    // absent. Folder placement only — reads recurse by order_id.
     private static List yearMonth(Object ms) {
-        def zdt
-        if (ms != null) {
-            try { zdt = java.time.Instant.ofEpochMilli(((Number) ms).longValue()).atZone(java.time.ZoneId.systemDefault()) }
-            catch (Exception ignore) {}
-        }
-        if (zdt == null) zdt = java.time.ZonedDateTime.now(java.time.ZoneId.systemDefault())
-        return [String.format("%04d", zdt.getYear()), String.format("%02d", zdt.getMonthValue())]
+        return Api.utcYearMonth(ms)
     }
 
     /** The parent order's ordered_at (created_at) epoch-ms, or null — for the refund's crossPeriod flag. */

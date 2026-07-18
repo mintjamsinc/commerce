@@ -8,8 +8,9 @@
 // separately from API secrets) so they can be managed independently.
 //
 // The original sections use parseSimpleYaml (top-level + one nesting level); the
-// newer files (nested maps, block lists, flow arrays) use parseYaml. Each section
-// has a hand-written serialize<Section> emitting the file (with its comments).
+// deeper files (nested maps, block lists, flow arrays — including notifications
+// with its per-category channel sets) use parseYaml. Each section has a
+// hand-written serialize<Section> emitting the file (with its comments).
 //
 // Repository IO uses the Webtop content service exposed on the application
 // instance (instance.api.content), mirroring how schema-manager reads and
@@ -40,6 +41,7 @@ const PLANNING_FILE = 'planning.yml';
 const LOCATIONS_FILE = 'locations.yml';
 const RECONCILE_FILE = 'reconcile.yml';
 const INGEST_FILE = 'ingest.yml';
+const RETENTION_FILE = 'retention.yml';
 const BACKORDER_FILE = 'backorder.yml';
 const ORDER_REVIEW_FILE = 'order-review.yml';
 const REFUND_REVIEW_FILE = 'refund-review.yml';
@@ -52,6 +54,7 @@ const PLANNING_PATH = CONFIG_DIR + '/' + PLANNING_FILE;
 const LOCATIONS_PATH = CONFIG_DIR + '/' + LOCATIONS_FILE;
 const RECONCILE_PATH = CONFIG_DIR + '/' + RECONCILE_FILE;
 const INGEST_PATH = CONFIG_DIR + '/' + INGEST_FILE;
+const RETENTION_PATH = CONFIG_DIR + '/' + RETENTION_FILE;
 const BACKORDER_PATH = CONFIG_DIR + '/' + BACKORDER_FILE;
 const ORDER_REVIEW_PATH = CONFIG_DIR + '/' + ORDER_REVIEW_FILE;
 const REFUND_REVIEW_PATH = CONFIG_DIR + '/' + REFUND_REVIEW_FILE;
@@ -64,6 +67,7 @@ const YAML_MIME = 'application/x-yaml';
 // panel — it calls this endpoint directly over the cgi base URL and does NOT
 // participate in the config Save-all flow.
 const WEBHOOKS_SCRIPT = '/content/commerce/endpoints/webhooks.groovy';
+const RETENTION_PURGE_SCRIPT = '/content/commerce/endpoints/retention-purge.groovy';
 // GDPR compliance topics are configured in the app's compliance webhook settings
 // (Partner Dashboard), NOT creatable via webhookSubscriptionCreate — shown to the
 // operator as an informational reminder, never registered from here.
@@ -189,59 +193,133 @@ adminApi:
 `;
 }
 
+// Notification categories (fixed vocabulary, mirrored by commerce.Notifications).
+// Every notification carries one; the config maps each category to the default
+// channel set or to a dedicated one.
+const NOTIF_CATEGORIES = ['inventory', 'orders', 'refunds', 'fulfillment', 'backorders', 'compliance', 'operations'];
+
+// A blank channel set: every channel off with empty connection fields. Used for
+// the default set before load and as the starting point when a category is
+// switched to dedicated destinations (the operator fills it in or copies the
+// default values per channel).
+function emptyNotifSet(): any {
+	return {
+		slack: { enabled: false, webhookUrl: '' },
+		discord: { enabled: false, webhookUrl: '' },
+		teams: { enabled: false, webhookUrl: '' },
+		line: { enabled: false, accessToken: '', to: '' },
+		webhook: { enabled: false, url: '', textField: 'text' },
+		email: {
+			enabled: false, smtpHost: '', smtpPort: 587, security: 'starttls',
+			username: '', password: '', from: '', to: '', subjectPrefix: '[Commerce] ',
+		},
+	};
+}
+
+// Map one parsed channel set (a `default` or category section of
+// notifications.yml) into the edit model, coercing every field.
+function readNotifSet(y: any): any {
+	const src = (y && typeof y === 'object') ? y : {};
+	const sec = (key: string) => (src[key] && typeof src[key] === 'object') ? src[key] : {};
+	const slack = sec('slack'), discord = sec('discord'), teams = sec('teams');
+	const line = sec('line'), webhook = sec('webhook'), email = sec('email');
+	return {
+		slack: { enabled: slack.enabled === true, webhookUrl: String(slack.webhookUrl || '') },
+		discord: { enabled: discord.enabled === true, webhookUrl: String(discord.webhookUrl || '') },
+		teams: { enabled: teams.enabled === true, webhookUrl: String(teams.webhookUrl || '') },
+		line: {
+			enabled: line.enabled === true,
+			accessToken: String(line.accessToken || ''),
+			to: String(line.to || ''),
+		},
+		webhook: {
+			enabled: webhook.enabled === true,
+			url: String(webhook.url || ''),
+			textField: String(webhook.textField || 'text'),
+		},
+		email: {
+			enabled: email.enabled === true,
+			smtpHost: String(email.smtpHost || ''),
+			smtpPort: Number(email.smtpPort) || 587,
+			security: String(email.security || 'starttls'),
+			username: String(email.username || ''),
+			password: String(email.password || ''),
+			from: String(email.from || ''),
+			to: String(email.to || ''),
+			subjectPrefix: String(email.subjectPrefix ?? '[Commerce] '),
+		},
+	};
+}
+
+// Emit one channel set at the given indent (used for `default` and for each
+// dedicated category set).
+function emitNotifSet(set: any, indent: string): string {
+	const s = set || {};
+	const slack = s.slack || {}, discord = s.discord || {}, teams = s.teams || {};
+	const line = s.line || {}, webhook = s.webhook || {}, email = s.email || {};
+	const i = indent;
+	return `${i}slack:
+${i}  enabled: ${slack.enabled === true}
+${i}  webhookUrl: "${esc(slack.webhookUrl)}"
+${i}discord:
+${i}  enabled: ${discord.enabled === true}
+${i}  webhookUrl: "${esc(discord.webhookUrl)}"
+${i}teams:
+${i}  enabled: ${teams.enabled === true}
+${i}  webhookUrl: "${esc(teams.webhookUrl)}"
+${i}line:
+${i}  enabled: ${line.enabled === true}
+${i}  accessToken: "${esc(line.accessToken)}"
+${i}  to: "${esc(line.to)}"
+${i}webhook:
+${i}  enabled: ${webhook.enabled === true}
+${i}  url: "${esc(webhook.url)}"
+${i}  textField: "${esc(webhook.textField || 'text')}"
+${i}email:
+${i}  enabled: ${email.enabled === true}
+${i}  smtpHost: "${esc(email.smtpHost)}"
+${i}  smtpPort: ${Number(email.smtpPort) || 587}
+${i}  security: "${esc(email.security || 'starttls')}"
+${i}  username: "${esc(email.username)}"
+${i}  password: "${esc(email.password)}"
+${i}  from: "${esc(email.from)}"
+${i}  to: "${esc(email.to)}"
+${i}  subjectPrefix: "${esc(email.subjectPrefix)}"
+`;
+}
+
 function serializeNotifications(n: any): string {
-	const slack = n.slack || {};
-	const discord = n.discord || {};
-	const teams = n.teams || {};
-	const line = n.line || {};
-	const webhook = n.webhook || {};
-	const email = n.email || {};
-	return `# Notification destinations for the commerce workflows
+	const sets = n.sets || {};
+	const customCats = NOTIF_CATEGORIES.filter((c) => sets[c] && typeof sets[c] === 'object');
+	let out = `# Notification destinations for the commerce workflows
 # Deploy to: /etc/commerce/config/notifications.yml
 # Managed by the Commerce app (Webtop > Commerce > Notifications).
 # Kept separate from shopify.yml so notification settings carry no API secrets.
-# A channel is ON unless enabled is false. Each enabled channel renders the same
-# workflow message in its own format. See /content/WEB-INF/classes/commerce/.
+#
+# Every notification carries a category (inventory / orders / refunds /
+# fulfillment / backorders / compliance / operations). The "default" channel set
+# is used for every category that has no entry under "categories"; a listed
+# category uses its own channel set exactly as written (channels not listed in
+# a category set are off for that category). A channel is ON unless enabled is
+# false. Each enabled channel renders the same workflow message in its own
+# format. See /content/WEB-INF/classes/commerce/.
 
-# Slack incoming webhook — https://api.slack.com/messaging/webhooks
-slack:
-  enabled: ${slack.enabled === true}
-  webhookUrl: "${esc(slack.webhookUrl)}"
-
-# Discord incoming webhook — https://support.discord.com/hc/en-us/articles/228383668
-discord:
-  enabled: ${discord.enabled === true}
-  webhookUrl: "${esc(discord.webhookUrl)}"
-
-# Microsoft Teams incoming webhook (Workflows / connector URL) — posts an Adaptive Card
-teams:
-  enabled: ${teams.enabled === true}
-  webhookUrl: "${esc(teams.webhookUrl)}"
-
-# LINE Messaging API push — https://developers.line.biz/en/reference/messaging-api/
-line:
-  enabled: ${line.enabled === true}
-  accessToken: "${esc(line.accessToken)}"
-  to: "${esc(line.to)}"
-
-# Generic outbound webhook — posts structured JSON { source, title, status, summary, fields, <textField> }
-webhook:
-  enabled: ${webhook.enabled === true}
-  url: "${esc(webhook.url)}"
-  textField: "${esc(webhook.textField || 'text')}"
-
-# Email over SMTP — security: none | starttls (587) | ssl (465); to is comma-separated
-email:
-  enabled: ${email.enabled === true}
-  smtpHost: "${esc(email.smtpHost)}"
-  smtpPort: ${Number(email.smtpPort) || 587}
-  security: "${esc(email.security || 'starttls')}"
-  username: "${esc(email.username)}"
-  password: "${esc(email.password)}"
-  from: "${esc(email.from)}"
-  to: "${esc(email.to)}"
-  subjectPrefix: "${esc(email.subjectPrefix)}"
+# Channels: Slack / Discord incoming webhooks; Teams Workflows webhook (Adaptive
+# Card); LINE Messaging API push; generic webhook (structured JSON, textField
+# renames the plain-text key); email over SMTP (security: none | starttls | ssl,
+# to is comma-separated).
+default:
+${emitNotifSet(sets.default, '  ')}`;
+	if (customCats.length) {
+		out += `
+# Per-category channel sets (categories not listed use "default").
+categories:
 `;
+		for (const c of customCats) {
+			out += `  ${c}:\n${emitNotifSet(sets[c], '    ')}`;
+		}
+	}
+	return out;
 }
 
 function num(v: any, dflt: number): number {
@@ -251,9 +329,8 @@ function num(v: any, dflt: number): number {
 
 function serializeHealth(h: any): string {
 	const hmac = h.hmacFailures || {};
-	const api = h.apiErrorRate || {};
-	const route = h.routeErrorRate || {};
-	const lat = h.processingLatency || {};
+	const api = h.apiErrors || {};
+	const route = h.routeErrors || {};
 	return `# Integration health monitor
 # Deploy to: /etc/commerce/config/health.yml
 # Managed by the Commerce app (Webtop > Commerce > Health).
@@ -263,30 +340,19 @@ function serializeHealth(h: any): string {
 # Master switch for alerting (false = record metrics without alerting).
 enabled: ${h.enabled === true}
 
-# Minimum minutes between repeat alerts of the same kind (debounce).
-cooldownMinutes: ${num(h.cooldownMinutes, 30)}
-
-# Burst of failed HMAC verifications today.
+# A single failed HMAC verification alerts; repeats are suppressed for
+# cooldownMinutes.
 hmacFailures:
   enabled: ${hmac.enabled === true}
-  threshold: ${num(hmac.threshold, 5)}
+  cooldownMinutes: ${num(hmac.cooldownMinutes, 30)}
 
-# Shopify Admin API error rate today (errors / calls), gated by minSample.
-apiErrorRate:
+# Every Shopify Admin API error is notified with its error detail.
+apiErrors:
   enabled: ${api.enabled === true}
-  minSample: ${num(api.minSample, 10)}
-  threshold: ${num(api.threshold, 0.2)}
 
-# Webhook processing error rate today, gated by minSample.
-routeErrorRate:
+# Every webhook processing error is notified with its error detail.
+routeErrors:
   enabled: ${route.enabled === true}
-  minSample: ${num(route.minSample, 10)}
-  threshold: ${num(route.threshold, 0.2)}
-
-# Slow webhook processing: receipt -> completion latency over maxMs.
-processingLatency:
-  enabled: ${lat.enabled === true}
-  maxMs: ${num(lat.maxMs, 30000)}
 `;
 }
 
@@ -431,8 +497,8 @@ function serializeIngest(g: any): string {
 # Deploy to: /etc/commerce/config/ingest.yml
 # Managed by the Commerce app (Webtop > Commerce > Ingestion).
 
-# Master switch for the replay/housekeeping batch (live ingestion is always on; this
-# only governs automatic replay + pruning).
+# Master switch for the replay batch (live ingestion is always on; this only governs
+# automatic replay of failed events). Event-log retention/pruning lives in retention.yml.
 enabled: ${g.enabled === true}
 
 # Automatic replay of failed events.
@@ -440,7 +506,28 @@ replay:
   enabled: ${rep.enabled === true}
   maxAttempts: ${num(rep.maxAttempts, 5)}
   backoffMinutes: ${num(rep.backoffMinutes, 15)}
-  retentionDays: ${num(rep.retentionDays, 30)}
+`;
+}
+
+function serializeRetention(r: any): string {
+	// Each value is a number of days; 0 means keep forever (no pruning).
+	return `# Data retention (automatic pruning of accumulated history stores)
+# Deploy to: /etc/commerce/config/retention.yml
+# Managed by the Commerce app (Webtop > Commerce > Maintenance > Retention).
+#
+# Each value is a number of DAYS; records older than that are pruned by the periodic
+# housekeeping batch (commerce-housekeeping). 0 means keep forever (no pruning).
+# Business data (orders / payments / refunds) is NOT auto-pruned here — it is removed
+# only by the explicit, audited manual purge action in the same section.
+
+# Master switch for the housekeeping batch. false = nothing is auto-pruned.
+enabled: ${r.enabled === true}
+
+eventLog: ${num(r.eventLog, 0)}
+webhookMarkers: ${num(r.webhookMarkers, 0)}
+bulkJobs: ${num(r.bulkJobs, 0)}
+reconciliation: ${num(r.reconciliation, 0)}
+health: ${num(r.health, 0)}
 `;
 }
 
@@ -594,12 +681,15 @@ const NAV_GROUPS = [
 	{ labelKey: 'app.commerce.nav.group.monitoring', items: [
 		{ key: 'health', labelKey: 'app.commerce.nav.health', icon: 'bi-heart-pulse' },
 	] },
+	{ labelKey: 'app.commerce.nav.group.maintenance', items: [
+		{ key: 'retention', labelKey: 'app.commerce.nav.retention', icon: 'bi-clock-history' },
+	] },
 ];
 // Section key → the dirty computed that tracks it (for the nav unsaved markers).
 const SECTION_DIRTY: Record<string, string> = {
 	shop: 'shopDirty', notifications: 'notifDirty', health: 'healthDirty', tasks: 'slaDirty',
 	planning: 'planningDirty', locations: 'locationsDirty',
-	ingestion: 'ingestDirty', reconciliation: 'reconcileDirty',
+	ingestion: 'ingestDirty', reconciliation: 'reconcileDirty', retention: 'retentionDirty',
 	inventoryAlert: 'inventoryAlertDirty',
 	backorders: 'backorderDirty', orderReview: 'orderReviewDirty', refundReview: 'refundReviewDirty',
 };
@@ -659,26 +749,24 @@ const App = {
 				webhookSecret: '',
 				adminApi: { shopDomain: '', apiVersion: '', clientID: '', clientSecret: '' },
 			},
+			// Notification destinations (notifications.yml): the default channel set
+			// plus an optional dedicated set per category (null = the category uses
+			// the default set). notifCat is the set currently shown in the editor.
 			notif: {
-				slack: { enabled: false, webhookUrl: '' },
-				discord: { enabled: false, webhookUrl: '' },
-				teams: { enabled: false, webhookUrl: '' },
-				line: { enabled: false, accessToken: '', to: '' },
-				webhook: { enabled: false, url: '', textField: 'text' },
-				email: {
-					enabled: false, smtpHost: '', smtpPort: 587, security: 'starttls',
-					username: '', password: '', from: '', to: '', subjectPrefix: '[Commerce] ',
-				},
+				sets: NOTIF_CATEGORIES.reduce((acc, c) => { acc[c] = null; return acc; },
+					{ default: emptyNotifSet() } as Record<string, any>),
 			},
+			notifCat: 'default',
+			// Channel whose "copy default" button is currently showing the
+			// post-click checkmark ('' = none). Only one at a time.
+			notifCopied: '',
 
-			// Integration health monitor alert thresholds (health.yml).
+			// Integration health monitor alert rules (health.yml).
 			health: {
 				enabled: true,
-				cooldownMinutes: 30,
-				hmacFailures: { enabled: true, threshold: 5 },
-				apiErrorRate: { enabled: true, minSample: 10, threshold: 0.2 },
-				routeErrorRate: { enabled: true, minSample: 10, threshold: 0.2 },
-				processingLatency: { enabled: true, maxMs: 30000 },
+				hmacFailures: { enabled: true, cooldownMinutes: 30 },
+				apiErrors: { enabled: true },
+				routeErrors: { enabled: true },
 			},
 
 			// Task SLA monitor (sla.yml).
@@ -716,8 +804,13 @@ const App = {
 				schedules: [] as any[],
 			},
 
-			// Event ingestion replay / housekeeping (ingest.yml).
-			ingest: { enabled: true, replay: { enabled: true, maxAttempts: 5, backoffMinutes: 15, retentionDays: 30 } },
+			// Event ingestion replay (ingest.yml). Retention/pruning lives in retention.yml.
+			ingest: { enabled: true, replay: { enabled: true, maxAttempts: 5, backoffMinutes: 15 } },
+
+			// Data retention — automatic pruning of history stores (retention.yml). Each
+			// value is a number of days; 0 means keep forever. Business data (orders /
+			// payments / refunds) is NOT here — it is handled by the manual purge below.
+			retention: { enabled: true, eventLog: 30, webhookMarkers: 30, bulkJobs: 90, reconciliation: 365, health: 400 },
 
 			// Backorder / pre-order management (backorder.yml). preorderTags edited as CSV.
 			backorder: { enabled: true, preorderTags: '', notify: { onCreated: true, onReady: true } },
@@ -766,6 +859,22 @@ const App = {
 				error: '',
 			},
 
+			// Manual business-data purge — an ACTION panel, NOT a saved config section.
+			// The operator enters a day count, previews the affected orders/payments/
+			// refunds, then confirms an irreversible, audited delete. State mirrors the
+			// endpoint's GET preview + history; the actual delete is a fire-and-forget POST.
+			retentionPurge: {
+				loaded: false,
+				days: 3650,               // v-model — the cutoff age in days
+				previewing: false,
+				preview: null as any,     // { orders, payments, refunds, cutoff } or null
+				running: false,
+				loadingHistory: false,
+				history: [] as any[],     // [{ at, actor, days, orders, payments, refunds, status }]
+				error: '',
+				confirm: { visible: false, orders: 0, payments: 0, refunds: 0, cutoff: '' },
+			},
+
 			// Snapshots for dirty detection (the in-memory edit model).
 			_origShop: '',
 			_origNotif: '',
@@ -775,6 +884,7 @@ const App = {
 			_origLocations: '',
 			_origReconcile: '',
 			_origIngest: '',
+			_origRetention: '',
 			_origBackorder: '',
 			_origOrderReview: '',
 			_origRefundReview: '',
@@ -782,6 +892,7 @@ const App = {
 			_base: '' as string,
 			_messageListener: null as any,
 			_toastTimer: null as any,
+			_notifCopiedTimer: null as any,
 		};
 	},
 
@@ -794,13 +905,14 @@ const App = {
 		locationsDirty(): boolean { return JSON.stringify(this.locations) !== this._origLocations; },
 		reconcileDirty(): boolean { return JSON.stringify(this.reconcile) !== this._origReconcile; },
 		ingestDirty(): boolean { return JSON.stringify(this.ingest) !== this._origIngest; },
+		retentionDirty(): boolean { return JSON.stringify(this.retention) !== this._origRetention; },
 		backorderDirty(): boolean { return JSON.stringify(this.backorder) !== this._origBackorder; },
 		orderReviewDirty(): boolean { return JSON.stringify(this.orderReview) !== this._origOrderReview; },
 		refundReviewDirty(): boolean { return JSON.stringify(this.refundReview) !== this._origRefundReview; },
 		inventoryAlertDirty(): boolean { return JSON.stringify(this.inventoryAlert) !== this._origInventoryAlert; },
 		hasChanges(): boolean {
 			return this.shopDirty || this.notifDirty || this.healthDirty || this.slaDirty || this.planningDirty || this.locationsDirty
-				|| this.reconcileDirty || this.ingestDirty || this.backorderDirty
+				|| this.reconcileDirty || this.ingestDirty || this.retentionDirty || this.backorderDirty
 				|| this.orderReviewDirty || this.refundReviewDirty || this.inventoryAlertDirty;
 		},
 
@@ -814,17 +926,26 @@ const App = {
 				.filter((v: any) => String(v == null ? '' : v).trim() !== '').length;
 			return filled > 0 && filled < 4;
 		},
-		// An enabled channel must have its required connection fields. Drives the
-		// inline markers, the save guard and the status hint (mis-config guard).
+		// An enabled channel must have its required connection fields — checked in
+		// the default set AND every dedicated category set. Drives the inline
+		// markers, the save guard and the status hint (mis-config guard).
 		notifInvalid(): boolean {
-			const n = this.notif;
 			const blank = (v: any) => !String(v == null ? '' : v).trim();
-			if (n.slack.enabled && blank(n.slack.webhookUrl)) return true;
-			if (n.discord.enabled && blank(n.discord.webhookUrl)) return true;
-			if (n.teams.enabled && blank(n.teams.webhookUrl)) return true;
-			if (n.line.enabled && (blank(n.line.accessToken) || blank(n.line.to))) return true;
-			if (n.webhook.enabled && blank(n.webhook.url)) return true;
-			if (n.email.enabled && (blank(n.email.smtpHost) || blank(n.email.from) || blank(n.email.to))) return true;
+			const bad = (n: any) => {
+				if (!n) return false;
+				if (n.slack.enabled && blank(n.slack.webhookUrl)) return true;
+				if (n.discord.enabled && blank(n.discord.webhookUrl)) return true;
+				if (n.teams.enabled && blank(n.teams.webhookUrl)) return true;
+				if (n.line.enabled && (blank(n.line.accessToken) || blank(n.line.to))) return true;
+				if (n.webhook.enabled && blank(n.webhook.url)) return true;
+				if (n.email.enabled && (blank(n.email.smtpHost) || blank(n.email.from) || blank(n.email.to))) return true;
+				return false;
+			};
+			const sets = this.notif.sets || {};
+			if (bad(sets.default)) return true;
+			for (const c of NOTIF_CATEGORIES) {
+				if (bad(sets[c])) return true;
+			}
 			return false;
 		},
 		canSave(): boolean { return this.hasChanges && !this.adminApiInvalid && !this.notifInvalid && !this.saving; },
@@ -899,6 +1020,7 @@ const App = {
 		onUnmount() {
 			if (this._messageListener) window.removeEventListener('message', this._messageListener);
 			if (this._toastTimer) clearTimeout(this._toastTimer);
+			if (this._notifCopiedTimer) clearTimeout(this._notifCopiedTimer);
 			// Detach any in-flight sidebar resize listeners.
 			if (this._boundSidebarResizeMove) document.removeEventListener('mousemove', this._boundSidebarResizeMove);
 			if (this._boundSidebarResizeUp) document.removeEventListener('mouseup', this._boundSidebarResizeUp);
@@ -910,6 +1032,11 @@ const App = {
 			// current-state snapshot the first time it is opened.
 			if (section === 'webhooks' && !this.webhooks.loaded && !this.webhooks.loading) {
 				this.loadWebhooks();
+			}
+			// The manual purge panel is an action console too: lazy-load its recent
+			// purge history the first time Retention is opened.
+			if (section === 'retention' && !this.retentionPurge.loaded && !this.retentionPurge.loadingHistory) {
+				this.loadPurgeHistory();
 			}
 			// Reset the main panel to the top after the new section renders, so a
 			// tab switch always starts at the top (the .content-main island is the
@@ -1076,7 +1203,7 @@ const App = {
 		async loadAll() {
 			try {
 				const [shopText, notifText, healthText, slaText, planningText, locationsText,
-					reconcileText, ingestText, backorderText, orderReviewText, refundReviewText, inventoryAlertText] = await Promise.all([
+					reconcileText, ingestText, retentionText, backorderText, orderReviewText, refundReviewText, inventoryAlertText] = await Promise.all([
 					this.readText(SHOPIFY_PATH),
 					this.readText(NOTIF_PATH),
 					this.readText(HEALTH_PATH),
@@ -1085,6 +1212,7 @@ const App = {
 					this.readText(LOCATIONS_PATH),
 					this.readText(RECONCILE_PATH),
 					this.readText(INGEST_PATH),
+					this.readText(RETENTION_PATH),
 					this.readText(BACKORDER_PATH),
 					this.readText(ORDER_REVIEW_PATH),
 					this.readText(REFUND_REVIEW_PATH),
@@ -1107,63 +1235,35 @@ const App = {
 					},
 				};
 
-				const n = parseSimpleYaml(notifText || '');
-				const sec = (key: string) => (n[key] && typeof n[key] === 'object') ? n[key] : {};
-				const slack = sec('slack'), discord = sec('discord'), teams = sec('teams');
-				const line = sec('line'), webhook = sec('webhook'), email = sec('email');
-				this.notif = {
-					slack: { enabled: slack.enabled === true, webhookUrl: String(slack.webhookUrl || '') },
-					discord: { enabled: discord.enabled === true, webhookUrl: String(discord.webhookUrl || '') },
-					teams: { enabled: teams.enabled === true, webhookUrl: String(teams.webhookUrl || '') },
-					line: {
-						enabled: line.enabled === true,
-						accessToken: String(line.accessToken || ''),
-						to: String(line.to || ''),
-					},
-					webhook: {
-						enabled: webhook.enabled === true,
-						url: String(webhook.url || ''),
-						textField: String(webhook.textField || 'text'),
-					},
-					email: {
-						enabled: email.enabled === true,
-						smtpHost: String(email.smtpHost || ''),
-						smtpPort: Number(email.smtpPort) || 587,
-						security: String(email.security || 'starttls'),
-						username: String(email.username || ''),
-						password: String(email.password || ''),
-						from: String(email.from || ''),
-						to: String(email.to || ''),
-						subjectPrefix: String(email.subjectPrefix ?? '[Commerce] '),
-					},
-				};
+				// Notifications: a `default` channel set plus optional per-category
+				// sets under `categories` (nested one level deeper than the simple
+				// files, hence parseYaml).
+				const nRaw = parseYaml(notifText || '');
+				const n = (nRaw && typeof nRaw === 'object' && !Array.isArray(nRaw)) ? nRaw : {};
+				const nCats = (n.categories && typeof n.categories === 'object') ? n.categories : {};
+				const nSets: Record<string, any> = { default: readNotifSet(n.default) };
+				for (const c of NOTIF_CATEGORIES) {
+					nSets[c] = (nCats[c] && typeof nCats[c] === 'object') ? readNotifSet(nCats[c]) : null;
+				}
+				this.notif = { sets: nSets };
 
 				const h = parseSimpleYaml(healthText || '');
 				const hsec = (key: string) => (h[key] && typeof h[key] === 'object') ? h[key] : {};
-				const hmac = hsec('hmacFailures'), api = hsec('apiErrorRate');
-				const route = hsec('routeErrorRate'), lat = hsec('processingLatency');
-				// A missing health.yml defaults to the recommended thresholds (on).
+				const hmac = hsec('hmacFailures'), api = hsec('apiErrors');
+				const route = hsec('routeErrors');
+				// A missing health.yml defaults to the recommended rules (on).
 				const hasHealth = !!healthText;
 				this.health = {
 					enabled: hasHealth ? (h.enabled === true) : true,
-					cooldownMinutes: Number(h.cooldownMinutes) || 30,
 					hmacFailures: {
 						enabled: hasHealth ? (hmac.enabled === true) : true,
-						threshold: Number(hmac.threshold) || 5,
+						cooldownMinutes: Number(hmac.cooldownMinutes) || 30,
 					},
-					apiErrorRate: {
+					apiErrors: {
 						enabled: hasHealth ? (api.enabled === true) : true,
-						minSample: Number(api.minSample) || 10,
-						threshold: Number(api.threshold) || 0.2,
 					},
-					routeErrorRate: {
+					routeErrors: {
 						enabled: hasHealth ? (route.enabled === true) : true,
-						minSample: Number(route.minSample) || 10,
-						threshold: Number(route.threshold) || 0.2,
-					},
-					processingLatency: {
-						enabled: hasHealth ? (lat.enabled === true) : true,
-						maxMs: Number(lat.maxMs) || 30000,
 					},
 				};
 
@@ -1236,8 +1336,21 @@ const App = {
 						enabled: hasIg ? (igRep.enabled === true) : true,
 						maxAttempts: Number(igRep.maxAttempts) || 5,
 						backoffMinutes: Number(igRep.backoffMinutes) || 15,
-						retentionDays: Number(igRep.retentionDays) || 30,
 					},
+				};
+
+				// Retention (days per store; 0/absent = keep forever). A missing file falls
+				// back to the shipped defaults so a fresh install prunes sensibly.
+				const rt = parseYaml(retentionText || '');
+				const hasRt = !!retentionText;
+				const rtNum = (v: any, dflt: number) => Number.isFinite(Number(v)) ? Math.max(0, Math.trunc(Number(v))) : dflt;
+				this.retention = {
+					enabled: hasRt ? (rt.enabled === true) : true,
+					eventLog: rtNum(rt.eventLog, 30),
+					webhookMarkers: rtNum(rt.webhookMarkers, 30),
+					bulkJobs: rtNum(rt.bulkJobs, 90),
+					reconciliation: rtNum(rt.reconciliation, 365),
+					health: rtNum(rt.health, 400),
 				};
 
 				const bo = parseYaml(backorderText || '');
@@ -1338,6 +1451,9 @@ const App = {
 				if (this.ingestDirty) {
 					await this.writeText(CONFIG_DIR, INGEST_FILE, serializeIngest(this.ingest));
 				}
+				if (this.retentionDirty) {
+					await this.writeText(CONFIG_DIR, RETENTION_FILE, serializeRetention(this.retention));
+				}
 				if (this.backorderDirty) {
 					await this.writeText(CONFIG_DIR, BACKORDER_FILE, serializeBackorder(this.backorder));
 				}
@@ -1372,6 +1488,7 @@ const App = {
 			this._origLocations = JSON.stringify(this.locations);
 			this._origReconcile = JSON.stringify(this.reconcile);
 			this._origIngest = JSON.stringify(this.ingest);
+			this._origRetention = JSON.stringify(this.retention);
 			this._origBackorder = JSON.stringify(this.backorder);
 			this._origOrderReview = JSON.stringify(this.orderReview);
 			this._origRefundReview = JSON.stringify(this.refundReview);
@@ -1513,17 +1630,171 @@ const App = {
 			return String(action || '—');
 		},
 
+		// ---- Manual business-data purge (action panel) -----------------------
+		// Mirrors the Webhooks console: it talks to a cgi endpoint directly (never
+		// the config Save flow). GET ?days=N previews the affected counts and
+		// returns recent purge history; POST { days } triggers the irreversible,
+		// audited delete as the operator.
+		purgeDaysValid(): boolean {
+			const n = Number(this.retentionPurge.days);
+			return Number.isFinite(n) && Math.trunc(n) >= 1;
+		},
+		async loadPurgeHistory() {
+			const vm = this;
+			vm.retentionPurge.loadingHistory = true;
+			vm.retentionPurge.error = '';
+			try {
+				if (!vm._base) await vm.resolveBase();
+				const j = await vm.getJson(RETENTION_PURGE_SCRIPT);
+				vm.retentionPurge.history = Array.isArray(j?.history) ? j.history : [];
+				vm.retentionPurge.loaded = true;
+			} catch (e: any) {
+				vm.retentionPurge.error = (e && e.message) ? e.message : String(e);
+			} finally {
+				vm.retentionPurge.loadingHistory = false;
+			}
+		},
+		// Fetch the affected counts for the current day count without deleting anything.
+		async previewPurge() {
+			const vm = this;
+			if (!vm.purgeDaysValid()) {
+				vm.showToast(vm.t('app.commerce.retention.purge.invalidDays', undefined, 'Enter a number of days (1 or more).'), true);
+				return;
+			}
+			vm.retentionPurge.previewing = true;
+			vm.retentionPurge.error = '';
+			try {
+				if (!vm._base) await vm.resolveBase();
+				const days = Math.trunc(Number(vm.retentionPurge.days));
+				const j = await vm.getJson(`${RETENTION_PURGE_SCRIPT}?days=${days}`);
+				vm.retentionPurge.preview = {
+					orders: Number(j?.orders) || 0,
+					payments: Number(j?.payments) || 0,
+					refunds: Number(j?.refunds) || 0,
+					cutoff: String(j?.cutoff || ''),
+				};
+			} catch (e: any) {
+				vm.retentionPurge.error = (e && e.message) ? e.message : String(e);
+				vm.retentionPurge.preview = null;
+			} finally {
+				vm.retentionPurge.previewing = false;
+			}
+		},
+		// Open the confirm modal — always preview first so the operator sees the
+		// exact cutoff date and counts before committing to an irreversible delete.
+		async openPurgeConfirm() {
+			const vm = this;
+			if (!vm.purgeDaysValid()) {
+				vm.showToast(vm.t('app.commerce.retention.purge.invalidDays', undefined, 'Enter a number of days (1 or more).'), true);
+				return;
+			}
+			await vm.previewPurge();
+			if (!vm.retentionPurge.preview) return; // preview failed; error already shown
+			const p = vm.retentionPurge.preview;
+			vm.retentionPurge.confirm = {
+				visible: true,
+				orders: p.orders, payments: p.payments, refunds: p.refunds, cutoff: p.cutoff,
+			};
+		},
+		cancelPurgeConfirm() {
+			this.retentionPurge.confirm.visible = false;
+		},
+		// Fire the delete. The endpoint returns the deleted counts (synchronous —
+		// the purge runs to completion so the operator gets a real tally).
+		async confirmPurge() {
+			const vm = this;
+			vm.retentionPurge.confirm.visible = false;
+			if (!vm.purgeDaysValid()) return;
+			vm.retentionPurge.running = true;
+			vm.retentionPurge.error = '';
+			try {
+				if (!vm._base) await vm.resolveBase();
+				const days = Math.trunc(Number(vm.retentionPurge.days));
+				const { status, json } = await vm.postJson(RETENTION_PURGE_SCRIPT, { days });
+				if (status < 200 || status >= 300) {
+					throw new Error((json && json.error) ? json.error : `Request failed (${status})`);
+				}
+				vm.showToast(vm.t('app.commerce.retention.purge.done', {
+					orders: Number(json?.orders) || 0,
+					payments: Number(json?.payments) || 0,
+					refunds: Number(json?.refunds) || 0,
+				}, 'Purge complete.'), false);
+				vm.retentionPurge.preview = null;
+				await vm.loadPurgeHistory();
+			} catch (e: any) {
+				const msg = (e && e.message) ? e.message : String(e);
+				vm.showToast(vm.t('app.commerce.retention.purge.failed', { message: msg }, 'Purge failed.'), true);
+			} finally {
+				vm.retentionPurge.running = false;
+			}
+		},
+
 		// ---- wt-select popups (shell menu anchored to the trigger) -----------
 		// House convention: the shell apps have no native <select>. Each opener
 		// mirrors content-browser's Date filter (openFilterDateDropdown) — it
 		// anchors a shell popup to the trigger's rect and writes the chosen id
 		// back to the same model the <select> used. A paired *Label helper
 		// renders the current value inside the trigger button.
-		async openEmailSecurityMenu(event: MouseEvent) {
+		// --- Notification category set editing -------------------------------
+		// The display label for a channel-set key ("default" or a category).
+		notifCatLabel(key: string): string {
+			if (key === 'default') return this.t('app.commerce.notifications.set.default');
+			return this.t('app.commerce.notifications.category.' + key);
+		},
+		// Choose the channel set shown in the editor: the default set or any
+		// category. Categories that carry their own dedicated set are flagged
+		// with a secondary line in the list (mirrors the trigger's dot).
+		async openNotifCatMenu(event: MouseEvent) {
 			const trigger = event.currentTarget as HTMLElement;
 			if (!trigger || !this.instance) return;
 			const rect = trigger.getBoundingClientRect();
-			const cur = this.notif.email.security;
+			const cur = this.notifCat;
+			const mark = this.t('app.commerce.notifications.category.customMark');
+			const items = [
+				{ id: 'default', label: this.t('app.commerce.notifications.set.default'), selected: cur === 'default' },
+				...NOTIF_CATEGORIES.map((c) => ({
+					id: c,
+					label: this.notifCatLabel(c),
+					description: this.notif.sets[c] ? mark : undefined,
+					selected: cur === c,
+				})),
+			];
+			const handle = this.instance.popup.open({ anchor: rect, placement: 'bottom-start', minWidth: rect.width, items });
+			const result = await handle.result;
+			if (result == null) return;
+			this.notifCat = String(result);
+		},
+		// Switch the current category between "use the default set" (null) and
+		// "use a dedicated set". The dedicated set starts EMPTY (all channels off)
+		// — the operator fills it in, or copies the default values per channel.
+		setNotifCustom(on: boolean) {
+			if (this.notifCat === 'default') return;
+			this.notif.sets[this.notifCat] = on ? emptyNotifSet() : null;
+		},
+		// Copy one channel's settings from the default set into the current
+		// category's dedicated set (explicit action; sets stay independent).
+		copyNotifDefault(type: string) {
+			const set = this.notif.sets[this.notifCat];
+			if (this.notifCat === 'default' || !set) return;
+			set[type] = JSON.parse(JSON.stringify(this.notif.sets.default[type]));
+			// Confirm the copy on the clicked button: its icon becomes a
+			// checkmark until the timer expires. Re-arming the timer keeps a
+			// rapid second click from cutting the first one's feedback short.
+			if (this._notifCopiedTimer) clearTimeout(this._notifCopiedTimer);
+			this.notifCopied = type;
+			this._notifCopiedTimer = setTimeout(() => {
+				this.notifCopied = '';
+				this._notifCopiedTimer = null;
+			}, 1500);
+		},
+
+		async openEmailSecurityMenu(event: MouseEvent) {
+			const trigger = event.currentTarget as HTMLElement;
+			if (!trigger || !this.instance) return;
+			const set = this.notif.sets[this.notifCat];
+			if (!set) return;
+			const rect = trigger.getBoundingClientRect();
+			const cur = set.email.security;
 			const items = [
 				{ id: 'starttls', label: this.t('app.commerce.notifications.email.security.starttls'), selected: cur === 'starttls' },
 				{ id: 'ssl', label: this.t('app.commerce.notifications.email.security.ssl'), selected: cur === 'ssl' },
@@ -1532,7 +1803,7 @@ const App = {
 			const handle = this.instance.popup.open({ anchor: rect, placement: 'bottom-start', minWidth: rect.width, items });
 			const result = await handle.result;
 			if (result == null) return;
-			this.notif.email.security = String(result);
+			set.email.security = String(result);
 		},
 		emailSecurityLabel(v: string): string {
 			switch (v) {

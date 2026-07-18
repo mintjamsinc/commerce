@@ -27,6 +27,7 @@
       unconfigured-threshold policy lives in the same configuration.
     -->
     <route id="commerce-inventory-alert-sweep" routeConfigurationId="commerce-inventory-alert-sweep-error-handler">
+        <routeProperty key="mi:history" value="failure"/>
         <from uri="timer:commerce-inventory-alert-sweep?period=15000&amp;delay=60000"/>
 
         <setHeader name="runAs">
@@ -44,6 +45,7 @@
       lease coalesces a burst of kicks into a single drain; the timer above stays as a backstop.
     -->
     <route id="commerce-inventory-alert-sweep-kick" routeConfigurationId="commerce-inventory-alert-sweep-error-handler">
+        <routeProperty key="mi:history" value="failure"/>
         <from uri="direct:commerce-inventory-alert-sweep"/>
 
         <choice>

@@ -19,13 +19,15 @@
 //
 // Wiring
 // ------
-// This one script is attached at FOUR points via org.mintjams.script.bpm.CmsDelegate
+// This one script is attached at SIX points via org.mintjams.script.bpm.CmsDelegate
 // and resolves the target status from the BPMN element it fired on:
 //
-//   - "create" task listener on "Order Review"   (UserTask_orderReview)        -> review_pending
-//   - service task                                (ServiceTask_approveOrder)    -> approved
-//   - "create" task listener on "Fulfill Order"  (UserTask_fulfillOrder)        -> fulfillment_pending
-//   - "end" execution listener on the end event  (EndEvent_orderProcessing)     -> fulfilled
+//   - "create" task listener on "Order Review"   (UserTask_orderReview)           -> review_pending
+//   - service task                                (ServiceTask_approveOrder)       -> approved
+//   - "create" task listener on "Fulfill Order"  (UserTask_fulfillOrder)           -> fulfillment_pending
+//   - "end" execution listener on the end event  (EndEvent_orderProcessing)        -> fulfilled
+//   - "end" execution listener on the end event  (EndEvent_orderCancelled)         -> cancelled  (review reject branch)
+//   - "end" execution listener on the end event  (EndEvent_orderClosedUnfulfilled) -> cancelled  (closed without fulfilling)
 //
 // CmsDelegate exposes the current DelegateTask as the "task" context attribute
 // (task listener) or the DelegateExecution as "execution" (service task /
@@ -55,11 +57,14 @@ if (elementId == null) {
 
 // --- Map the element to the target processing status -------------------------
 def statusByElement = [
-    "UserTask_orderReview"     : "review_pending",
-    "ServiceTask_approveOrder" : "approved",
-    "UserTask_fulfillOrder"    : "fulfillment_pending",
-    "EndEvent_orderProcessing" : "fulfilled",
-    "EndEvent_orderCancelled"  : "cancelled",
+    "UserTask_orderReview"            : "review_pending",
+    "ServiceTask_approveOrder"        : "approved",
+    "UserTask_fulfillOrder"           : "fulfillment_pending",
+    "EndEvent_orderProcessing"        : "fulfilled",
+    "EndEvent_orderCancelled"         : "cancelled",
+    // Close branch: the order was cancelled in Shopify while the Fulfill Order
+    // task was claimed; the assignee closed it without a fulfillment write-back.
+    "EndEvent_orderClosedUnfulfilled" : "cancelled",
 ]
 def status = statusByElement[elementId]
 if (!status) {

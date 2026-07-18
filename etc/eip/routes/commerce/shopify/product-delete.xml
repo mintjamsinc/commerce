@@ -38,6 +38,9 @@
             <setHeader name="health_ok">
                 <constant>false</constant>
             </setHeader>
+            <setHeader name="health_error">
+                <simple>${exception.message}</simple>
+            </setHeader>
             <toD uri="cms:/etc/commerce/scripts/shopify/recordHealth.groovy?inputs=health_*,received_at"/>
         </onException>
     </routeConfiguration>
@@ -99,7 +102,7 @@
                      header cannot be dereferenced via ${header.commerce:...}); it is
                      mapped to the commerce:deletedAt property by includes=commerce:* below. -->
                 <setHeader name="deletedAt">
-                    <simple>${date:now:yyyy-MM-dd'T'HH:mm:ss.SSSZ}</simple>
+                    <simple>${date-with-timezone:now:UTC:yyyy-MM-dd'T'HH:mm:ss.SSS'Z'}</simple>
                 </setHeader>
                 <setHeader name="commerce:deletedAt">
                     <simple>${header.deletedAt}</simple>
@@ -121,9 +124,9 @@
 
                 <!-- Record webhook as processed (idempotency marker) -->
                 <setBody>
-                    <simple>${date:now:yyyy-MM-dd'T'HH:mm:ss.SSSZ}</simple>
+                    <simple>${date-with-timezone:now:UTC:yyyy-MM-dd'T'HH:mm:ss.SSS'Z'}</simple>
                 </setBody>
-                <toD uri="cms:store?path=/content/commerce/history/webhooks/${date:now:yyyy}/${date:now:MM}/${header.shopify_webhook_id}&amp;mimeType=text/plain"/>
+                <toD uri="cms:store?path=/content/commerce/history/webhooks/${date-with-timezone:now:UTC:yyyy}/${date-with-timezone:now:UTC:MM}/${header.shopify_webhook_id}&amp;mimeType=text/plain"/>
 
                 <!-- Remove the inventory_item_id
                      reverse-index entries for this product. The soft-deleted product

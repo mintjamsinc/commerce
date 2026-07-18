@@ -80,6 +80,19 @@ class Api {
         return null
     }
 
+    /**
+     * ["yyyy", "MM"] of a timestamp in UTC — THE folder rule for every
+     * month-nested store (raw mirrors, sales-fact index, markers). Accepts
+     * anything {@link #epochMs} does (embedded offsets convert to UTC, they are
+     * never read as-is); falls back to now when absent/unparseable, so folder
+     * placement can never break a write.
+     */
+    static List utcYearMonth(Object v) {
+        Long ms = epochMs(v)
+        def odt = Instant.ofEpochMilli(ms != null ? ms : System.currentTimeMillis()).atOffset(ZoneOffset.UTC)
+        return [String.format("%04d", odt.getYear()), String.format("%02d", odt.getMonthValue())]
+    }
+
     // -------------------------------------------------------------------------
     // 1. Numbers & money
     // -------------------------------------------------------------------------

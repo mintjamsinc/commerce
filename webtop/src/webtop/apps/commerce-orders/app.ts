@@ -48,8 +48,10 @@ const App = {
 			// Active drill-down (q = full-text; the rest are exact facet filters).
 			// customerId / productId take a Shopify GID or a numeric id — passed
 			// through opaquely (the client never decomposes GIDs). from / to are
-			// bare dates completed to an ordered-at day range on the wire.
-			filters: { q: '', status: '', financial: '', currency: '', customerId: '', productId: '', from: '', to: '' },
+			// bare dates completed to a day range on the wire (the ordered-at day,
+			// or the CANCEL day when cancelled is on — the sales report's cancelled-count
+			// drill-down deep-links here with cancelled='true' + the day range).
+			filters: { q: '', status: '', financial: '', currency: '', customerId: '', productId: '', from: '', to: '', cancelled: '' },
 			page: 1,
 
 			loading: false,
@@ -130,12 +132,15 @@ const App = {
 				if (data.type === 'theme-changed' && data.theme) {
 					document.documentElement.dataset.theme = data.theme;
 				} else if (data.type === 'app-reopen') {
-					vm.load();
+					// Re-target of the singleton (e.g. a fresh drill-down from the sales report):
+					// apply the new deep-link filters and jump to page 1, else just refresh.
+					if (data.options) { vm.applyLaunchOptions(data.options); vm.search(); }
+					else vm.load();
 				}
 			};
 			window.addEventListener('message', vm._messageListener);
 
-			window.appLaunch = async (instance: AnyInstance) => {
+			window.appLaunch = async (instance: AnyInstance, options?: any) => {
 				vm.instance = vm.$markRaw(instance);
 				try { document.documentElement.dataset.theme = instance.api.theme.currentTheme || 'light'; } catch (_) {}
 				refreshLocalization(vm.localization, vm.instance);
@@ -143,6 +148,8 @@ const App = {
 
 				await vm.resolveBase();
 				await vm.loadSidebarState();
+				// Deep-link filters (if launched with options) must be set BEFORE the first load.
+				vm.applyLaunchOptions(options);
 				await vm.load();
 
 				vm.$nextTick(() => { try { instance.notifyLaunched(); } catch (_) {} });
@@ -249,6 +256,9 @@ const App = {
 			if (fromIso) p.set('from', fromIso);
 			const toIso = wallClockToIso(completeDateTimeLocal(this.filters.to, true), this.localization.timeZone, true);
 			if (toIso) p.set('to', toIso);
+			// cancelled → the cancellation drill-down: only fully-cancelled orders, and the
+			// from/to range applies to the CANCEL date (the endpoint switches the axis).
+			if (this.filters.cancelled) p.set('cancelled', 'true');
 			p.set('limit', String(PAGE_SIZE));
 			p.set('page', String(this.page));
 			return p.toString();
@@ -291,9 +301,26 @@ const App = {
 		},
 
 		clearFilters() {
-			this.filters = { q: '', status: '', financial: '', currency: '', customerId: '', productId: '', from: '', to: '' };
+			this.filters = { q: '', status: '', financial: '', currency: '', customerId: '', productId: '', from: '', to: '', cancelled: '' };
 			this.page = 1;
 			this.load();
+		},
+
+		// Apply deep-link launch options (e.g. the sales report's cancelled-count drill-down:
+		// { cancelled:true, from, to }). Sets the browse filters and resets to page 1; the caller
+		// triggers the load. Unknown keys are ignored. from/to are bare wall-clock day strings.
+		applyLaunchOptions(options: any) {
+			const o = (options && typeof options === 'object') ? options : null;
+			if (!o) return;
+			if (o.cancelled != null) this.filters.cancelled = (o.cancelled === true || String(o.cancelled) === 'true') ? 'true' : '';
+			if (o.status != null) this.filters.status = String(o.status);
+			if (o.financial != null) this.filters.financial = String(o.financial);
+			if (o.currency != null) this.filters.currency = String(o.currency);
+			if (o.customerId != null) this.filters.customerId = String(o.customerId);
+			if (o.q != null) this.filters.q = String(o.q);
+			if (o.from != null) this.filters.from = String(o.from);
+			if (o.to != null) this.filters.to = String(o.to);
+			this.page = 1;
 		},
 
 		prevPage() { if (this.hasPrev) { this.page = Math.max(1, this.page - 1); this.load(); } },

@@ -23,7 +23,7 @@ try {
             .title("🛡", "GDPR")
             .status("🗑", "shop/redact applied — all shop data erased")
             .field("Removed store roots", summary.removedRoots)
-        Notifications.dispatch(log, "shopRedact", config, message)
+        Notifications.dispatch(log, "shopRedact", config, message, Notifications.CAT_COMPLIANCE)
     }
 } catch (Exception e) {
     log.warn("shopRedact: notification failed: ${e.message}")

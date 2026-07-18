@@ -1,13 +1,19 @@
 # Notification Channels
 
-The commerce workflows raise human tasks (inventory review, order review, order
-fulfillment, refund review). When a task is created, a Camunda `create` task
-listener builds **one** channel-agnostic message and dispatches it to every
-**enabled** channel in `/etc/commerce/config/notifications.yml`. Each channel
-renders that single message in its own native format.
+The commerce workflows and monitors notify operators: human tasks (inventory
+review, order review, order fulfillment, refund review), backorder events, GDPR
+compliance actions, and operational alerts (health monitor, task SLA). Each
+caller builds **one** channel-agnostic message, tags it with its **category**,
+and dispatches it. The configuration in
+`/etc/commerce/config/notifications.yml` decides **where** that category is
+delivered: to the **default** channel set, or to a **dedicated** channel set
+configured just for that category. Every enabled channel in the chosen set
+renders the same message in its own native format.
 
-This is the platform "completion form": callers describe *what* to say (a
-[`NotificationMessage`](../content/WEB-INF/classes/commerce/NotificationMessage.groovy));
+This is the platform "completion form" split three ways: callers describe *what*
+to say (a
+[`NotificationMessage`](../content/WEB-INF/classes/commerce/NotificationMessage.groovy))
+and which category it belongs to; the configuration decides *where* it goes;
 channels decide *how* to deliver it. Adding a channel is purely additive — write a
 [`NotificationChannel`](../content/WEB-INF/classes/commerce/NotificationChannel.groovy)
 subclass and register it in
@@ -17,12 +23,13 @@ no caller changes.
 ## Architecture
 
 ```
-notify*TaskCreated.groovy
-        │  builds
+notify*TaskCreated.groovy, detectBackorders.groovy, GDPR scripts, Alerts.fire()
+        │  builds NotificationMessage + declares a category
         ▼
-NotificationMessage ──► Notifications.dispatch(log, source, config, message)
-                                         │  for each enabled section in notifications.yml
-                                         ▼
+Notifications.dispatch(log, source, config, message, category)
+        │  1. pick the channel set: categories.<category> if present, else default
+        │  2. fan out to every enabled channel in that set
+        ▼
         ┌───────────┬───────────┬──────────┬──────────┬───────────┬──────────┐
      SlackChannel DiscordCh.  TeamsCh.  LineChannel WebhookCh. EmailChannel
        {text}     {content}  Adaptive   Messaging   structured   SMTP
@@ -32,11 +39,52 @@ NotificationMessage ──► Notifications.dispatch(log, source, config, messag
 A channel is **ON unless** `enabled: false`. Delivery is best-effort: a failure is
 logged and never breaks the business process.
 
+## Categories
+
+Every notification carries one of the fixed categories (declared by the calling
+code, constants on `commerce.Notifications`):
+
+| Category | Fired by |
+|---|---|
+| `inventory` | Inventory alert workflow tasks (threshold setup, inventory & reorder review) |
+| `orders` | Order review workflow tasks |
+| `refunds` | Refund review workflow tasks |
+| `fulfillment` | Order fulfillment workflow tasks |
+| `backorders` | Backorder created / ready-to-release notifications |
+| `compliance` | GDPR webhook actions (customer redact / data request, shop redact) |
+| `operations` | Health monitor and task SLA alerts |
+
+A category either uses the **default** set or its **own complete** set — the two
+are never merged. A channel not listed in a category's set is off for that
+category. This keeps the model simple: what the operator configures for a
+category is exactly what is delivered.
+
 ## Configuration (`/etc/commerce/config/notifications.yml`)
 
-All settings are managed from the Webtop **Commerce → Notifications** app (an
-enabled channel with missing required fields blocks Save), or by editing the file
-directly. Every leaf is a scalar.
+All settings are managed from the Webtop **Commerce → Notifications** app, which
+shows one tab for the default set and one per category (an enabled channel with
+missing required fields blocks Save — in any set). Or edit the file directly:
+
+```yaml
+default:            # used by every category without an entry under `categories`
+  slack:
+    enabled: true
+    webhookUrl: "https://hooks.slack.com/services/.../system-alerts"
+  email:
+    enabled: false
+    # ...
+
+categories:         # optional; only list the categories you want to separate
+  inventory:        # this category delivers ONLY through the channels below
+    slack:
+      enabled: true
+      webhookUrl: "https://hooks.slack.com/services/.../stock-alerts"
+```
+
+In the Webtop app, switching a category to *dedicated destinations* starts with
+an empty form; a per-channel **Copy default** button copies the default set's
+values for that channel as a starting point (the sets stay independent
+afterwards).
 
 | Channel | Key | Required when enabled | Other settings |
 |---|---|---|---|
@@ -90,4 +138,12 @@ directly. Every leaf is a scalar.
 3. Add a documented section to `notifications.yml` (and, optionally, a form section
    to the Webtop Commerce app).
 
-Nothing else changes — `dispatch` and all four task-listener callers are untouched.
+Nothing else changes — `dispatch`, the category routing and all callers are
+untouched.
+
+## Adding a category
+
+Categories are a fixed vocabulary owned by the code: add a `CAT_*` constant to
+`commerce.Notifications`, pass it from the new caller, and add the category to
+the Webtop Commerce app's tab list and i18n bundles. Configurations that don't
+mention the new category simply deliver it through the default set.
