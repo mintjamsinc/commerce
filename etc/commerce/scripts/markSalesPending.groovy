@@ -19,7 +19,7 @@ try {
     SalesFacts.markPending(repositorySession, log, orderId)
 
     // Kick the drain asynchronously so the fact recompute runs within milliseconds instead of waiting
-    // for the next timer heartbeat. The drainer's cluster lease coalesces a burst of kicks into one
+    // for the next timer heartbeat. The drainer's task lock coalesces a burst of kicks into one
     // drain; a kick failure must never break the source route (the timer drain is the backstop).
     try {
         IntegrationAPI.createMessageSender()

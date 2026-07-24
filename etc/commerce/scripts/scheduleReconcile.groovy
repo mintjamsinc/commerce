@@ -18,6 +18,7 @@
 // Best-effort: a failure is logged, never thrown.
 
 import commerce.Jcr
+import commerce.Locks
 
 def STATE_PATH = "/content/commerce/reconciliation/schedule-state.json"
 
@@ -42,10 +43,10 @@ if (!(schedules instanceof List) || schedules.isEmpty()) {
     return
 }
 
-// Only one cluster node evaluates + fires each tick. The reconcile run itself is also
-// cluster-guarded, but locking here avoids N nodes racing on the per-slot state file.
-def lease = cluster.tryLock("commerce-reconcile-scheduler", 50_000)
-if (lease == null) {
+// Only one execution evaluates + fires each tick. The reconcile run itself is also
+// guarded, but locking here avoids N nodes racing on the per-slot state file.
+def lock = Locks.tryLock(repositorySession, "commerce-reconcile-scheduler", 50)
+if (lock == null) {
     return
 }
 try {
@@ -114,5 +115,5 @@ try {
         }
     }
 } finally {
-    lease.close()
+    Locks.unlock(lock)
 }

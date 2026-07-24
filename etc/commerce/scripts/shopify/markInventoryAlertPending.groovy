@@ -24,7 +24,7 @@ try {
 
         // Kick the drain asynchronously so the materialized total (commerce:available_total) and
         // the alert evaluation run within milliseconds instead of waiting for the next timer
-        // heartbeat. The sweep's cluster lease coalesces a burst of kicks into one drain; a
+        // heartbeat. The sweep's task lock coalesces a burst of kicks into one drain; a
         // kick failure must never break the inventory route (the timer sweep is the backstop).
         try {
             IntegrationAPI.createMessageSender()

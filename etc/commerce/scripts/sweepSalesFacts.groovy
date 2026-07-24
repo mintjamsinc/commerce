@@ -1,7 +1,7 @@
 // Sales-fact drainer. Drains the pending queue; runs on a short timer (sales-materialize.xml) and is
 // also kicked asynchronously by every source path (direct:commerce-sales-materialize) for
 // near-immediate processing. It is the SINGLE writer of both sales-fact grains
-// (/content/commerce/sales/{orders,lines}/index), serialized cluster-wide by a cluster.tryLock lease.
+// (/content/commerce/sales/{orders,lines}/index), serialized by the commerce-sales-materialize task lock.
 // For each pending order it:
 //   1. deletes the pending marker FIRST (delete-before-evaluate: a concurrent source event re-creates
 //      the marker, so the next tick re-recomputes and nothing is lost);
@@ -18,18 +18,19 @@
 
 import commerce.Jcr
 import commerce.SalesFacts
+import commerce.Locks
 
 // A no-body order is retried on later ticks up to this many times (30s apart — generous headroom
 // for the async search index to surface a fresh import), then dropped with a warning.
 final int MAX_NO_BODY_RETRIES = 10
 
-// Single-writer guard: exactly one cluster node drains at a time. In a standalone deployment the lease
-// is a no-op. TTL ~2x the worst-case drain, larger than the inventory sweep because a recompute reads
-// the order + refund bodies; an overrun is safe (recompute-from-source is idempotent, and the next
-// drain resumes from the remaining markers).
-def __lease = cluster.tryLock(SalesFacts.LOCK_NAME, 300000)
-if (__lease == null) {
-    log.info("sweepSalesFacts: another cluster node is draining - skipping")
+// Single-writer guard: exactly one execution drains at a time, on this node or any other
+// (the task lock excludes both). Timeout ~2x the worst-case drain, larger than the inventory
+// sweep because a recompute reads the order + refund bodies; an overrun is safe
+// (recompute-from-source is idempotent, and the next drain resumes from the remaining markers).
+def __lock = Locks.tryLock(repositorySession, SalesFacts.LOCK_NAME, 300)
+if (__lock == null) {
+    log.info("sweepSalesFacts: another execution is already draining - skipping")
     return
 }
 try {
@@ -39,10 +40,11 @@ if (pending == null || pending.isEmpty()) {
     return
 }
 
-// Bound the work per drain to a wall-clock budget WELL UNDER the 300s lease TTL, so a large backlog
-// (the one-time backfill seeds the whole order history at once) can NEVER run past the lease and
-// let a second drainer start concurrently — which would thrash the same fact nodes with write
-// conflicts. The remaining markers drain on the next tick (30s timer); each drain is lease-sized.
+// Bound the work per drain to a wall-clock budget WELL UNDER the 300s lock timeout, so a large
+// backlog (the one-time backfill seeds the whole order history at once) can NEVER run past the
+// timeout and let a second drainer start concurrently — which would thrash the same fact nodes with
+// write conflicts. The remaining markers drain on the next tick (30s timer); each drain is sized
+// to the lock timeout.
 long deadline = System.currentTimeMillis() + 240000L
 int recomputed = 0
 boolean truncated = false
@@ -82,5 +84,5 @@ if (truncated) {
 }
 
 } finally {
-    __lease.close()
+    Locks.unlock(__lock)
 }

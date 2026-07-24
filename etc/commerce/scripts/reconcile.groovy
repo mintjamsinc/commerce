@@ -31,13 +31,14 @@ import commerce.ShopifyAdmin
 import commerce.Reconciliation
 import commerce.Health
 import commerce.Jcr
+import commerce.Locks
 
 final int MAX_PAGES = 20
 
-// Cluster guard: only the node that wins this lease runs the task; the others skip this tick.
-def __clusterLease = cluster.tryLock("commerce-reconcile", 1800000)
-if (__clusterLease == null) {
-    log.info("reconcile: another cluster node is running this task - skipping")
+// Task guard: only the execution that wins the lock runs the task; the others skip this tick.
+def __lock = Locks.tryLock(repositorySession, "commerce-reconcile", 1800)
+if (__lock == null) {
+    log.info("reconcile: another execution is already running this task - skipping")
     return
 }
 try {
@@ -171,7 +172,7 @@ try {
         }
     }
 } finally {
-    __clusterLease.close()
+    Locks.unlock(__lock)
 }
 
 

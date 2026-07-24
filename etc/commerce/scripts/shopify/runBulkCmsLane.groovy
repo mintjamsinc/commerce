@@ -10,9 +10,10 @@
 // must not stop the others.
 
 import commerce.BulkJobs
+import commerce.Locks
 
-def lease = cluster.tryLock("commerce-shopify-bulk-cms-lane", 60_000)
-if (lease == null) {
+def lock = Locks.tryLock(repositorySession, "commerce-shopify-bulk-cms-lane", 60)
+if (lock == null) {
     return
 }
 try {
@@ -71,7 +72,7 @@ try {
 } catch (Exception e) {
     log.warn("runBulkCmsLane: ${e.message}")
 } finally {
-    lease.close()
+    Locks.unlock(lock)
 }
 
 def readYaml(String path) {

@@ -1,8 +1,8 @@
 // Inventory-alert sweep + total materializer. Drains the pending queue; runs on a short timer
 // (inventory-alert-sweep.xml) and is also kicked asynchronously by inventory_levels/update
 // (direct:commerce-inventory-alert-sweep) for near-immediate processing. It is the SINGLE writer
-// of both the alert state and the materialized per-variant total, serialized cluster-wide by a
-// cluster.tryLock lease. For each pending inventory item it:
+// of both the alert state and the materialized per-variant total, serialized by the
+// commerce-inventory-alert-sweep task lock. For each pending inventory item it:
 //   1. deletes the pending marker FIRST (delete-before-evaluate: a concurrent update
 //      re-creates the marker, so the next tick re-evaluates and nothing is lost);
 //   2. resolves the item to its product/variant via the reverse index;
@@ -27,15 +27,16 @@
 import commerce.InventoryAlert
 import commerce.Locations
 import commerce.Planning
+import commerce.Locks
 
 // Single-writer guard: the sweep is now the sole writer of both the alert state AND the
 // materialized per-variant total (commerce:available_total on the index node), so exactly one
 // cluster node may drain the pending queue at a time. In a standalone deployment the lease is a
 // no-op. TTL is ~2x the worst-case drain; an overrun is safe (total is recompute-from-source and
 // idempotent, and alert firing is guarded by an active-instance query).
-def __lease = cluster.tryLock("commerce-inventory-alert-sweep", 120000)
-if (__lease == null) {
-    log.info("sweepInventoryAlerts: another cluster node is draining - skipping")
+def __lock = Locks.tryLock(repositorySession, "commerce-inventory-alert-sweep", 120)
+if (__lock == null) {
+    log.info("sweepInventoryAlerts: another execution is already draining - skipping")
     return
 }
 try {
@@ -137,7 +138,7 @@ for (itemId in pending) {
 log.info("sweepInventoryAlerts: evaluated ${evaluated} item(s), raised ${fired} review(s)")
 
 } finally {
-    __lease.close()
+    Locks.unlock(__lock)
 }
 
 // --- Per-item evaluation -----------------------------------------------------

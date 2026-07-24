@@ -11,7 +11,7 @@ import commerce.Jcr
  * runs ONCE per repository, automatically, shortly after the routes come up:
  *
  *   etc/eip/routes/commerce/migration.xml   timer repeatCount=1 (per boot)
- *     → runMigrations.groovy                cluster.tryLock (one node)
+ *     → runMigrations.groovy                task lock (one execution)
  *         → Migrations.runAll(session, log) ordered registry + JCR markers
  *
  * "Once" is enforced in two layers: the timer fires once per BOOT, and a JCR

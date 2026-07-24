@@ -7,7 +7,7 @@ import javax.jcr.query.Query
  * Sales-fact materialization — the pending queue and the SINGLE cluster-guarded writer of the two
  * derived sales-fact grains, modeled on the inventory-total materialize precedent (commerce.Locations
  * + sweepInventoryAlerts): every source path drops a pending marker; one timer/direct-kicked drainer,
- * serialized cluster-wide by a cluster.tryLock lease, RECOMPUTES each order's facts from source.
+ * serialized by its task lock (LOCK_NAME), RECOMPUTES each order's facts from source.
  *
  * Grains, one node per fact, typed commerce:* props = the facet aggregation axes:
  *   order-grain  /content/commerce/sales/orders/index/{yyyy}/{MM}/order_{id}.json

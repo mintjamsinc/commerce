@@ -71,7 +71,7 @@ callers read it 1:1 with `readTotal` — no per-location summation.
 
 - **Single writer**: the inventory-alert sweep (`sweepInventoryAlerts.groovy`) is the only writer.
   It already aggregates for the alert decision; it now also persists that total for every live
-  indexed item it drains (`materializeTotal`), guarded by `cluster.tryLock` so exactly one node
+  indexed item it drains (`materializeTotal`), guarded by its task lock so exactly one execution
   writes at a time — no write conflicts under concurrent webhooks.
 - **All write paths converge**: webhook (`recordInventoryLevel` → `markPending`) and the bulk
   inventory audit (`writeLevels` → `writePending`) both feed the same pending queue, so any

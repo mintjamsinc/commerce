@@ -13,9 +13,10 @@
 import java.net.http.HttpClient
 import commerce.BulkJobs
 import commerce.ShopifyAdmin
+import commerce.Locks
 
-def lease = cluster.tryLock("commerce-shopify-bulk-watchdog", 60_000)
-if (lease == null) {
+def lock = Locks.tryLock(repositorySession, "commerce-shopify-bulk-watchdog", 60)
+if (lock == null) {
     return
 }
 try {
@@ -108,7 +109,7 @@ try {
 } catch (Exception e) {
     log.warn("watchdogBulkJobs: ${e.message}")
 } finally {
-    lease.close()
+    Locks.unlock(lock)
 }
 
 long parseMs(v) {

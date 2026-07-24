@@ -21,16 +21,17 @@ import commerce.SimpleYaml
 import commerce.BulkJobs
 import commerce.Reconciliation
 import commerce.Health
+import commerce.Locks
 import javax.jcr.query.Query
 
 // NOTE: this is a Groovy *script*, so a top-level typed constant would not be
 // visible inside the helper methods below (they only see binding vars). The
 // day-in-ms literal (86_400_000L) is therefore inlined at each use site.
 
-// Cluster guard: the timer fires on every node; only the lease winner runs.
-def __clusterLease = cluster.tryLock("commerce-housekeeping", 600000)
-if (__clusterLease == null) {
-    log.info("houseKeeping: another cluster node is running this task - skipping")
+// Task guard: the timer fires on every node; only the lock winner runs.
+def __lock = Locks.tryLock(repositorySession, "commerce-housekeeping", 600)
+if (__lock == null) {
+    log.info("houseKeeping: another execution is already running this task - skipping")
     return
 }
 try {
@@ -69,7 +70,7 @@ try {
 } catch (Exception e) {
     try { log.warn("houseKeeping: ${e.message}") } catch (Exception ignore) {}
 } finally {
-    __clusterLease.close()
+    Locks.unlock(__lock)
 }
 
 

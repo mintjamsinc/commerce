@@ -24,8 +24,8 @@
       body, enqueues the parent order), the bulk-result importer (bulk body), and the one-time backfill
       seed. recordRefund/cancelOrder/recordFulfillment only set typed PROPS the computer does
       not read, and any real change fires orders/updated which already enqueues — so they intentionally
-      do NOT enqueue (avoids redundant recompute). Single-writer, serialized cluster-wide by a
-      cluster.tryLock lease inside the drainer. This timer is the backstop; the direct kick is the fast path.
+      do NOT enqueue (avoids redundant recompute). Single-writer, serialized by the task lock
+      inside the drainer. This timer is the backstop; the direct kick is the fast path.
     -->
     <route id="commerce-sales-materialize" routeConfigurationId="commerce-sales-materialize-error-handler">
         <routeProperty key="mi:history" value="failure"/>

@@ -21,7 +21,7 @@
       (commerce.migration.Migrations) as the service user. Each migration is additionally
       guarded by a permanent JCR marker (/content/commerce/migrations/{id}.json),
       so a redeploy re-fires this timer but applied migrations are skipped; a
-      cluster.tryLock in the script keeps it to one node.
+      task lock in the script keeps it to one execution.
     -->
     <route id="commerce-migrate" routeConfigurationId="commerce-migration-error-handler">
         <from uri="timer:commerce-migrate?repeatCount=1&amp;delay=120000"/>

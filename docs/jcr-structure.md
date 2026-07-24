@@ -247,7 +247,7 @@ property 1:1 via `Locations.readTotal` instead of
 re-summing the per-location levels; when it is absent (item not indexed / not yet swept) they
 fall back to `Locations.aggregate`. The `inventory_levels/update` route kicks the sweep
 asynchronously (`direct:commerce-inventory-alert-sweep`) so the total refreshes within
-milliseconds; the sweep's `cluster.tryLock` serializes concurrent webhooks into one drain.
+milliseconds; the sweep's task lock serializes concurrent webhooks into one drain.
 
 The `index/` entries are built from the Shopify product payload on `products/*` ingestion
 (`indexInventoryItems.groovy`) and removed on `products/delete`

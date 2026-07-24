@@ -10,9 +10,10 @@ import java.net.http.HttpClient
 import commerce.BulkJobs
 import commerce.BulkQueries
 import commerce.ShopifyAdmin
+import commerce.Locks
 
-def lease = cluster.tryLock("commerce-shopify-bulk-lane", 60_000)
-if (lease == null) {
+def lock = Locks.tryLock(repositorySession, "commerce-shopify-bulk-lane", 60)
+if (lock == null) {
     return
 }
 try {
@@ -57,7 +58,7 @@ try {
 } catch (Exception e) {
     log.warn("runBulkLane: ${e.message}")
 } finally {
-    lease.close()
+    Locks.unlock(lock)
 }
 
 def readYaml(String path) {

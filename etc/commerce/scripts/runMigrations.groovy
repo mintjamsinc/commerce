@@ -10,18 +10,19 @@
 // Best-effort: a failure is logged, never thrown.
 
 import commerce.migration.Migrations
+import commerce.Locks
 
-// Cluster guard: the boot timer fires on every node; only the node that wins
-// this lease runs the registry, the others skip (their markers are shared via
-// JCR anyway). In a standalone deployment the lease is granted immediately.
-def __clusterLease = cluster.tryLock("commerce-migrations", 1800000)
-if (__clusterLease == null) {
-    log.info("runMigrations: another cluster node is running the migrations - skipping")
+// Task guard: the boot timer fires on every node; only the execution that
+// wins the lock runs the registry, the others skip (their markers are shared
+// via JCR anyway).
+def __lock = Locks.tryLock(repositorySession, "commerce-migrations", 1800)
+if (__lock == null) {
+    log.info("runMigrations: another execution is already running the migrations - skipping")
     return
 }
 try {
     def report = Migrations.runAll(repositorySession, log)
     log.info("runMigrations: ran=${report.ran} skipped=${report.skipped.size()} failed=${report.failed ?: 'none'}")
 } finally {
-    __clusterLease.close()
+    Locks.unlock(__lock)
 }

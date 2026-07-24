@@ -13,15 +13,15 @@
 
 import commerce.SimpleYaml
 import commerce.TaskSla
+import commerce.Locks
 
-// Cluster guard: the timer fires on every node of a cluster, so only the
-// node that wins this lease runs the task; the others skip this tick.
+// Task guard: the timer fires on every node of a cluster, so only the
+// execution that wins the lock runs the task; the others skip this tick.
 // Manual triggers are asynchronous fire-and-forget, so skipping while a
-// run is already in flight on another node is correct for them as well.
-// In a standalone deployment the lease is always granted immediately.
-def __clusterLease = cluster.tryLock("commerce-task-sla", 900000)
-if (__clusterLease == null) {
-    log.info("scanTaskSla: another cluster node is running this task - skipping")
+// run is already in flight (this node or another) is correct for them too.
+def __lock = Locks.tryLock(repositorySession, "commerce-task-sla", 900)
+if (__lock == null) {
+    log.info("scanTaskSla: another execution is already running this task - skipping")
     return
 }
 try {
@@ -107,7 +107,7 @@ try {
         try { log.warn("scanTaskSla: ${e.message}") } catch (Exception ignore) {}
     }
 } finally {
-    __clusterLease.close()
+    Locks.unlock(__lock)
 }
 
 

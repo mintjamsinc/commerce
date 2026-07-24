@@ -81,3 +81,19 @@ nodes:
       - group: commerce-service-group
         privileges: jcr:write
         effect: allow
+
+  # Task-lock resources (see docs/clustering.md): every guarded script takes a
+  # session-scoped JCR lock on /var/locks/<task name>. jcr:lockManagement is
+  # already granted to everyone repository-wide by the workspace template, so
+  # the writers only need jcr:write to create the per-task lock folders on
+  # first use. Operators get it too because the manual admin triggers run the
+  # same guarded scripts.
+  - path: /var/locks
+    primaryType: nt:folder
+    acl:
+      - group: commerce-service-group
+        privileges: jcr:write
+        effect: allow
+      - group: commerce-operators
+        privileges: jcr:write
+        effect: allow

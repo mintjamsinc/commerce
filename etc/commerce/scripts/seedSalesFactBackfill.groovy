@@ -11,10 +11,11 @@
 // drainer materializes the whole backlog across its 30s timer ticks (its per-tick time budget is sized
 // for exactly this one-time seed).
 //
-// Cluster-guarded by a DISTINCT lease from the drainer ("commerce-sales-backfill" vs the drainer's
+// Guarded by a DISTINCT task lock from the drainer ("commerce-sales-backfill" vs the drainer's
 // "commerce-sales-materialize"), so a seed and a drain can run concurrently and a duplicate seed fire is
-// coalesced (the second tryLock returns null and this script skips). TTL is sized for a full-history
-// walk: the walk only STAGES markers (I/O over the order mirror, no recompute), so 30 min is generous.
+// coalesced (the second tryLock returns null and this script skips). The timeout is sized for a
+// full-history walk: the walk only STAGES markers (I/O over the order mirror, no recompute), so
+// 30 min is generous.
 //
 // On completion it KICKS the drainer once (direct:commerce-sales-materialize, async) so the drain starts
 // within milliseconds instead of waiting for the next timer heartbeat. Resume: the seed is a full,
@@ -23,10 +24,11 @@
 
 import commerce.SalesFactBackfill
 import commerce.Jcr
+import commerce.Locks
 
 // DISTINCT lock name from the drainer; generous TTL (30 min) for a full-history marker walk.
-def __lease = cluster.tryLock("commerce-sales-backfill", 1800000)
-if (__lease == null) {
+def __lock = Locks.tryLock(repositorySession, "commerce-sales-backfill", 1800)
+if (__lock == null) {
     log.info("seedSalesFactBackfill: another cluster node is seeding - skipping")
     return
 }
@@ -36,7 +38,7 @@ try {
     try { log.info("seedSalesFactBackfill: seed complete: ${Jcr.toJson(summary)}") } catch (Exception ignore) {}
 
     // Kick the single-writer drainer once so the backlog starts draining immediately instead of waiting
-    // for the 30s timer. The drainer's cluster lease coalesces this with any in-flight drain, and its
+    // for the 30s timer. The drainer's task lock coalesces this with any in-flight drain, and its
     // time-budget loop drains the whole seeded backlog across subsequent ticks. A kick failure is
     // harmless (the timer drain is the backstop).
     try {
@@ -52,5 +54,5 @@ try {
 } catch (Exception e) {
     try { log.warn("seedSalesFactBackfill: ${e.message}") } catch (Exception ignore) {}
 } finally {
-    __lease.close()
+    Locks.unlock(__lock)
 }
